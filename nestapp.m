@@ -123,34 +123,7 @@ classdef nestapp < matlab.apps.AppBase
             clc
             defaultValues;
             commandInfo;
-            for i = 1 : size(app.StepsListBox.Items,2)
-                xname = app.StepsListBox.Items{i};
-                replace(xname,' ','_');
-                replace(xname,'-','_');
-                replace(xname,'(','_');
-                replace(xname,')','_');
-                fields = fieldnames(eval(xname));
-                var = cell(numel(fields),1);
-                val = cell(numel(fields),1);
-                for j = 1:numel(fields)
-                    var{j,1} = string(fields{j});
-                    V = getfield(eval(xname),fields{j});
-                    if ischar(V)
-                        val{j,1} = string(V);
-                    elseif isempty(V)
-                        val{j,1} ="[]";
-                    elseif iscell(V)
-                        val{j,1} = [string(V)];
-                    else
-                        val{j,1} = V;
-                    end
-                end
-                t = table(var,val);
-                infoname = ['info_',xname];
-                app.info{i} = eval(infoname);
-                app.DefaultsVal{i} = t;
-                
-            end
+            
             app.SelectedListBox.Items(:)=[];
             app.SelectedListBox.ItemsData(:)=[];
             app.UITable.Data = [];
