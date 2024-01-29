@@ -123,7 +123,6 @@ classdef nestapp < matlab.apps.AppBase
             clc
             defaultValues;
             commandInfo;
-            
             app.SelectedListBox.Items(:)=[];
             app.SelectedListBox.ItemsData(:)=[];
             app.UITable.Data = [];
@@ -559,13 +558,13 @@ classdef nestapp < matlab.apps.AppBase
             % Create Panel
             app.Panel = uipanel(app.RightPanel);
             app.Panel.BorderType = 'none';
-            app.Panel.BorderWidth = 0;
+            % app.Panel.BorderWidth = 0;
             app.Panel.Position = [3 444 208 30];
 
             % Create SelectDatatoPerformAnalysisPanel
             app.SelectDatatoPerformAnalysisPanel = uipanel(app.RightPanel);
             app.SelectDatatoPerformAnalysisPanel.BorderType = 'none';
-            app.SelectDatatoPerformAnalysisPanel.BorderWidth = 0;
+            % app.SelectDatatoPerformAnalysisPanel.BorderWidth = 0;
             app.SelectDatatoPerformAnalysisPanel.Title = 'Select Data to Perform Analysis';
             app.SelectDatatoPerformAnalysisPanel.Position = [6 194 208 116];
 
