@@ -50,6 +50,7 @@ Save_New_Set.comments = '[]';
 Save_New_Set.overwrite = 'off';
 Save_New_Set.saveold = '[]';
 Save_New_Set.savenew = '[]';
+Save_New_Set.retrieve = NaN;
 Save_New_Set.gui = 'off';
 Save_New_Set.includeFileName = 'yes';
 
@@ -98,7 +99,18 @@ Remove_un_needed_Channels.channel = [];
 Remove_un_needed_Channels.chantype=[];
 Remove_un_needed_Channels.rmchantype=[];
 
-%% Frequency Filter Default Values
+%% Frequency Filter EEGLAB Default Values
+Frequency_Filter.locutoff=1;
+Frequency_Filter.hicutoff=80;
+Frequency_Filter.filtorder=0;
+Frequency_Filter.revfilt=0;
+Frequency_Filter.usefft=0;
+Frequency_Filter.plotfreqz=0;
+Frequency_Filter.minphase=0;
+Frequency_Filter.usefftfilt=0;
+
+
+%% Frequency Filter TESA Default Values
 
 Frequency_Filter_TESA.high = 1;
 Frequency_Filter_TESA.low = 80;
@@ -249,11 +261,11 @@ Automatic_Cleaning_Data.BurstCriterion=20;
 Automatic_Cleaning_Data.WindowCriterion=0.25;
 Automatic_Cleaning_Data.BurstRejection='on';
 Automatic_Cleaning_Data.Distance='Euclidian';
-Automatic_Cleaning_Data.channels_ignore={'AF7' 'AF3' 'F1' 'FC3' 'F5' 'F3' 'F7' 'FC5' 'AF4' 'AF8' 'F1' 'F8' 'F6' 'F4' 'F2' 'FC4' 'FC6'};
+Automatic_Cleaning_Data.channels_ignore={''};
 Automatic_Cleaning_Data.WindowCriterionTolerances=[-Inf 7];
 
 %% Remove bad channels 
-Remove_Bad_Channels.impelec = {'AF7' 'AF3' 'F1' 'FC3' 'F5' 'F3' 'F7' 'FC5' 'AF4' 'AF8' 'F1' 'F8' 'F6' 'F4' 'F2' 'FC4' 'FC6'};
+Remove_Bad_Channels.impelec = {''};
 Remove_Bad_Channels.elec=[];
 Remove_Bad_Channels.threshold=5;
 Remove_Bad_Channels.norm='on';
@@ -313,3 +325,61 @@ TEP_Peak_Output.winType = 'individual';
 TEP_Peak_Output.averageWin = 5;
 TEP_Peak_Output.fixedPeak = [];
 TEP_Peak_Output.tablePlot = 'on';
+
+%% Flag ICA Components
+Flag_ICA_Components_for_Rejection.Brain=[NaN,NaN];
+Flag_ICA_Components_for_Rejection.Muscle=[0.9,1];
+Flag_ICA_Components_for_Rejection.Eye=[0.9,1];
+Flag_ICA_Components_for_Rejection.Heart=[NaN,NaN];
+Flag_ICA_Components_for_Rejection.LineNoise=[NaN,NaN];
+Flag_ICA_Components_for_Rejection.ChannelNoise=[NaN,NaN];
+Flag_ICA_Components_for_Rejection.Other=[NaN,NaN];
+
+%% Label ICA Components
+Label_ICA_Components.version='default';
+
+%% Remove Flagged ICA Components
+Remove_Flagged_ICA_Components.components=[];
+Remove_Flagged_ICA_Components.plotag=0;
+Remove_Flagged_ICA_Components.keepcomp=0;
+
+%% Manual Commands
+Manual_Command.command='';
+
+%% Edit Data Set Info
+% Edit_Data_Set_info.setname="Sets' Name" ;
+% Edit_Data_Set_info.data="" ;
+% Edit_Data_Set_info.dataformat="" ;
+% Edit_Data_Set_info.subject="" ;
+% Edit_Data_Set_info.condition="" ;
+% Edit_Data_Set_info.group="" ;
+% Edit_Data_Set_info.run="";
+% Edit_Data_Set_info.session="";
+% Edit_Data_Set_info.chanlocs="";
+% Edit_Data_Set_info.nbchan="";
+% Edit_Data_Set_info.xmin="";
+% Edit_Data_Set_info.pnts="";
+% Edit_Data_Set_info.srate="";
+% Edit_Data_Set_info.ref="";
+% Edit_Data_Set_info.icaweight="";
+% Edit_Data_Set_info.icasphere="";
+% Edit_Data_Set_info.comments="";
+
+%% Choose Data Set
+
+Choose_Data_Set.dataSetInd = '';
+
+%% Automatic Continuous Rejection
+Automatic_Continuous_Rejection.elecrange = 1:64;
+Automatic_Continuous_Rejection.epochlength = 0.5;
+Automatic_Continuous_Rejection.overlap = 0.25;
+Automatic_Continuous_Rejection.freqlimit = [35 128];
+Automatic_Continuous_Rejection.mode = 'max';
+Automatic_Continuous_Rejection.correct = 'remove';
+Automatic_Continuous_Rejection.threshold = 10;
+Automatic_Continuous_Rejection.contiguous = 4;
+Automatic_Continuous_Rejection.addlength = 0.25;
+Automatic_Continuous_Rejection.eegplot = 'off';
+Automatic_Continuous_Rejection.onlyreturnselection = 'off';
+Automatic_Continuous_Rejection.verbose = 'off';
+Automatic_Continuous_Rejection.taper = 'hamming';

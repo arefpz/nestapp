@@ -23,7 +23,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% INITIALIZATION
 clc
-% global EEG ALLEEG CURRENTSET ALLCOM
+global EEG ALLEEG CURRENTSET ALLCOM
 app.steps2run=cell(1,2 * numel(app.SelectedListBox.Items));
 if isempty(app.file)
     error('--------------Please select at least one data!----------------')
@@ -166,14 +166,18 @@ for nfile = 1:app.NSelecFiles
                     % assignin('base','ALLEEG',ALLEEG)
                     [ALLEEG, EEG, CURRENTSET] = pop_newset(ALLEEG, EEG, CURRENTSET,vars{:});
                     
-                    eeglab redraw
+                    % eeglab redraw
                     
                 case 'Manual Command'
                     %% Manual Command
                     vars = convertContainedStringsToChars(varin);
                     ind=find(strcmpi(vars,'command'));
-                    for nstep=1:numel(vars{ind+1})
-                        eval(vars{ind+1}{nstep});
+                    if size(vars{ind+1},1)>1
+                        for nstep=1:numel(vars{ind+1})
+                            eval(vars{ind+1}{nstep});
+                        end
+                    else
+                        eval(vars{ind+1});
                     end
                 case 'Choose Data Set'
                     vars = convertContainedStringsToChars(varin);
@@ -220,6 +224,17 @@ for nfile = 1:app.NSelecFiles
                     assignin('base',"vars",vars)
                     EEG = pop_select( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
+
+                case 'Automatic Continuous Rejection'
+                    vars = convertContainedStringsToChars(varin);
+                    ind=find(strcmpi(vars,'elecrange'));
+                    if max(vars{ind+1})>EEG.nbchan
+                        elecrange = 1:EEG.nbchan;
+                    else
+                        elecrange = vars{ind+1}(1):vars{ind+1}(end);
+                    end
+                    vars([ind,ind+1])=[];
+                    EEG = pop_rejcont(EEG,'elecrange',elecrange,vars{:});
 
                 case 'Remove Baseline'
                     %% Remove Baseline Offset
@@ -677,9 +692,9 @@ for nfile = 1:app.NSelecFiles
         end
     end
     
-    assignin('base','EEG',EEG)
-    assignin('base','ALLEEG',ALLEEG)
-    eeglab redraw
+    % assignin('base','EEG',EEG)
+    % assignin('base','ALLEEG',ALLEEG)
+    % eeglab redraw
     pause(2)
     disp('-----------------Data processed!-----------------')
 end

@@ -1,4 +1,4 @@
-# nestapp v1.03
+# nestapp v1.04
 The NeuroStimulation App (nestapp) uses EEGLAB and TESA functions to automatically clean the TMS-EEG data. 
 
 # Introduction
