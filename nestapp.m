@@ -23,6 +23,8 @@ classdef nestapp < matlab.apps.AppBase
         MoveUpButton                  matlab.ui.control.Button
         SelectedListBox               matlab.ui.control.ListBox
         RightPanel                    matlab.ui.container.Panel
+        RunningstepEditField          matlab.ui.control.EditField
+        RunningstepEditFieldLabel     matlab.ui.control.Label
         ProcessingfileEditField       matlab.ui.control.EditField
         ProcessingfileEditFieldLabel  matlab.ui.control.Label
         outofEditField                matlab.ui.control.EditField
@@ -208,12 +210,12 @@ classdef nestapp < matlab.apps.AppBase
                 app.ChangedVal{ind1-1} = D;
                 app.ChangedVal{ind1} = C;
             end
+            app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1-1};
         end
 
         % Button pushed function: MoveDownButton
         function MoveDownButtonPushed(app, event)
             value = app.SelectedListBox.Value;
-            %             auxSelected = app.SelectedListBox;
             ind1 = find(ismember(app.SelectedListBox.ItemsData,value));
             if ind1 ~= numel(app.SelectedListBox.Items)
                 A = app.SelectedListBox.Items{ind1+1};
@@ -228,6 +230,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.ChangedVal{ind1+1} = D;
                 app.ChangedVal{ind1} = C;
             end
+            app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1+1};
         end
 
         % Button pushed function: DefaultValueButton
@@ -394,6 +397,12 @@ classdef nestapp < matlab.apps.AppBase
             % app.doubleClicked = 1;
         end
 
+        % Value changed function: RunningstepEditField
+        function RunningstepEditFieldValueChanged(app, event)
+            app.RunningstepEditField.Value=Step;
+            
+        end
+
         % Changes arrangement of the app based on UIFigure width
         function updateAppLayout(app, event)
             currentFigureWidth = app.UIFigure.Position(3);
@@ -466,7 +475,7 @@ classdef nestapp < matlab.apps.AppBase
 
             % Create StepsListBox
             app.StepsListBox = uilistbox(app.LeftPanel);
-            app.StepsListBox.Items = {'Load Data', 'Load Channel Location', 'Save New Set', 'Choose Data Set', 'Remove un-needed Channels', 'Remove Baseline', 'Remove Bad Channels', 'Automatic Continuous Rejection', 'Automatic Cleaning Data', 'De-Trend Epoch', 'TESA De-Trend', 'Re-Sample', 'Re-Reference', 'Frequency Filter (CleanLine)', 'Frequency Filter (TESA)', 'Frequency Filter', 'Run ICA', 'Run TESA ICA', 'Label ICA Components', 'Flag ICA Components for Rejection', 'Remove Flagged ICA Components', 'Remove ICA Components (TESA)', 'Epoching', 'Remove Bad Epoch', 'Find TMS Pulses (TESA)', 'Remove TMS Artifacts (TESA)', 'Fix TMS Pulse (TESA)', 'Interpolate Channels', 'Interpolate Missing Data (TESA)', 'Find Artifacts EDM (TESA)', 'SSP SIR', 'Median Filter 1D', 'Extract TEP (TESA)', 'Find TEP Peaks (TESA)', 'TEP Peak Output', 'Remove Recording Noise (SOUND)', 'Visualize EEG Data', 'Manual Command'};
+            app.StepsListBox.Items = {'Load Data', 'Load Channel Location', 'Save New Set', 'Choose Data Set', 'Remove un-needed Channels', 'Remove Baseline', 'Remove Bad Channels', 'Clean Artifacts', 'Automatic Continuous Rejection', 'Automatic Cleaning Data', 'De-Trend Epoch', 'TESA De-Trend', 'Re-Sample', 'Re-Reference', 'Frequency Filter (CleanLine)', 'Frequency Filter (TESA)', 'Frequency Filter', 'Run ICA', 'Run TESA ICA', 'Label ICA Components', 'Flag ICA Components for Rejection', 'Remove Flagged ICA Components', 'Remove ICA Components (TESA)', 'Epoching', 'Remove Bad Epoch', 'Find TMS Pulses (TESA)', 'Remove TMS Artifacts (TESA)', 'Fix TMS Pulse (TESA)', 'Interpolate Channels', 'Interpolate Missing Data (TESA)', 'Find Artifacts EDM (TESA)', 'SSP SIR', 'Median Filter 1D', 'Extract TEP (TESA)', 'Find TEP Peaks (TESA)', 'TEP Peak Output', 'Remove Recording Noise (SOUND)', 'Visualize EEG Data', 'Manual Command'};
             app.StepsListBox.ValueChangedFcn = createCallbackFcn(app, @StepsListBoxValueChanged, true);
             app.StepsListBox.FontSize = 11;
             app.StepsListBox.Position = [7 155 207 294];
@@ -503,7 +512,7 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectedListBox.ValueChangedFcn = createCallbackFcn(app, @SelectedListBoxValueChanged, true);
             app.SelectedListBox.FontSize = 11;
             app.SelectedListBox.DoubleClickedFcn = createCallbackFcn(app, @SelectedListBoxDoubleClicked, true);
-            app.SelectedListBox.Position = [6 89 215 360];
+            app.SelectedListBox.Position = [6 86 215 360];
             app.SelectedListBox.Value = '';
 
             % Create MoveUpButton
@@ -603,7 +612,7 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectDatatoPerformAnalysisPanel.BorderType = 'none';
             app.SelectDatatoPerformAnalysisPanel.BorderWidth = 0;
             app.SelectDatatoPerformAnalysisPanel.Title = 'Select Data to Perform Analysis';
-            app.SelectDatatoPerformAnalysisPanel.Position = [6 194 208 116];
+            app.SelectDatatoPerformAnalysisPanel.Position = [6 202 208 116];
 
             % Create FolderEditFieldLabel
             app.FolderEditFieldLabel = uilabel(app.SelectDatatoPerformAnalysisPanel);
@@ -642,7 +651,7 @@ classdef nestapp < matlab.apps.AppBase
             app.RunAnalysisButton.FontSize = 18;
             app.RunAnalysisButton.FontWeight = 'bold';
             app.RunAnalysisButton.FontColor = [1 1 1];
-            app.RunAnalysisButton.Position = [10 33 201 54];
+            app.RunAnalysisButton.Position = [10 15 201 54];
             app.RunAnalysisButton.Text = 'Run Analysis';
 
             % Create Image
@@ -689,32 +698,43 @@ classdef nestapp < matlab.apps.AppBase
             app.ReStartStepsButton.FontSize = 18;
             app.ReStartStepsButton.FontWeight = 'bold';
             app.ReStartStepsButton.FontColor = [1 1 1];
-            app.ReStartStepsButton.Position = [10 99 201 36];
+            app.ReStartStepsButton.Position = [10 78 201 36];
             app.ReStartStepsButton.Text = 'Re/Start Steps';
 
             % Create outofEditFieldLabel
             app.outofEditFieldLabel = uilabel(app.RightPanel);
             app.outofEditFieldLabel.HorizontalAlignment = 'center';
             app.outofEditFieldLabel.FontSize = 11;
-            app.outofEditFieldLabel.Position = [129 156 36 27];
+            app.outofEditFieldLabel.Position = [129 173 36 27];
             app.outofEditFieldLabel.Text = 'out of';
 
             % Create outofEditField
             app.outofEditField = uieditfield(app.RightPanel, 'text');
             app.outofEditField.FontSize = 11;
-            app.outofEditField.Position = [165 158 32 22];
+            app.outofEditField.Position = [165 175 32 22];
 
             % Create ProcessingfileEditFieldLabel
             app.ProcessingfileEditFieldLabel = uilabel(app.RightPanel);
             app.ProcessingfileEditFieldLabel.HorizontalAlignment = 'center';
             app.ProcessingfileEditFieldLabel.FontSize = 11;
-            app.ProcessingfileEditFieldLabel.Position = [18 156 80 27];
+            app.ProcessingfileEditFieldLabel.Position = [18 173 80 27];
             app.ProcessingfileEditFieldLabel.Text = 'Processing file ';
 
             % Create ProcessingfileEditField
             app.ProcessingfileEditField = uieditfield(app.RightPanel, 'text');
             app.ProcessingfileEditField.Editable = 'off';
-            app.ProcessingfileEditField.Position = [96 158 32 22];
+            app.ProcessingfileEditField.Position = [96 175 32 22];
+
+            % Create RunningstepEditFieldLabel
+            app.RunningstepEditFieldLabel = uilabel(app.RightPanel);
+            app.RunningstepEditFieldLabel.HorizontalAlignment = 'right';
+            app.RunningstepEditFieldLabel.Position = [16 146 79 22];
+            app.RunningstepEditFieldLabel.Text = 'Running step:';
+
+            % Create RunningstepEditField
+            app.RunningstepEditField = uieditfield(app.RightPanel, 'text');
+            app.RunningstepEditField.ValueChangedFcn = createCallbackFcn(app, @RunningstepEditFieldValueChanged, true);
+            app.RunningstepEditField.Position = [20 123 177 22];
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';

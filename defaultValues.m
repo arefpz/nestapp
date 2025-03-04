@@ -214,9 +214,12 @@ Remove_ICA_Components_TESA.muscle = 'off';
 Remove_ICA_Components_TESA.muscleThresh = 0.6;
 Remove_ICA_Components_TESA.muscleFreqIn = [30 100];
 Remove_ICA_Components_TESA.muscleFeedback = 'off';
+Remove_ICA_Components_TESA.muscleFreqEx = [58 62];
 Remove_ICA_Components_TESA.elecNoise = 'off';
 Remove_ICA_Components_TESA.elecNoiseThresh = 4;
 Remove_ICA_Components_TESA.elecNoiseFeedback = 'off';
+Remove_ICA_Components_TESA.plotTimeX = [-100 399];
+Remove_ICA_Components_TESA.plotFreqX = [1 100];
 
 %% Find Artifacts EDM (TESA)
 Find_Artifacts_EDM_TESA.chanl = [];
@@ -345,6 +348,7 @@ Remove_Flagged_ICA_Components.keepcomp=0;
 
 %% Manual Commands
 Manual_Command.command='';
+Manual_Command.description='';
 
 %% Edit Data Set Info
 % Edit_Data_Set_info.setname="Sets' Name" ;
@@ -383,3 +387,21 @@ Automatic_Continuous_Rejection.eegplot = 'off';
 Automatic_Continuous_Rejection.onlyreturnselection = 'off';
 Automatic_Continuous_Rejection.verbose = 'off';
 Automatic_Continuous_Rejection.taper = 'hamming';
+
+%% Clean Artifacts
+Clean_Artifacts.ChannelCriterion=0.8;
+Clean_Artifacts.LineNoiseCriterion=4;
+Clean_Artifacts.Channels_ignore=[];
+Clean_Artifacts.Channels=[];
+Clean_Artifacts.BurstCriterion=5;
+Clean_Artifacts.WindowCriterion=0.25;
+Clean_Artifacts.Highpass=[0.25 0.75];
+Clean_Artifacts.ChannelCriterionMaxBadTime=0.5;
+Clean_Artifacts.BurstCriterionRefMaxBadChns=0.075;
+Clean_Artifacts.BurstCriterionRefTolerances=[-inf 5.5];
+Clean_Artifacts.BurstRejection='off';
+Clean_Artifacts.WindowCriterionTolerances=[-inf 7];
+Clean_Artifacts.FlatlineCriterion=5;
+Clean_Artifacts.NoLocsChannelCriterion=0.45;
+Clean_Artifacts.NoLocsChannelCriterionExcluded=0.1;
+

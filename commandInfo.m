@@ -173,6 +173,8 @@ info_Choose_Data_Set = "EEGLAB: Uses pop_saveset' to retrive other dataset from 
 
 info_Automatic_Continuous_Rejection = 'EEGLAB: Uses "pop_rejcont" to reject continuous portions of data based on spectrum thresholding.';
 
+info_Clean_Artifacts = ["EEGLAB: Uses clean_artifacts to removes flatline channels, low-frequency drifts, noisy channels, short-time bursts",...
+                        "and incompletely repaird segments from the data. "];
 % info_Plot_TEP_TESA = 'TESA: Uses "pop_tesa_plot" to plot TMS-evoked activity averaged over trials.';
 %% Future features
 % info_Pause='You need to enter "c" to continue!';

@@ -58,7 +58,7 @@ for nfile = 1:app.NSelecFiles
     app.ProcessingfileEditField.Value = num2str(nfile);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
-    [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
+    [ALLEEG EEG CURRENTSET ALLCOM] = eeglab('nogui');
     app.initialVars = who; % Variables available at the begining of the analysis. Will be used to save them.
     pathName=app.path; % Path to data folder
     fileName = app.file{nfile}; % Data name(s) to be analyzed.
@@ -67,6 +67,7 @@ for nfile = 1:app.NSelecFiles
 
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
+        app.RunningstepEditField.Value=app.steps2run{Step}{:};pause(0.1);
         varin = app.steps2run{Step+1};
         disp(strcat('step ',num2str(fix(Step/2)+1), ': "',app.steps2run{Step},'" is running!'));
         try
@@ -86,14 +87,22 @@ for nfile = 1:app.NSelecFiles
                     end
                     if strcmp(needchanloc,'yes') && isempty(chName)
                         pathEEGLAB = which('eeglab');
-                        pathEEGLAB = replace(pathEEGLAB,'\','/');
-                        dashes = find(pathEEGLAB=='/');
-                        pathEEGLAB(dashes(end)+1:end)=[];
+                        if isunix
+                            pathEEGLAB = replace(pathEEGLAB,'\','/');
+                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
+                            D=dir([pathEEGLAB,'plugins/dipfit*']);
+                            lookforchnlocs=[D.folder,'/',D.name,'/standard_BEM/elec/standard_1005.elc'];
+                        elseif ispc
+                            pathEEGLAB = replace(pathEEGLAB,'/','\');
+                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
+                            D=dir([pathEEGLAB,'plugins\dipfit*']);
+                            lookforchnlocs=[D.folder,'\',D.name,'\standard_BEM\elec\standard_1005.elc'];
+                        end
                         [chName,chPath] = uigetfile('*.*','Select a file');
                     end
-
+                    
                     EEG=pop_chanedit(EEG, 'lookup',...
-                        [pathEEGLAB,'plugins/dipfit/standard_BEM/elec/standard_1005.elc'],...
+                        lookforchnlocs,...
                         'load',{[chPath,chName],'filetype','autodetect'});
 
                     [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
@@ -125,7 +134,7 @@ for nfile = 1:app.NSelecFiles
                                 assignin('base',postVars{i},eval(postVars{i}))
                             end
                         end
-                        eeglab redraw
+                        % eeglab redraw
                     end
                     [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
 
@@ -161,6 +170,7 @@ for nfile = 1:app.NSelecFiles
                         vars([ind3, ind3+1])=[];
                     end
                     EEG = eeg_checkset(EEG);
+                    EEG.pipeline=app.steps2run;
                     % CURRENTSET = CURRENTSET + 1;
                     % assignin('base','EEG',EEG)
                     % assignin('base','ALLEEG',ALLEEG)
@@ -224,7 +234,37 @@ for nfile = 1:app.NSelecFiles
                     assignin('base',"vars",vars)
                     EEG = pop_select( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
+                
+                case 'Remove Bad Channels'
+                    %%  Remove bad channels
 
+                    vars = convertContainedStringsToChars(varin);
+                    EEGelecNames = {EEG.chanlocs(1:end).labels};
+                    ind1 = find(strcmpi(vars,'impelec'));
+                    AuximportantElects = vars{ind1+1};
+                    importantElects=matches(EEGelecNames, AuximportantElects,"IgnoreCase",true);
+                    vars([ind1, ind1+1]) = [];
+
+                    ind2 = find(strcmpi(vars,'elec'));
+                    if strcmp(vars{1,ind2+1},'[]')
+                        vars{1,ind2+1}= 1:EEG.nbchan;
+                    elseif iscell(vars{1,ind2+1})
+                        vars{1,ind2+1}=find(ismember(EEGelecNames, vars{1,ind2+1}));
+                    else
+                        vars{1,ind2+1} = 1:EEG.nbchan;
+                    end
+
+                    ind3 = find(strcmpi(vars,'freqrange'));
+                    if sum(isnan(vars{ind3+1})) || strcmpi(vars{ind3},'[]')
+                        vars([ind3, ind3+1]) = [];
+                    end
+
+                    if sum(importantElects)
+                        vars{1,ind2+1} = find(~importantElects);
+                        EEG = pop_rejchan(EEG, vars{:});
+                    else
+                        EEG = pop_rejchan(EEG, vars{:});
+                    end
                 case 'Automatic Continuous Rejection'
                     vars = convertContainedStringsToChars(varin);
                     ind=find(strcmpi(vars,'elecrange'));
@@ -235,7 +275,45 @@ for nfile = 1:app.NSelecFiles
                     end
                     vars([ind,ind+1])=[];
                     EEG = pop_rejcont(EEG,'elecrange',elecrange,vars{:});
+                case 'Clean Artifacts'
+                    %% Clean Artifacts
+                    vars = convertContainedStringsToChars(varin);
+                    ind1=find(strcmpi(vars,'Channels'));
+                    ind2=find(strcmpi(vars,'Channels_ignore'));
+                    if sum(strcmpi(vars{ind1+1},'[]')) && sum(strcmpi(vars{ind2+1},'[]'))
+                        chans={EEG.chanlocs.labels};
+                        vars{ind1+1}=chans;
+                        vars{ind2+1}=[];
+                    elseif sum(strcmpi(vars{ind1+1},'[]')) && sum(~strcmpi(vars{ind2+1},'[]'))
+                        if size(vars{ind2+1},1)>size(vars{ind2},2)
+                            vars{ind2+1}=vars{ind2+1}';
+                        end
+                        vars([ind1 ind1+1])=[];
+                    elseif sum(~strcmpi(vars{ind1+1},'[]')) && sum(strcmpi(vars{ind2+1},'[]'))
+                        if size(vars{ind1+1},1)>size(vars{ind1},2)
+                            vars{ind1+1}=vars{ind1+1}';
+                        end
+                        vars([ind2 ind2+1])=[];
+                    end
+                    EEG = clean_artifacts(EEG,vars{:});
+                    EEG = eeg_checkset( EEG );
 
+               case 'Automatic Cleaning Data'
+                    %% Automatic Cleaning Raw Data
+
+                    vars = convertContainedStringsToChars(varin);
+                    ind = find(strcmp(vars,'Highpass'));
+                    if ~strcmpi(vars{ind+1},'off')
+                        highpass = [str2double(vars{ind+1})];
+                        if size(highpass,2)<size(highpass,1)
+                            highpass = highpass';
+                        end
+                        vars{ind+1} = highpass;
+                    end
+                    ind = find(strcmp(vars,'[]'));
+                    vars([ind, ind-1])=[];
+                    EEG = pop_clean_rawdata(EEG, vars{:});
+                    EEG = eeg_checkset( EEG );
                 case 'Remove Baseline'
                     %% Remove Baseline Offset
 
@@ -244,11 +322,20 @@ for nfile = 1:app.NSelecFiles
                     % ERP, it is recomended to do not remove it, since it may affect the
                     % results.
                     vars = convertContainedStringsToChars(varin);
-
-                    timerange=vars{1,2}; % Default [] -> all
-                    pointrange=vars{1,4}; % Default [] -> all
-                    chanlist=vars{1,6}; % Default [] -> all
-                    EEG = pop_rmbase( EEG, eval(timerange), eval(pointrange), eval(chanlist));
+                    ind = find(strcmp(vars,'[]'));
+                    if ~isempty(ind)
+                        timerange=vars{1,2}; % Default [] -> all
+                        if ~strcmp(timerange,'[]')
+                            timerange = str2double(timerange);
+                            EEG = pop_rmbase( EEG, timerange);
+                        end
+                    else
+                        timerange=vars{1,2}; % Default [] -> all
+                        pointrange=vars{1,4}; % Default [] -> all
+                        chanlist=vars{1,6}; % Default [] -> all
+                        pointrange = str2double(pointrange);
+                        EEG = pop_rmbase( EEG, timerange, pointrange, chanlist);
+                    end
                     EEG = eeg_checkset( EEG );
 
                 case 'De-Trend Epoch'
@@ -344,54 +431,8 @@ for nfile = 1:app.NSelecFiles
                     end
                     EEG = pop_eegfiltnew(EEG, vars{:});
                     
-                case 'Automatic Cleaning Data'
-                    %% Automatic Cleaning Raw Data
-
-                    vars = convertContainedStringsToChars(varin);
-                    ind = find(strcmp(vars,'Highpass'));
-                    if ~strcmpi(vars{ind+1},'off')
-                        highpass = [str2double(vars{ind+1})];
-                        if size(highpass,2)<size(highpass,1)
-                            highpass = highpass';
-                        end
-                        vars{ind+1} = highpass;
-                    end
-                    ind = find(strcmp(vars,'[]'));
-                    vars([ind, ind-1])=[];
-                    EEG = pop_clean_rawdata(EEG, vars{:});
-                    EEG = eeg_checkset( EEG );
-
-
-                case 'Remove Bad Channels'
-                    %%  Remove bad channels
-
-                    vars = convertContainedStringsToChars(varin);
-                    EEGelecNames = {EEG.chanlocs(1:end).labels};
-                    ind1 = find(strcmpi(vars,'impelec'));
-                    AuximportantElects = vars{ind1+1};
-                    importantElects=ismember(EEGelecNames, AuximportantElects);
-                    vars([ind1, ind1+1]) = [];
-
-                    ind2 = find(strcmpi(vars,'elec'));
-                    if strcmp(vars{1,ind2+1},'[]')
-                        vars{1,ind2+1}= 1:EEG.nbchan;
-                    elseif iscell(vars{1,ind2+1})
-                        vars{1,ind2+1}=find(ismember(EEGelecNames, vars{1,ind2+1}));
-                    else
-                        vars{1,ind2+1} = 1:EEG.nbchan;
-                    end
-
-                    ind3 = find(strcmpi(vars,'freqrange'));
-                    if sum(isnan(vars{ind3+1})) || strcmpi(vars{ind3},'[]')
-                        vars([ind3, ind3+1]) = [];
-                    end
-
-                    if sum(importantElects)
-                        vars{1,ind2+1} = find(~importantElects);
-                        EEG = pop_rejchan(EEG, vars{:});
-                    else
-                        EEG = pop_rejchan(EEG, vars{:});
-                    end
+                
+                
 
                 case 'Remove Bad Epoch'
                     %% Remove bad Epoch
@@ -399,6 +440,15 @@ for nfile = 1:app.NSelecFiles
                     vars = convertContainedStringsToChars(varin);
                     inds = find(strcmp(vars,'[]'));
                     vars([inds,inds-1])=[];
+                    Ind1 = find(strcmpi(vars,'startprob'));
+                    if ~isempty(Ind1)
+                        vars{Ind1+1} = str2double(vars{Ind1+1});
+                    end
+                    Ind2 = find(strcmpi(vars,'maxrej'));
+                    if ~isempty(Ind2)
+                        vars{Ind2+1} = str2double(vars{Ind2+1});
+                    end
+                    
                     [EEG, rejepochs] = pop_autorej(EEG, vars{:});
                     EEG.rejEpochs=rejepochs;
                     EEG = eeg_checkset( EEG );
@@ -433,7 +483,17 @@ for nfile = 1:app.NSelecFiles
                     if strcmp(vars{2},'[]')
                         var_comp=[];
                     end
+                    if ~exist('ICA_Rejected_Comp','var')
+                        Rej = EEG.reject.gcompreject;
+                        ICA_Rejected_Comp{1}=reshape(Rej,1,numel(Rej));
+                    else
+                        Rej = EEG.reject.gcompreject;
+                        Rej = reshape(Rej, 1, numel(Rej));
+                        ICA_Rejected_Comp{end+1}=Rej;
+                    end
+                    
                     EEG = pop_subcomp( EEG, var_comp, vars{4}, vars{6});
+                    EEG.ICA_Rejected_Comp=ICA_Rejected_Comp;
                     EEG = eeg_checkset( EEG );
 
                 case 'Interpolate Channels'
@@ -445,8 +505,14 @@ for nfile = 1:app.NSelecFiles
                     if strcmp(vars{ind2+1},'[]')
                         trange = [];
                     end
+                    
                     EEG = pop_interp(EEG, EEG.chaninfo.removedchans(1:size(EEG.chaninfo.removedchans,2)), method, trange);
-
+                    if ~exist('interpElecs','var')
+                        interpElecs = EEG.chaninfo.removedchans;
+                    else
+                        interpElecs = [interpElecs;EEG.chaninfo.removedchans];
+                    end
+                    EEG.interpElecs = interpElecs;
                     EEG.setname = [EEG.setname '_interp'];
                     EEG.filename=[EEG.setname '.set'];
                     EEG.datfile=[EEG.setname '.fdt'];
@@ -499,6 +565,9 @@ for nfile = 1:app.NSelecFiles
                     if strcmp(replaceTimes,'[]')
                         replaceTimes = eval(replaceTimes);
                     end
+                    if size(cutTimesTMS,1)>size(cutTimesTMS,2)
+                        cutTimesTMS = cutTimesTMS';
+                    end
                     EEG = pop_tesa_removedata(EEG, cutTimesTMS, replaceTimes, cutEvent);
                     EEG = eeg_checkset( EEG );
 
@@ -515,16 +584,18 @@ for nfile = 1:app.NSelecFiles
                     EEG = pop_epoch( EEG, type, timelim, vars{:});
                     EEG = eeg_checkset( EEG );
 
-                case 'Interpolate Missing Data TESA'
+                case 'Interpolate Missing Data (TESA)'
                     %% TESA Interpolate missing data LINEAR
                     % replaces missing data with linear interpolation.
                     % Linear function is fitted on data point before and after missing data.
                     vars = convertContainedStringsToChars(varin);
                     interpolation = vars{1,find(strcmp(vars,'interpolation'))+1};
                     interpWin = vars{1,find(strcmp(vars,'interpWin'))+1};
-
+                    if size(interpWin,1) > size(interpWin,2)
+                        interpWin = interpWin';
+                    end
                     EEG = pop_tesa_interpdata( EEG, interpolation,interpWin);
-                    EEG = eeg_checkset( EEG );
+                    % EEG = eeg_checkset( EEG );
 
                 case 'Run TESA ICA'
                     %% TESA fastICA
@@ -541,6 +612,16 @@ for nfile = 1:app.NSelecFiles
                     % on the feedback of blink threhsolds for individual components
                     % in the command window.
                     vars = convertContainedStringsToChars(varin);
+                    ind1 = find(strcmpi(vars,'plotTimeX'));
+                    TP = vars{ind1+1};
+                    if TP(1) ~= EEG.times(1) && TP(2) ~= EEG.times(end)
+                        vars{ind1+1} = [EEG.times(1) EEG.times(end)];
+                    end
+                    for nInd=2:2:numel(vars)
+                        if size(vars{nInd},1)>size(vars{nInd},2)
+                            vars{nInd}=vars{nInd}';
+                        end
+                    end
                     EEG = pop_tesa_compselect( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
 
@@ -674,7 +755,7 @@ for nfile = 1:app.NSelecFiles
             disp(err.message)
             warning(strcat('An error acoured at file ',fileName,...
                 ' at step ',num2str(round(Step/2)), ': ',app.steps2run{Step}{:}));
-            toContinue = input('Do you want to continue? (y/n)? ','s');
+            toContinue = input('Do you want to continue? (y/n) ','s');
             if strcmpi(toContinue,'n')
                 EEG.nestappSteps = app.steps2run;
                 postVars = who;
@@ -694,7 +775,7 @@ for nfile = 1:app.NSelecFiles
     
     % assignin('base','EEG',EEG)
     % assignin('base','ALLEEG',ALLEEG)
-    % eeglab redraw
-    pause(2)
+    eeglab redraw
+    pause(1)
     disp('-----------------Data processed!-----------------')
 end
