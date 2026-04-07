@@ -150,8 +150,8 @@ for nfile = 1:app.NSelecFiles
                     if strcmp(IFN,'yes')
                         fname = [app.path,fileName];
                         fname = fname(1:end-numel(fileFormat)-1);
-                        replace(fname,' ','_');
-                        replace(fname,'-','_');
+                        fname = replace(fname,' ','_');
+                        fname = replace(fname,'-','_');
                         fname = strcat(fname,'_');
                     end
                     ind1 = find(strcmp(vars,'savenew'));
