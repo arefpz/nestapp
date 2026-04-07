@@ -85,27 +85,26 @@ for nfile = 1:app.NSelecFiles
                         needchanloc='yes';
                         chName = [];
                     end
-                    if strcmp(needchanloc,'yes') && isempty(chName)
-                        pathEEGLAB = which('eeglab');
-                        if isunix
-                            pathEEGLAB = replace(pathEEGLAB,'\','/');
-                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
-                            D=dir([pathEEGLAB,'plugins/dipfit*']);
-                            lookforchnlocs=[D.folder,'/',D.name,'/standard_BEM/elec/standard_1005.elc'];
-                        elseif ispc
-                            pathEEGLAB = replace(pathEEGLAB,'/','\');
-                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
-                            D=dir([pathEEGLAB,'plugins\dipfit*']);
-                            lookforchnlocs=[D.folder,'\',D.name,'\standard_BEM\elec\standard_1005.elc'];
+                    if strcmp(needchanloc,'yes')
+                        if isempty(chName)
+                            pathEEGLAB = which('eeglab');
+                            if isunix
+                                pathEEGLAB = replace(pathEEGLAB,'\','/');
+                                pathEEGLAB = replace(pathEEGLAB,'eeglab.m','');
+                                D = dir([pathEEGLAB,'plugins/dipfit*']);
+                                lookforchnlocs = [D.folder,'/',D.name,'/standard_BEM/elec/standard_1005.elc'];
+                            elseif ispc
+                                pathEEGLAB = replace(pathEEGLAB,'/','\');
+                                pathEEGLAB = replace(pathEEGLAB,'eeglab.m','');
+                                D = dir([pathEEGLAB,'plugins\dipfit*']);
+                                lookforchnlocs = [D.folder,'\',D.name,'\standard_BEM\elec\standard_1005.elc'];
+                            end
+                            [chName,chPath] = uigetfile('*.*','Select a file');
                         end
-                        [chName,chPath] = uigetfile('*.*','Select a file');
+                        EEG = pop_chanedit(EEG, 'lookup', lookforchnlocs, ...
+                            'load', {[chPath,chName],'filetype','autodetect'});
+                        [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
                     end
-                    
-                    EEG=pop_chanedit(EEG, 'lookup',...
-                        lookforchnlocs,...
-                        'load',{[chPath,chName],'filetype','autodetect'});
-
-                    [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
 
                 case 'Load Data'
                     %% Loading the Files
