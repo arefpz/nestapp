@@ -1,1 +1,17 @@
 *.zip
+
+# markdown
+*.md
+
+# MATLAB artifacts
+*.asv
+*.mex*
+
+# Data and output (large files / generated content)
+data/
+results/
+*.mat
+!exemplar_pipeline.mat
+
+# EEGLAB bundle (not versioned)
+eeglab*/
