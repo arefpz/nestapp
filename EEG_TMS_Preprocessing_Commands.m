@@ -686,11 +686,11 @@ for nfile = 1:app.NSelecFiles
                     % Vector with time range for applying median filter in ms.
                     % Note that t1 must be 0 or negative and t2 positive
                     vars = convertContainedStringsToChars(varin);
-                    ind1 = find(strcmp{vars,'timeWin'});
+                    ind1 = find(strcmp(vars,'timeWin'));
                     timeWin=vars{1,ind1+1};
-                    ind2 = find(strcmp{vars,'mdorder'});
+                    ind2 = find(strcmp(vars,'mdorder'));
                     mdorder=vars{1,ind2+1};
-                    ind3 = find(strcmp{vars,'event_type'});
+                    ind3 = find(strcmp(vars,'event_type'));
                     event_type=vars{1,ind3+1};
                     EEG = tesa_filtmedian( EEG, timeWin, mdorder, event_type );
                     EEG = eeg_checkset( EEG );
@@ -707,12 +707,12 @@ for nfile = 1:app.NSelecFiles
                 case 'Extract TEP (TESA)'
                     %% Extract TEP
                     vars = convertContainedStringsToChars(varin);
-                    ind1 = find(strcmp{vars,'type'});
+                    ind1 = find(strcmp(vars,'type'));
                     type=vars{1,ind1+1};
                     vars([ind1, ind1+1]) = [];
                     ind2 = find(strcmpi(vars,'pairCorrect'));
                     if ~strcmp(vars{ind2+1},'on')
-                        ind3 = faind(strcmpi(vars,'ISI'));
+                        ind3 = find(strcmpi(vars,'ISI'));
                         vars([ind3, ind3 +1]) = [];
                     end
                     inds = find(strcmp(vars,'[]'));
@@ -745,8 +745,10 @@ for nfile = 1:app.NSelecFiles
                         direction, peak, peakWin, ...
                         vars(:) );
                 case 'TEP Peak Output'
-
-                    tepoutput = pop_tesa_peakoutput( EEG, vars(:) );
+                    vars = convertContainedStringsToChars(varin);
+                    inds = find(strcmp(vars,'[]'));
+                    vars([inds,inds-1]) = [];
+                    tepoutput = pop_tesa_peakoutput( EEG, vars{:} );
                     assignin('base','tep_output',tepoutput)
 
             end
