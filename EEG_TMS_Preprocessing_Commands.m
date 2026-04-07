@@ -58,7 +58,7 @@ for nfile = 1:app.NSelecFiles
     app.ProcessingfileEditField.Value = num2str(nfile);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
-    [ALLEEG EEG CURRENTSET ALLCOM] = eeglab('nogui');
+    [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
     app.initialVars = who; % Variables available at the begining of the analysis. Will be used to save them.
     pathName=app.path; % Path to data folder
     fileName = app.file{nfile}; % Data name(s) to be analyzed.
