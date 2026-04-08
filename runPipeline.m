@@ -65,7 +65,9 @@ end
 
 %% MAIN
 
-for nfile = 1:app.NSelecFiles
+nFiles = app.NSelecFiles;
+
+for nfile = 1:nFiles
     app.ProcessingfileEditField.Value = num2str(nfile);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
@@ -76,11 +78,23 @@ for nfile = 1:app.NSelecFiles
 
     disp(['!--------FILE ',fileName,' IS BEING PROCESSED--------!'])
 
+    % Per-file step log — accumulated across the step loop and written to disk.
+    stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
+                     'epochBefore',{},'epochAfter',{},'error',{});
+
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
-        app.RunningstepEditField.Value=app.steps2run{Step}{:};pause(0.1);
+        stepName = app.steps2run{Step}{:};
+        stepIdx  = (Step - 1) / 2 + 1;
+        app.RunningstepEditField.Value = stepName; pause(0.1);
         varin = app.steps2run{Step+1};
-        disp(strcat('step ',num2str(fix(Step/2)+1), ': "',app.steps2run{Step},'" is running!'));
+        disp(strcat('step ',num2str(stepIdx), ': "',stepName,'" is running!'));
+
+        % Capture EEG state and start timer before the step runs.
+        nChanBefore  = EEG.nbchan;
+        nEpochBefore = size(EEG.data, 3);
+        t0 = tic;
+
         try
             switch app.steps2run{Step}{:}
                 case 'Load Channel Location'
@@ -750,13 +764,33 @@ for nfile = 1:app.NSelecFiles
                     assignin('base','tep_output',tepoutput)
 
             end
+
+            % Record successful step: timing and channel/epoch counts.
+            stepLog(end+1) = struct( ...
+                'step',        stepName, ...
+                'duration_s',  toc(t0), ...
+                'chanBefore',  nChanBefore, ...
+                'chanAfter',   EEG.nbchan, ...
+                'epochBefore', nEpochBefore, ...
+                'epochAfter',  size(EEG.data, 3), ...
+                'error',       ''); %#ok<AGROW>
+
         catch err
+            stepLog(end+1) = struct( ...
+                'step',        stepName, ...
+                'duration_s',  toc(t0), ...
+                'chanBefore',  nChanBefore, ...
+                'chanAfter',   nChanBefore, ...
+                'epochBefore', nEpochBefore, ...
+                'epochAfter',  nEpochBefore, ...
+                'error',       err.message); %#ok<AGROW>
+
             disp(err.message)
             warning(strcat('An error acoured at file ',fileName,...
-                ' at step ',num2str(round(Step/2)), ': ',app.steps2run{Step}{:}));
+                ' at step ',num2str(stepIdx), ': ',stepName));
             toContinue = uiconfirm(app.UIFigure, ...
                 sprintf('Error at step %d (%s):\n%s\n\nContinue to next step?', ...
-                    round(Step/2), app.steps2run{Step}{:}, err.message), ...
+                    stepIdx, stepName, err.message), ...
                 'Step Failed','Options',{'Continue','Abort'},'DefaultOption','Continue','CancelOption','Abort');
             if strcmp(toContinue,'Abort')
                 EEG.nestappSteps = app.steps2run;
@@ -769,16 +803,53 @@ for nfile = 1:app.NSelecFiles
                 end
                 assignin('base','lastVarin',varin);
                 assignin('base','lastStepInd',Step);
+                writeSessionLog(pathName, fileName, stepLog);
                 eeglab redraw
                 break
             end
         end
     end
-    
-    % assignin('base','EEG',EEG)
-    % assignin('base','ALLEEG',ALLEEG)
+
+    writeSessionLog(pathName, fileName, stepLog);
     eeglab redraw
     pause(1)
     disp('-----------------Data processed!-----------------')
 end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Local helpers
+
+function writeSessionLog(pathName, fileName, stepLog)
+% WRITESESSIONLOG  Write a plain-text processing log alongside the data file.
+%   Saved as <fileName_noext>_nestapp_log.txt in pathName.
+    [~, baseName] = fileparts(fileName);
+    logPath = fullfile(pathName, [baseName, '_nestapp_log.txt']);
+    fid = fopen(logPath, 'w');
+    if fid == -1; return; end  % silently skip if path is not writable
+
+    fprintf(fid, '=== nestapp session log ===\n');
+    fprintf(fid, 'File:      %s\n', fileName);
+    fprintf(fid, 'Processed: %s\n', datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
+    fprintf(fid, 'MATLAB:    %s\n', version);
+    fprintf(fid, '\n%-4s  %-35s  %7s  %9s  %9s  %s\n', ...
+        '#', 'Step', 'Time(s)', 'Ch before', 'Ch after', 'Note');
+    fprintf(fid, '%s\n', repmat('-', 1, 80));
+
+    for k = 1:numel(stepLog)
+        s = stepLog(k);
+        note = s.error;
+        if s.epochBefore ~= s.epochAfter && isempty(s.error)
+            note = sprintf('epochs %d → %d', s.epochBefore, s.epochAfter);
+        end
+        fprintf(fid, '%-4d  %-35s  %7.2f  %9d  %9d  %s\n', ...
+            k, s.step, s.duration_s, s.chanBefore, s.chanAfter, note);
+    end
+
+    fprintf(fid, '\nTotal steps: %d\n', numel(stepLog));
+    errSteps = sum(~cellfun(@isempty, {stepLog.error}));
+    if errSteps > 0
+        fprintf(fid, 'Steps with errors: %d\n', errSteps);
+    end
+    fclose(fid);
 end
