@@ -555,7 +555,7 @@ classdef nestapp < matlab.apps.AppBase
         function RunAnalysisButtonPushed(app, event)
             app.RunAnalysisButton.Text = {'Run';'Analysis'};
             app.needchanloc = 1;
-            EEG_TMS_Preprocessing_Commands;
+            runPipeline(app);
             if app.UseCurrentlyCleanedDataCheckBox.Value
                 UseCurrentlyCleanedDataCheckBoxValueChanged(app)
             end

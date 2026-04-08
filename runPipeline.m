@@ -1,3 +1,9 @@
+function runPipeline(app)
+% RUNPIPELINE  Execute the selected cleaning pipeline on all chosen files.
+%   runPipeline(app) runs each step in app.SelectedListBox against every
+%   file in app.file. Called from nestapp.RunAnalysisButtonPushed.
+%   app is a handle object; all UI state is read and written through it.
+%
 % Copyright (C) 2023  Aref Pariz, University of Ottawa & The Royal
 % Institute for Mental Health, Ottawa, Ontario, Canada.
 % apariz@uottawa.ca
@@ -15,10 +21,10 @@
 % You should have received a copy of the GNU General Public License along
 % with this program. If not, see <https://www.gnu.org/licenses/>.
 %
-% STEPS TO PEFORM ON EEG DATA
+% STEPS TO PERFORM ON EEG DATA
 %
 % This file contains the commands and functions already available in eeglab
-% package. This program is being called by the app "nestapp".
+% package. This function is called by the app "nestapp".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% INITIALIZATION
@@ -321,7 +327,7 @@ for nfile = 1:app.NSelecFiles
                     % ERP, it is recomended to do not remove it, since it may affect the
                     % results.
                     vars = convertContainedStringsToChars(varin);
-                    ind = find(strcmp(vars,'[]'));
+                    ind = find(strcmp(vars,'[]'), 1);
                     if ~isempty(ind)
                         timerange=vars{1,2}; % Default [] -> all
                         if ~strcmp(timerange,'[]')
@@ -786,4 +792,5 @@ for nfile = 1:app.NSelecFiles
     eeglab redraw
     pause(1)
     disp('-----------------Data processed!-----------------')
+end
 end
