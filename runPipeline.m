@@ -66,6 +66,13 @@ end
 %% MAIN
 
 nFiles = app.NSelecFiles;
+nSteps = numel(app.steps2run) / 2;
+
+dlg = uiprogressdlg(app.UIFigure, ...
+    'Title',           'Running Pipeline', ...
+    'Message',         'Initialising...', ...
+    'Cancelable',      'on', ...
+    'ShowPercentage',  'on');
 
 for nfile = 1:nFiles
     app.ProcessingfileEditField.Value = num2str(nfile);
@@ -86,6 +93,16 @@ for nfile = 1:nFiles
     for Step=app.nstep:dstep:numel(app.steps2run)
         stepName = app.steps2run{Step}{:};
         stepIdx  = (Step - 1) / 2 + 1;
+
+        % Update progress dialog and check for user cancellation.
+        dlg.Value   = ((nfile - 1) * nSteps + stepIdx - 1) / (nFiles * nSteps);
+        dlg.Message = sprintf('File %d / %d  \x2014  %s', nfile, nFiles, stepName);
+        if dlg.CancelRequested
+            writeSessionLog(pathName, fileName, stepLog);
+            close(dlg);
+            return
+        end
+
         app.RunningstepEditField.Value = stepName; pause(0.1);
         varin = app.steps2run{Step+1};
         disp(strcat('step ',num2str(stepIdx), ': "',stepName,'" is running!'));
@@ -815,6 +832,8 @@ for nfile = 1:nFiles
     pause(1)
     disp('-----------------Data processed!-----------------')
 end
+
+close(dlg);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
