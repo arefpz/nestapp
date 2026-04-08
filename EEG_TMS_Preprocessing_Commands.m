@@ -58,7 +58,7 @@ for nfile = 1:app.NSelecFiles
     app.ProcessingfileEditField.Value = num2str(nfile);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
-    [ALLEEG EEG CURRENTSET ALLCOM] = eeglab('nogui');
+    [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
     app.initialVars = who; % Variables available at the begining of the analysis. Will be used to save them.
     pathName=app.path; % Path to data folder
     fileName = app.file{nfile}; % Data name(s) to be analyzed.
@@ -85,27 +85,26 @@ for nfile = 1:app.NSelecFiles
                         needchanloc='yes';
                         chName = [];
                     end
-                    if strcmp(needchanloc,'yes') && isempty(chName)
-                        pathEEGLAB = which('eeglab');
-                        if isunix
-                            pathEEGLAB = replace(pathEEGLAB,'\','/');
-                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
-                            D=dir([pathEEGLAB,'plugins/dipfit*']);
-                            lookforchnlocs=[D.folder,'/',D.name,'/standard_BEM/elec/standard_1005.elc'];
-                        elseif ispc
-                            pathEEGLAB = replace(pathEEGLAB,'/','\');
-                            pathEEGLAB=replace(pathEEGLAB,'eeglab.m','');
-                            D=dir([pathEEGLAB,'plugins\dipfit*']);
-                            lookforchnlocs=[D.folder,'\',D.name,'\standard_BEM\elec\standard_1005.elc'];
+                    if strcmp(needchanloc,'yes')
+                        if isempty(chName)
+                            pathEEGLAB = which('eeglab');
+                            if isunix
+                                pathEEGLAB = replace(pathEEGLAB,'\','/');
+                                pathEEGLAB = replace(pathEEGLAB,'eeglab.m','');
+                                D = dir([pathEEGLAB,'plugins/dipfit*']);
+                                lookforchnlocs = [D.folder,'/',D.name,'/standard_BEM/elec/standard_1005.elc'];
+                            elseif ispc
+                                pathEEGLAB = replace(pathEEGLAB,'/','\');
+                                pathEEGLAB = replace(pathEEGLAB,'eeglab.m','');
+                                D = dir([pathEEGLAB,'plugins\dipfit*']);
+                                lookforchnlocs = [D.folder,'\',D.name,'\standard_BEM\elec\standard_1005.elc'];
+                            end
+                            [chName,chPath] = uigetfile('*.*','Select a file');
                         end
-                        [chName,chPath] = uigetfile('*.*','Select a file');
+                        EEG = pop_chanedit(EEG, 'lookup', lookforchnlocs, ...
+                            'load', {[chPath,chName],'filetype','autodetect'});
+                        [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
                     end
-                    
-                    EEG=pop_chanedit(EEG, 'lookup',...
-                        lookforchnlocs,...
-                        'load',{[chPath,chName],'filetype','autodetect'});
-
-                    [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
 
                 case 'Load Data'
                     %% Loading the Files
@@ -150,8 +149,8 @@ for nfile = 1:app.NSelecFiles
                     if strcmp(IFN,'yes')
                         fname = [app.path,fileName];
                         fname = fname(1:end-numel(fileFormat)-1);
-                        replace(fname,' ','_');
-                        replace(fname,'-','_');
+                        fname = replace(fname,' ','_');
+                        fname = replace(fname,'-','_');
                         fname = strcat(fname,'_');
                     end
                     ind1 = find(strcmp(vars,'savenew'));
@@ -201,7 +200,7 @@ for nfile = 1:app.NSelecFiles
                     else
                         pop_eegplot(EEG, varin{1,2}(1),varin{1,2}(2),varin{1,2}(3));
                     end
-                    input('Please press enter to continue!')
+                    uiconfirm(app.UIFigure,'Press OK when done viewing the EEG plot.','Visualize EEG','Options',{'OK'},'DefaultOption',1);
                 case 'Remove high-std Channels'
                     %% Remove high std channels.
 
@@ -372,7 +371,11 @@ for nfile = 1:app.NSelecFiles
                     ind = find(strcmp(vars,'ref'));
                     ref = vars{ind+1};
                     if ~ismember(ref,{EEG.chanlocs.labels}) & ~strcmp(ref,'[]')
-                        ref=input('The referenced channel has been removed, please enter new ref: ','s');
+                        answer = inputdlg('The reference channel is not in the data. Enter a new reference channel label:','Re-Reference',[1 50],{''});
+                        if isempty(answer) || isempty(answer{1})
+                            error('Re-Reference cancelled: no reference channel provided.');
+                        end
+                        ref = answer{1};
                     end
                     if strcmp(ref,'[]')
                         ref =eval(ref);
@@ -687,11 +690,11 @@ for nfile = 1:app.NSelecFiles
                     % Vector with time range for applying median filter in ms.
                     % Note that t1 must be 0 or negative and t2 positive
                     vars = convertContainedStringsToChars(varin);
-                    ind1 = find(strcmp{vars,'timeWin'});
+                    ind1 = find(strcmp(vars,'timeWin'));
                     timeWin=vars{1,ind1+1};
-                    ind2 = find(strcmp{vars,'mdorder'});
+                    ind2 = find(strcmp(vars,'mdorder'));
                     mdorder=vars{1,ind2+1};
-                    ind3 = find(strcmp{vars,'event_type'});
+                    ind3 = find(strcmp(vars,'event_type'));
                     event_type=vars{1,ind3+1};
                     EEG = tesa_filtmedian( EEG, timeWin, mdorder, event_type );
                     EEG = eeg_checkset( EEG );
@@ -700,7 +703,7 @@ for nfile = 1:app.NSelecFiles
                     %% Remove bad Trials
                     EEG = pop_jointprob(EEG,1,1:size(EEG.data,1) ,5,5,0,0);
                     pop_rejmenu(EEG,1);
-                    pause_script = input('Highlight bad trials, update marks and then press enter');
+                    uiconfirm(app.UIFigure,'Highlight bad trials in the rejection menu, then press OK to continue.','Remove Bad Trials','Options',{'OK'},'DefaultOption',1);
                     EEG.BadTr = unique([find(EEG.reject.rejjp==1) find(EEG.reject.rejmanual==1)]);
                     EEG = pop_rejepoch( EEG, EEG.BadTr ,0);
                     EEG = eeg_checkset( EEG );
@@ -708,12 +711,12 @@ for nfile = 1:app.NSelecFiles
                 case 'Extract TEP (TESA)'
                     %% Extract TEP
                     vars = convertContainedStringsToChars(varin);
-                    ind1 = find(strcmp{vars,'type'});
+                    ind1 = find(strcmp(vars,'type'));
                     type=vars{1,ind1+1};
                     vars([ind1, ind1+1]) = [];
                     ind2 = find(strcmpi(vars,'pairCorrect'));
                     if ~strcmp(vars{ind2+1},'on')
-                        ind3 = faind(strcmpi(vars,'ISI'));
+                        ind3 = find(strcmpi(vars,'ISI'));
                         vars([ind3, ind3 +1]) = [];
                     end
                     inds = find(strcmp(vars,'[]'));
@@ -746,8 +749,10 @@ for nfile = 1:app.NSelecFiles
                         direction, peak, peakWin, ...
                         vars(:) );
                 case 'TEP Peak Output'
-
-                    tepoutput = pop_tesa_peakoutput( EEG, vars(:) );
+                    vars = convertContainedStringsToChars(varin);
+                    inds = find(strcmp(vars,'[]'));
+                    vars([inds,inds-1]) = [];
+                    tepoutput = pop_tesa_peakoutput( EEG, vars{:} );
                     assignin('base','tep_output',tepoutput)
 
             end
@@ -755,8 +760,11 @@ for nfile = 1:app.NSelecFiles
             disp(err.message)
             warning(strcat('An error acoured at file ',fileName,...
                 ' at step ',num2str(round(Step/2)), ': ',app.steps2run{Step}{:}));
-            toContinue = input('Do you want to continue? (y/n) ','s');
-            if strcmpi(toContinue,'n')
+            toContinue = uiconfirm(app.UIFigure, ...
+                sprintf('Error at step %d (%s):\n%s\n\nContinue to next step?', ...
+                    round(Step/2), app.steps2run{Step}{:}, err.message), ...
+                'Step Failed','Options',{'Continue','Abort'},'DefaultOption','Continue','CancelOption','Abort');
+            if strcmp(toContinue,'Abort')
                 EEG.nestappSteps = app.steps2run;
                 postVars = who;
                 assignin('base','postVars',postVars)

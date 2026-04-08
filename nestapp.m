@@ -487,10 +487,10 @@ classdef nestapp < matlab.apps.AppBase
         % Button pushed function: LoadPipelineButton
         function LoadPipelineButtonPushed(app, event)
             [pName,pPath] = uigetfile('*.mat');
-            load([pPath,pName],'-mat')
-            app.SelectedListBox.Items = PLItems;
-            app.SelectedListBox.ItemsData = PLItemsData;
-            app.ChangedVal = VarIns;
+            pipeline = load([pPath,pName],'-mat','PLItems','PLItemsData','VarIns');
+            app.SelectedListBox.Items = pipeline.PLItems;
+            app.SelectedListBox.ItemsData = pipeline.PLItemsData;
+            app.ChangedVal = pipeline.VarIns;
             app.UITable.Data = [];
         end
 
