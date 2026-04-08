@@ -1,3 +1,6 @@
+% WARNING: Do not open nestapp_designer.mlapp and save — App Designer will
+% regenerate this file and overwrite startupFcn and other hand-edited methods.
+% All edits must be made directly to nestapp.m.
 classdef nestapp < matlab.apps.AppBase
 
     % Properties that correspond to app components
@@ -351,38 +354,32 @@ classdef nestapp < matlab.apps.AppBase
         % Code that executes after component creation
         function startupFcn(app)
             clc
-            defaultValues;
-            commandInfo;
-            for i = 1 : size(app.StepsListBox.Items,2)
-                xname = app.StepsListBox.Items{i};
-                xname(xname==' ')='_';
-                xname(xname=='-')='_';
-                xname(xname=='(')=[];
-                xname(xname==')')=[];
-                fields = fieldnames(eval(xname));
-                var = cell(numel(fields),1);
-                val = cell(numel(fields),1);
+            steps = stepRegistry();
+            app.StepsListBox.Items = {steps.name};
+
+            for i = 1:numel(steps)
+                fields = fieldnames(steps(i).defaults);
+                var = cell(numel(fields), 1);
+                val = cell(numel(fields), 1);
                 for j = 1:numel(fields)
-                    var{j,1} = string(fields{j});
-                    V = getfield(eval(xname),fields{j});
+                    var{j} = string(fields{j});
+                    V = steps(i).defaults.(fields{j});
                     if ischar(V)
-                        val{j,1} = string(V);
+                        val{j} = string(V);
                     elseif isempty(V)
-                        val{j,1} ="[]";
+                        val{j} = "[]";
                     elseif iscell(V)
-                        val{j,1} = [string(V)];
+                        val{j} = [string(V)];
                     else
-                        val{j,1} = V;
+                        val{j} = V;
                     end
                 end
-                t = table(var,val);
-                infoname = ['info_',xname];
-                app.info{i} = eval(infoname);
-                app.DefaultsVal{i} = t;
-
+                app.info{i} = steps(i).info;
+                app.DefaultsVal{i} = table(var, val);
             end
-            app.SelectedListBox.Items(:)=[];
-            app.SelectedListBox.ItemsData(:)=[];
+
+            app.SelectedListBox.Items(:) = [];
+            app.SelectedListBox.ItemsData(:) = [];
             app.UITable.Data = [];
             app.ItemNum = 1;
             app.needchanloc = 1;
