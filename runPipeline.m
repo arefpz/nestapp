@@ -207,28 +207,6 @@ for nfile = 1:app.NSelecFiles
                         pop_eegplot(EEG, varin{1,2}(1),varin{1,2}(2),varin{1,2}(3));
                     end
                     uiconfirm(app.UIFigure,'Press OK when done viewing the EEG plot.','Visualize EEG','Options',{'OK'},'DefaultOption',1);
-                case 'Remove high-std Channels'
-                    %% Remove high std channels.
-
-                    % Here based on the standard deviation of signal for each channel, we can
-                    % remove the high std channels. However in future steps, we will use
-                    % different function to remove the channels.
-                    period = EEG.pnts/10+1:2*EEG.pnts/10+1;
-                    SD=zeros(1,EEG.nbchan);
-                    for ii=1:EEG.nbchan
-                        SD(ii) = std(EEG.data(ii,period));
-                    end
-                    bad_SD_threshold=varin{1,2};
-                    bad_channels_SD=find(SD>bad_SD_threshold);
-                    remove_channels = cell(1,numel(bad_channels_SD));
-
-                    for ii=1:numel(bad_channels_SD)
-                        remove_channels{ii}=EEG.chanlocs(1,bad_channels_SD(ii)).labels;
-                    end
-                    disp(['Channels ',remove_channels,' are removed!'])
-                    EEG = pop_select( EEG,'nochannel',remove_channels);
-                    EEG = eeg_checkset( EEG );
-
                 case 'Remove un-needed Channels'
                     %% Remove un-needed channels
 
@@ -707,8 +685,13 @@ for nfile = 1:app.NSelecFiles
 
                 case 'Remove Bad Trials'
                     %% Remove bad Trials
-                    EEG = pop_jointprob(EEG,1,1:size(EEG.data,1) ,5,5,0,0);
-                    pop_rejmenu(EEG,1);
+                    vars = convertContainedStringsToChars(varin);
+                    indLoc = find(strcmpi(vars,'localThresh'));
+                    indGlb = find(strcmpi(vars,'globalThresh'));
+                    localThresh  = str2double(vars{indLoc+1});
+                    globalThresh = str2double(vars{indGlb+1});
+                    EEG = pop_jointprob(EEG, 1, 1:size(EEG.data,1), localThresh, globalThresh, 0, 0);
+                    pop_rejmenu(EEG, 1);
                     uiconfirm(app.UIFigure,'Highlight bad trials in the rejection menu, then press OK to continue.','Remove Bad Trials','Options',{'OK'},'DefaultOption',1);
                     EEG.BadTr = unique([find(EEG.reject.rejjp==1) find(EEG.reject.rejmanual==1)]);
                     EEG = pop_rejepoch( EEG, EEG.BadTr ,0);
