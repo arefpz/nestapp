@@ -607,7 +607,9 @@ classdef nestapp < matlab.apps.AppBase
 
         % Cell selection callback: UITable
         function UITableCellSelection(app, event)
+            if isempty(event.Indices); return; end
             app.selectedItem = event.Indices;
+            if app.selectedItem(1) > height(app.UITable.Data); return; end
             x = app.UITable.Data{app.selectedItem(1),app.selectedItem(2)};
             y = x{:};
             app.convert = isnumeric(y);
