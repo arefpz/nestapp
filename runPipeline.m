@@ -44,7 +44,12 @@ else
         inputvals = cell(1,2*size(x,1));
         for j = 1:size(x,1)
             inputvals{2*j-1} = x{j,1};
-            inputvals{2*j} = x{j,2};
+            v = x{j,2};
+            % Display placeholders start with '(' — convert back to [] for EEGLAB.
+            if (ischar(v) || isstring(v)) && strlength(string(v)) > 0 && startsWith(string(v), '(')
+                v = '[]';
+            end
+            inputvals{2*j} = v;
         end
         app.steps2run{i} = [];
         app.steps2run{i} = inputvals;

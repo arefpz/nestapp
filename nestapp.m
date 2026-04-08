@@ -193,6 +193,22 @@ classdef nestapp < matlab.apps.AppBase
     end
 
     methods (Access = private)
+        function styleParamTable(app)
+        % Grey out UITable rows whose Value is a display placeholder.
+        % Placeholders start with '(' by convention, e.g. '(all channels)'.
+        % Call this after any assignment of UITable.Data to a parameter table.
+            removeStyle(app.UITable);
+            T = app.UITable.Data;
+            if isempty(T) || ~istable(T); return; end
+            grey = uistyle('FontColor', [0.6 0.6 0.6], 'FontAngle', 'italic');
+            for row = 1:height(T)
+                v = string(T.val{row});
+                if strlength(v) > 0 && startsWith(v, '(')
+                    addStyle(app.UITable, grey, 'cell', [row, 2]);
+                end
+            end
+        end
+
         function LoadSelecEEGdata(app)
             for nfile = 1:numel(app.SelectedFilesforTEP)
                 EEGaux = pop_loadset(app.SelectedFilesforTEP(nfile),app.PathofSelectedFilesforTEP);
@@ -361,13 +377,25 @@ classdef nestapp < matlab.apps.AppBase
                 fields = fieldnames(steps(i).defaults);
                 var = cell(numel(fields), 1);
                 val = cell(numel(fields), 1);
+
+                % Build key→placeholder lookup for this step
+                paramKeys   = {steps(i).params.key};
+                paramPH     = {steps(i).params.placeholder};
+
                 for j = 1:numel(fields)
                     var{j} = string(fields{j});
                     V = steps(i).defaults.(fields{j});
                     if ischar(V)
                         val{j} = string(V);
                     elseif isempty(V)
-                        val{j} = "[]";
+                        % Show a human-readable placeholder instead of '[]'.
+                        % Look up param-specific text; fall back to generic.
+                        pIdx = find(strcmp(paramKeys, fields{j}), 1);
+                        if ~isempty(pIdx) && ~isempty(paramPH{pIdx})
+                            val{j} = string(paramPH{pIdx});
+                        else
+                            val{j} = "(not set)";
+                        end
                     elseif iscell(V)
                         val{j} = [string(V)];
                     else
@@ -596,6 +624,7 @@ classdef nestapp < matlab.apps.AppBase
             ind1 = find(ismember(app.StepsListBox.Items,app.SelectedListBox.Items{ind2}));
             app.ChangedVal{ind2} = app.DefaultsVal{ind1};
             app.UITable.Data = app.DefaultsVal{ind1};
+            styleParamTable(app);
         end
 
         % Value changed function: outofEditField
@@ -633,6 +662,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.UITable.Data = app.ChangedVal{indNum2};
             end
 
+            styleParamTable(app);
             app.TextArea.Value='';
 
         end
