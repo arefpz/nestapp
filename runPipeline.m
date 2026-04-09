@@ -454,7 +454,7 @@ for nfile = 1:nFiles
                     ord = vars{ind3+1};
                     ind4=find(strcmp(vars,'type'));
                     type = vars{ind4+1};
-                    vars([ind1,ind1+1,ind2,ind2+2,ind3,ind3+1])=[];
+                    vars([ind1,ind1+1,ind2,ind2+2,ind3,ind3+1])=[]; %#ok<NASGU> intentional cleanup; named values already extracted above
 
                     EEG = pop_tesa_filtbutter( EEG, high, low, ord, type ); % Zero-phase, 4th-order band pass butterworth filter between 1-100 Hz.
                     EEG = eeg_checkset( EEG );
@@ -526,7 +526,7 @@ for nfile = 1:nFiles
                     else
                         Rej = EEG.reject.gcompreject;
                         Rej = reshape(Rej, 1, numel(Rej));
-                        ICA_Rejected_Comp{end+1}=Rej;
+                        ICA_Rejected_Comp{end+1}=Rej; %#ok<AGROW> count of ICA rounds unknown at call time
                     end
                     
                     EEG = pop_subcomp( EEG, var_comp, vars{4}, vars{6});
@@ -547,7 +547,7 @@ for nfile = 1:nFiles
                     if ~exist('interpElecs','var')
                         interpElecs = EEG.chaninfo.removedchans;
                     else
-                        interpElecs = [interpElecs;EEG.chaninfo.removedchans];
+                        interpElecs = [interpElecs;EEG.chaninfo.removedchans]; %#ok<AGROW> accumulates across interpolation rounds
                     end
                     EEG.interpElecs = interpElecs;
                     EEG.setname = [EEG.setname '_interp'];
