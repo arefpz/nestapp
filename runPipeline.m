@@ -121,9 +121,15 @@ for nfile = 1:nFiles
         varin = app.steps2run{Step+1};
         disp(strcat('step ',num2str(stepIdx), ': "',stepName,'" is running!'));
 
-        % Capture EEG state and start timer before the step runs.
-        nChanBefore  = EEG.nbchan;
-        nEpochBefore = size(EEG.data, 3);
+        % Capture EEG state before the step runs.
+        % EEG is [] (double) until Load Data runs — guard against that.
+        if isstruct(EEG) && ~isempty(EEG)
+            nChanBefore  = EEG.nbchan;
+            nEpochBefore = size(EEG.data, 3);
+        else
+            nChanBefore  = 0;
+            nEpochBefore = 0;
+        end
         t0 = tic;
 
         try
@@ -797,13 +803,20 @@ for nfile = 1:nFiles
             end
 
             % Record successful step: timing and channel/epoch counts.
+            if isstruct(EEG) && ~isempty(EEG)
+                nChanAfter  = EEG.nbchan;
+                nEpochAfter = size(EEG.data, 3);
+            else
+                nChanAfter  = nChanBefore;
+                nEpochAfter = nEpochBefore;
+            end
             stepLog(end+1) = struct( ...
                 'step',        stepName, ...
                 'duration_s',  toc(t0), ...
                 'chanBefore',  nChanBefore, ...
-                'chanAfter',   EEG.nbchan, ...
+                'chanAfter',   nChanAfter, ...
                 'epochBefore', nEpochBefore, ...
-                'epochAfter',  size(EEG.data, 3), ...
+                'epochAfter',  nEpochAfter, ...
                 'error',       ''); %#ok<AGROW>
 
         catch err
