@@ -837,7 +837,6 @@ for nfile = 1:nFiles
                     stepIdx, stepName, err.message), ...
                 'Step Failed','Options',{'Continue','Abort'},'DefaultOption','Continue','CancelOption','Abort');
             if strcmp(toContinue,'Abort')
-                EEG.nestappSteps = app.steps2run;
                 postVars = who;
                 assignin('base','postVars',postVars)
                 for i = 1:numel(postVars)
@@ -848,19 +847,18 @@ for nfile = 1:nFiles
                 assignin('base','lastVarin',varin);
                 assignin('base','lastStepInd',Step);
                 writeSessionLog(pathName, fileName, stepLog);
-                eeglab redraw
-                break
+                if isvalid(dlg); close(dlg); end
+                return
             end
         end
     end
 
     writeSessionLog(pathName, fileName, stepLog);
     eeglab redraw
-    pause(1)
     disp('-----------------Data processed!-----------------')
 end
 
-close(dlg);
+if isvalid(dlg); close(dlg); end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
