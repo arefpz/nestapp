@@ -45,9 +45,23 @@ else
         for j = 1:size(x,1)
             inputvals{2*j-1} = x{j,1};
             v = x{j,2};
-            % Display placeholders start with '(' — convert back to [] for EEGLAB.
-            if (ischar(v) || isstring(v)) && strlength(string(v)) > 0 && startsWith(string(v), '(')
-                v = '[]';
+            if ischar(v) || isstring(v)
+                sv = string(v);
+                if isscalar(sv)
+                    % Scalar string: check for placeholder or numeric restoration.
+                    if strlength(sv) > 0 && startsWith(sv, '(')
+                        % Display placeholder — treat as empty for EEGLAB.
+                        v = '[]';
+                    else
+                        % Restore mat2str strings back to numeric
+                        % (e.g. '[1 6]' -> [1 6], '250' -> 250).
+                        num = str2num(char(sv)); %#ok<ST2NM>
+                        if ~isempty(num)
+                            v = num;
+                        end
+                    end
+                end
+                % Non-scalar string arrays (e.g. ["TP9" "TP10"]) pass through unchanged.
             end
             inputvals{2*j} = v;
         end

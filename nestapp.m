@@ -202,9 +202,13 @@ classdef nestapp < matlab.apps.AppBase
             if isempty(T) || ~istable(T); return; end
             grey = uistyle('FontColor', [0.6 0.6 0.6], 'FontAngle', 'italic');
             for row = 1:height(T)
-                v = string(T.val{row});
-                if strlength(v) > 0 && startsWith(v, '(')
-                    addStyle(app.UITable, grey, 'cell', [row, 2]);
+                v = T.val{row};
+                % Only scalar strings can be placeholders; skip numerics and arrays.
+                if isscalar(v) && (isstring(v) || ischar(v))
+                    sv = string(v);
+                    if strlength(sv) > 0 && startsWith(sv, '(')
+                        addStyle(app.UITable, grey, 'cell', [row, 2]);
+                    end
                 end
             end
         end
@@ -399,7 +403,11 @@ classdef nestapp < matlab.apps.AppBase
                     elseif iscell(V)
                         val{j} = [string(V)];
                     else
-                        val{j} = V;
+                        % Numeric scalar or array. Store as a mat2str string so
+                        % UITable can render it — arrays like [1 6] otherwise
+                        % display as '[]'. The preprocessing loop in runPipeline
+                        % converts these strings back to numeric via str2num.
+                        val{j} = string(mat2str(V));
                     end
                 end
                 app.info{i} = steps(i).info;
@@ -580,7 +588,12 @@ classdef nestapp < matlab.apps.AppBase
         function RunAnalysisButtonPushed(app, event)
             app.RunAnalysisButton.Text = {'Run';'Analysis'};
             app.needchanloc = 1;
-            runPipeline(app);
+            try
+                runPipeline(app);
+            catch err
+                uialert(app.UIFigure, err.message, 'Pipeline Error', 'Icon', 'error');
+                return
+            end
             if app.UseCurrentlyCleanedDataCheckBox.Value
                 UseCurrentlyCleanedDataCheckBoxValueChanged(app)
             end
