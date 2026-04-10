@@ -840,6 +840,15 @@ for nfile = 1:nFiles
 
             end
 
+            % Capture post-step channel/epoch counts (must precede report update).
+            if isstruct(EEG) && ~isempty(EEG)
+                nChanAfter  = EEG.nbchan;
+                nEpochAfter = size(EEG.data, 3);
+            else
+                nChanAfter  = nChanBefore;
+                nEpochAfter = nEpochBefore;
+            end
+
             % Update fileReport with post-step metrics.
             if isstruct(EEG) && ~isempty(EEG)
                 % Channel counts
@@ -935,14 +944,7 @@ for nfile = 1:nFiles
             stepRec.timestamp    = datetime('now');
             fileReport.steps{end+1} = stepRec;
 
-            % Record successful step: timing and channel/epoch counts.
-            if isstruct(EEG) && ~isempty(EEG)
-                nChanAfter  = EEG.nbchan;
-                nEpochAfter = size(EEG.data, 3);
-            else
-                nChanAfter  = nChanBefore;
-                nEpochAfter = nEpochBefore;
-            end
+            % Record successful step in session log.
             stepLog(end+1) = struct( ...
                 'step',        stepName, ...
                 'duration_s',  toc(t0), ...
