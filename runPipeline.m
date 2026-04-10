@@ -81,6 +81,7 @@ end
 
 nFiles = app.NSelecFiles;
 nSteps = numel(app.steps2run) / 2;
+allSummaries = {};
 
 dlg = uiprogressdlg(app.UIFigure, ...
     'Title',           'Running Pipeline', ...
@@ -102,6 +103,11 @@ for nfile = 1:nFiles
     % Per-file step log — accumulated across the step loop and written to disk.
     stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
                      'epochBefore',{},'epochAfter',{},'error',{});
+
+    % Per-file pipeline report (channels, trials, ICA, TEP metrics).
+    fileReport = initPipelineReport(fullfile(pathName, fileName));
+    % ICA stats captured before pop_subcomp/pop_tesa_compselect (indices invalid after removal).
+    pendingICAStats = struct();
 
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
@@ -534,7 +540,25 @@ for nfile = 1:nFiles
                         Rej = reshape(Rej, 1, numel(Rej));
                         ICA_Rejected_Comp{end+1}=Rej; %#ok<AGROW> count of ICA rounds unknown at call time
                     end
-                    
+
+                    % Capture rejection mask and per-component variance BEFORE pop_subcomp.
+                    % After removal icaweights loses the rejected rows, making the full
+                    % logical mask invalid for indexing component activations.
+                    rejMask = logical(reshape(EEG.reject.gcompreject, 1, []));
+                    pendingICAStats = struct('rejMask', rejMask);
+                    if ~isempty(EEG.icaweights) && size(EEG.icaweights,1) == numel(rejMask)
+                        act2D = computeICAActivation(EEG);
+                        data2D = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
+                        totalVar = sum(var(data2D, 0, 2));
+                        if totalVar > 0
+                            pendingICAStats.compVarPct = (var(act2D, 0, 2) / totalVar * 100)';
+                        end
+                    end
+                    if isfield(EEG,'etc') && isfield(EEG.etc,'ic_classification') && ...
+                            isfield(EEG.etc.ic_classification,'ICLabel')
+                        pendingICAStats.iclabelProbs = EEG.etc.ic_classification.ICLabel;
+                    end
+
                     EEG = pop_subcomp( EEG, var_comp, vars{4}, vars{6});
                     EEG.ICA_Rejected_Comp=ICA_Rejected_Comp;
                     EEG = eeg_checkset( EEG );
@@ -665,6 +689,20 @@ for nfile = 1:nFiles
                             vars{nInd}=vars{nInd}';
                         end
                     end
+                    % Capture component count and variance BEFORE pop_tesa_compselect.
+                    % TESA's compselect doesn't expose a rejection mask beforehand,
+                    % so we can only attribute count change, not per-component stats.
+                    nCompBeforeTESA = size(EEG.icaweights, 1);
+                    pendingICAStats = struct('nCompBefore', nCompBeforeTESA);
+                    if ~isempty(EEG.icaweights)
+                        act2D_tesa = computeICAActivation(EEG);
+                        data2D_tesa = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
+                        totalVar_tesa = sum(var(data2D_tesa, 0, 2));
+                        if totalVar_tesa > 0
+                            pendingICAStats.compVarPct = (var(act2D_tesa, 0, 2) / totalVar_tesa * 100)';
+                        end
+                    end
+
                     EEG = pop_tesa_compselect( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
 
@@ -802,6 +840,101 @@ for nfile = 1:nFiles
 
             end
 
+            % Update fileReport with post-step metrics.
+            if isstruct(EEG) && ~isempty(EEG)
+                % Channel counts
+                if strcmp(stepName, 'Load Data')
+                    fileReport.channels.original = EEG.nbchan;
+                end
+                fileReport.channels.final = EEG.nbchan;
+                if nChanAfter < nChanBefore
+                    if any(strcmp(stepName, {'Remove Bad Channels','Remove un-needed Channels', ...
+                            'Automatic Cleaning Data','Clean Artifacts', ...
+                            'Automatic Continuous Rejection'}))
+                        fileReport.channels.nRejected = fileReport.channels.nRejected + ...
+                            (nChanBefore - nChanAfter);
+                    end
+                end
+                if any(strcmp(stepName, {'Interpolate Channels','Interpolate Missing Data (TESA)'})) ...
+                        && nChanAfter > nChanBefore
+                    fileReport.channels.nInterpolated = fileReport.channels.nInterpolated + ...
+                        (nChanAfter - nChanBefore);
+                end
+
+                % Trial/epoch counts
+                if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
+                    fileReport.trials.original = size(EEG.data, 3);
+                end
+                if size(EEG.data, 3) > 1
+                    fileReport.trials.final = nEpochAfter;
+                    if nEpochBefore > 1 && nEpochAfter < nEpochBefore
+                        fileReport.trials.rejected = fileReport.trials.rejected + ...
+                            (nEpochBefore - nEpochAfter);
+                    end
+                end
+
+                % ICA — component count after decomposition
+                if any(strcmp(stepName, {'Run ICA','Run TESA ICA'})) && ~isempty(EEG.icaweights)
+                    fileReport.ica.nComponents = size(EEG.icaweights, 1);
+                end
+
+                % ICA — standard removal: use rejMask captured before pop_subcomp
+                if strcmp(stepName, 'Remove Flagged ICA Components') && ...
+                        isfield(pendingICAStats, 'rejMask')
+                    rMask = pendingICAStats.rejMask;
+                    nRej  = sum(rMask);
+                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRej;
+                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                    if isfield(pendingICAStats, 'compVarPct') && ...
+                            numel(pendingICAStats.compVarPct) == numel(rMask)
+                        rejPct = pendingICAStats.compVarPct(rMask);
+                        if isnan(fileReport.ica.varRemoved)
+                            fileReport.ica.varRemoved = sum(rejPct);
+                        else
+                            fileReport.ica.varRemoved = fileReport.ica.varRemoved + sum(rejPct);
+                        end
+                        fileReport.ica.varMin = min([fileReport.ica.varMin, rejPct]);
+                        fileReport.ica.varMax = max([fileReport.ica.varMax, rejPct]);
+                    end
+                    if isfield(pendingICAStats, 'iclabelProbs')
+                        probs = pendingICAStats.iclabelProbs;
+                        [~, bestCat] = max(probs, [], 2);
+                        for ci = 1:7
+                            inCat = (bestCat == ci) & rMask(:);
+                            fileReport.ica.categories.nRemoved(ci) = ...
+                                fileReport.ica.categories.nRemoved(ci) + sum(inCat);
+                            if isfield(pendingICAStats, 'compVarPct')
+                                fileReport.ica.categories.varShare(ci) = ...
+                                    fileReport.ica.categories.varShare(ci) + ...
+                                    sum(pendingICAStats.compVarPct(inCat));
+                            end
+                        end
+                    end
+                    pendingICAStats = struct();
+                end
+
+                % ICA — TESA removal: use component count delta (no per-component breakdown)
+                if strcmp(stepName, 'Remove ICA Components (TESA)') && ...
+                        isfield(pendingICAStats, 'nCompBefore')
+                    nRejTESA = pendingICAStats.nCompBefore - size(EEG.icaweights, 1);
+                    if nRejTESA > 0
+                        fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
+                        fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                    end
+                    pendingICAStats = struct();
+                end
+            end
+
+            % Append step record to fileReport.
+            stepRec.name         = stepName;
+            stepRec.chansBefore  = nChanBefore;
+            stepRec.chansAfter   = nChanAfter;
+            stepRec.trialsBefore = nEpochBefore;
+            stepRec.trialsAfter  = nEpochAfter;
+            stepRec.duration     = toc(t0);
+            stepRec.timestamp    = datetime('now');
+            fileReport.steps{end+1} = stepRec;
+
             % Record successful step: timing and channel/epoch counts.
             if isstruct(EEG) && ~isempty(EEG)
                 nChanAfter  = EEG.nbchan;
@@ -854,11 +987,14 @@ for nfile = 1:nFiles
     end
 
     writeSessionLog(pathName, fileName, stepLog);
+    [summaryText, ~] = exportReport(fileReport, pathName);
+    allSummaries{end+1} = summaryText; %#ok<AGROW>
     eeglab redraw
     disp('-----------------Data processed!-----------------')
 end
 
 if isvalid(dlg); close(dlg); end
+showReportDialog(app, allSummaries);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -896,4 +1032,30 @@ function writeSessionLog(pathName, fileName, stepLog)
         fprintf(fid, 'Steps with errors: %d\n', errSteps);
     end
     fclose(fid);
+end
+
+function act2D = computeICAActivation(EEG)
+% COMPUTEICAACTIVATION  Return 2-D ICA activations (nComp x nSamples).
+%   Computes activations on demand if EEG.icaact is empty.
+if ~isempty(EEG.icaact)
+    act2D = reshape(EEG.icaact, size(EEG.icaact,1), []);
+else
+    data2D = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
+    act2D  = (EEG.icaweights * EEG.icasphere) * data2D;
+end
+end
+
+function showReportDialog(~, summaries)
+% SHOWREPORTDIALOG  Display per-file pipeline report summaries in a modal window.
+if isempty(summaries); return; end
+separator = [newline repmat('=', 1, 60) newline];
+combined  = strjoin(summaries, separator);
+fig = uifigure('Name', 'Pipeline Report', 'Position', [150 100 660 540], ...
+    'WindowStyle', 'modal');
+uitextarea(fig, 'Position', [10 50 640 480], ...
+    'Editable', 'off', 'FontName', 'Courier New', 'FontSize', 10, ...
+    'Value', combined);
+uibutton(fig, 'Text', 'Close', 'Position', [280 10 100 30], ...
+    'ButtonPushedFcn', @(~,~) close(fig));
+uiwait(fig);
 end
