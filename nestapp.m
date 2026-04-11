@@ -651,6 +651,10 @@ classdef nestapp < matlab.apps.AppBase
             app.needchanloc = 1;
             app.originalSize = app.UIFigure.Position(3:4);
             applyTooltips(app);
+            % Auto-hide EEGLAB path panel when EEGLAB is already on the path.
+            if ~isempty(which('eeglab'))
+                app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
+            end
             clc
         end
 
@@ -1223,7 +1227,7 @@ classdef nestapp < matlab.apps.AppBase
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
             app.UIFigure.Position = [100 100 867 529];
-            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.Name = 'nestapp — TMS-EEG Processing';
             app.UIFigure.AutoResizeChildren = 'off';
             app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @UIFigureSizeChanged, true);
 
@@ -1387,7 +1391,8 @@ classdef nestapp < matlab.apps.AppBase
             % Create RunAnalysisButton
             app.RunAnalysisButton = uibutton(app.CleaningTab, 'push');
             app.RunAnalysisButton.ButtonPushedFcn = createCallbackFcn(app, @RunAnalysisButtonPushed, true);
-            app.RunAnalysisButton.BackgroundColor = [0.651 0.651 0.651];
+            app.RunAnalysisButton.BackgroundColor = [0.20 0.55 0.20];
+            app.RunAnalysisButton.FontColor = [1 1 1];
             app.RunAnalysisButton.FontSize = 18;
             app.RunAnalysisButton.FontWeight = 'bold';
             app.RunAnalysisButton.Position = [657 15 201 60];
@@ -1509,7 +1514,7 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectDatatoVisulaizeTEPsPanel = uipanel(app.VisualizingTab);
             app.SelectDatatoVisulaizeTEPsPanel.AutoResizeChildren = 'off';
             app.SelectDatatoVisulaizeTEPsPanel.BorderType = 'none';
-            app.SelectDatatoVisulaizeTEPsPanel.Title = 'Select Data to Visulaize TEPs';
+            app.SelectDatatoVisulaizeTEPsPanel.Title = 'Select Data to Visualize TEPs';
             app.SelectDatatoVisulaizeTEPsPanel.Position = [651 342 208 90];
 
             % Create FolderEditField_2Label
