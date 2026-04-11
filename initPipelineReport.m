@@ -49,6 +49,7 @@ report.ica.nKept       = 0;
 report.ica.varRemoved  = NaN;
 report.ica.varMin      = NaN;
 report.ica.varMax      = NaN;
+report.ica.rounds      = {}; % per-round structs for multi-round TESA
 
 ICA_CATEGORIES = {'Brain','Muscle','Eye','Heart','Line Noise','Ch Noise','Other'};
 report.ica.categories.names    = ICA_CATEGORIES;

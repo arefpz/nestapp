@@ -909,47 +909,71 @@ for nfile = 1:nFiles
                 end
 
                 % ICA — TESA removal: read full classification from EEG.icaCompClass.
-                % pop_tesa_compselect writes compClass and compVars for every component
-                % (including user-corrected categories) and they persist after removal.
+                % pop_tesa_compselect stores compClass (user-confirmed) and compVars
+                % (% of this round's ICA activation variance) in EEG.icaCompClass.TESAn.
+                % compVars percentages are not additive across rounds (different ICA bases),
+                % so variance is stored per-round; totals accumulate counts only.
                 if strcmp(stepName, 'Remove ICA Components (TESA)') && ...
                         isfield(EEG, 'icaCompClass') && isstruct(EEG.icaCompClass) && ...
                         ~isempty(fieldnames(EEG.icaCompClass))
                     tesaKeys = fieldnames(EEG.icaCompClass);
                     cl = EEG.icaCompClass.(tesaKeys{end});
 
-                    % compClass: 1=keep, 2=reject, 3=TMS muscle, 4=blink,
-                    %            5=eye move, 6=muscle, 7=elec noise, 8=sensory
-                    rejIdx = cl.compClass > 1;
-                    nRejTESA = sum(rejIdx);
-                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
-                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                    % compClass codes: 1=keep, 2=reject, 3=TMS muscle, 4=blink,
+                    %                  5=eye move, 6=muscle, 7=elec noise, 8=sensory
+                    TESA_CATS  = {'TMS Muscle','Blink','Eye Move','Muscle','Elec Noise','Sensory','Reject'};
+                    TESA_CODES = [3, 4, 5, 6, 7, 8, 2];
 
-                    % Variance (compVars = per-component % of total EEG variance)
-                    if isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass)
-                        rejPct = cl.compVars(rejIdx);
-                        if isnan(fileReport.ica.varRemoved)
-                            fileReport.ica.varRemoved = sum(rejPct);
-                        else
-                            fileReport.ica.varRemoved = fileReport.ica.varRemoved + sum(rejPct);
-                        end
-                        if nRejTESA > 0
-                            fileReport.ica.varMin = min([fileReport.ica.varMin, rejPct]);
-                            fileReport.ica.varMax = max([fileReport.ica.varMax, rejPct]);
+                    rejIdx   = cl.compClass > 1;
+                    nRejTESA = sum(rejIdx);
+
+                    % Build per-round record
+                    rnd.roundNum    = numel(tesaKeys);
+                    rnd.nComponents = numel(cl.compClass);
+                    rnd.nRejected   = nRejTESA;
+                    rnd.varRemoved  = NaN;
+                    rnd.varMin      = NaN;
+                    rnd.varMax      = NaN;
+                    rnd.categories.names    = TESA_CATS;
+                    rnd.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                    rnd.categories.varShare = zeros(1, numel(TESA_CATS));
+
+                    hasVars = isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass);
+                    if hasVars && nRejTESA > 0
+                        rejPct         = cl.compVars(rejIdx);
+                        rnd.varRemoved = sum(rejPct);
+                        rnd.varMin     = min(rejPct);
+                        rnd.varMax     = max(rejPct);
+                    end
+
+                    for ci = 1:numel(TESA_CODES)
+                        inCat = (cl.compClass == TESA_CODES(ci));
+                        rnd.categories.nRemoved(ci) = sum(inCat);
+                        if hasVars
+                            rnd.categories.varShare(ci) = sum(cl.compVars(inCat));
                         end
                     end
 
-                    % Per-category breakdown (TESA-specific categories)
-                    TESA_CATS  = {'TMS Muscle','Blink','Eye Move','Muscle','Elec Noise','Sensory','Reject'};
-                    TESA_CODES = [3, 4, 5, 6, 7, 8, 2];
-                    fileReport.ica.categories.names    = TESA_CATS;
-                    fileReport.ica.categories.nRemoved = zeros(1, numel(TESA_CATS));
-                    fileReport.ica.categories.varShare = zeros(1, numel(TESA_CATS));
-                    for ci = 1:numel(TESA_CODES)
-                        inCat = (cl.compClass == TESA_CODES(ci));
-                        fileReport.ica.categories.nRemoved(ci) = sum(inCat);
-                        if isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass)
-                            fileReport.ica.categories.varShare(ci) = sum(cl.compVars(inCat));
-                        end
+                    fileReport.ica.rounds{end+1} = rnd;
+
+                    % Accumulate totals (counts only — variance not additive across rounds)
+                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
+                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+
+                    % Summary-level categories: TESA names, counts summed across rounds
+                    if ~strcmp(fileReport.ica.categories.names{1}, 'TMS Muscle')
+                        fileReport.ica.categories.names    = TESA_CATS;
+                        fileReport.ica.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                        fileReport.ica.categories.varShare = zeros(1, numel(TESA_CATS));
+                    end
+                    fileReport.ica.categories.nRemoved = ...
+                        fileReport.ica.categories.nRemoved + rnd.categories.nRemoved;
+                    % varShare at summary level: only meaningful if single round
+                    if isscalar(fileReport.ica.rounds)
+                        fileReport.ica.varRemoved = rnd.varRemoved;
+                        fileReport.ica.varMin     = rnd.varMin;
+                        fileReport.ica.varMax     = rnd.varMax;
+                        fileReport.ica.categories.varShare = rnd.categories.varShare;
                     end
                 end
             end

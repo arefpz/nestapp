@@ -67,30 +67,62 @@ if report.ica.nComponents > 0
     if nRej > 0
         hasVar   = ~isnan(report.ica.varRemoved);
         hasRange = ~isnan(report.ica.varMin);
-        if hasVar && hasRange
+        multiRound = isfield(report.ica, 'rounds') && numel(report.ica.rounds) > 1;
+
+        if multiRound
+            lines{end+1} = sprintf('  Removed:    %d total (%d rounds)', ...
+                nRej, numel(report.ica.rounds));
+        elseif hasVar && hasRange
             lines{end+1} = sprintf( ...
-                '  Removed:    %d  (%.1f%% total variance, %.1f-%.1f%% per component)', ...
+                '  Removed:    %d  (%.1f%% ICA variance, %.1f-%.1f%% per component)', ...
                 nRej, report.ica.varRemoved, report.ica.varMin, report.ica.varMax);
         elseif hasVar
-            lines{end+1} = sprintf('  Removed:    %d  (%.1f%% of signal variance)', ...
+            lines{end+1} = sprintf('  Removed:    %d  (%.1f%% ICA variance)', ...
                 nRej, report.ica.varRemoved);
         else
             lines{end+1} = sprintf('  Removed:    %d', nRej);
         end
         lines{end+1} = sprintf('  Kept:       %d', nKept);
 
-        % Per-category breakdown (only show categories with >= 1 removed)
+        % Per-category summary (totals across all rounds)
         if isfield(report.ica, 'categories') && any(report.ica.categories.nRemoved > 0)
-            lines{end+1} = '  By category (removed):';
+            lines{end+1} = '  By category (all rounds):';
             cats = report.ica.categories;
             for ci = 1:numel(cats.names)
                 if cats.nRemoved(ci) > 0
-                    if hasVar
-                        lines{end+1} = sprintf('    %-12s %d  (%.1f%% var)', ...
+                    if hasVar && ~multiRound
+                        lines{end+1} = sprintf('    %-12s %d  (%.1f%% ICA var)', ...
                             [cats.names{ci} ':'], cats.nRemoved(ci), cats.varShare(ci));
                     else
                         lines{end+1} = sprintf('    %-12s %d', ...
                             [cats.names{ci} ':'], cats.nRemoved(ci));
+                    end
+                end
+            end
+        end
+
+        % Per-round detail for multi-round TESA
+        if multiRound
+            for ri = 1:numel(report.ica.rounds)
+                rnd = report.ica.rounds{ri};
+                rndHasVar = ~isnan(rnd.varRemoved);
+                if rndHasVar
+                    lines{end+1} = sprintf('  Round %d: %d components, %d removed (%.1f%% ICA var, %.1f-%.1f%% per comp)', ...
+                        ri, rnd.nComponents, rnd.nRejected, rnd.varRemoved, rnd.varMin, rnd.varMax);
+                else
+                    lines{end+1} = sprintf('  Round %d: %d components, %d removed', ...
+                        ri, rnd.nComponents, rnd.nRejected);
+                end
+                cats = rnd.categories;
+                for ci = 1:numel(cats.names)
+                    if cats.nRemoved(ci) > 0
+                        if rndHasVar
+                            lines{end+1} = sprintf('    %-12s %d  (%.1f%% ICA var)', ...
+                                [cats.names{ci} ':'], cats.nRemoved(ci), cats.varShare(ci));
+                        else
+                            lines{end+1} = sprintf('    %-12s %d', ...
+                                [cats.names{ci} ':'], cats.nRemoved(ci));
+                        end
                     end
                 end
             end
