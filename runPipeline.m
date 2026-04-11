@@ -82,6 +82,7 @@ end
 nFiles = app.NSelecFiles;
 nSteps = numel(app.steps2run) / 2;
 allSummaries = {};
+allReports   = {};
 
 dlg = uiprogressdlg(app.UIFigure, ...
     'Title',           'Running Pipeline', ...
@@ -1035,12 +1036,13 @@ for nfile = 1:nFiles
     writeSessionLog(pathName, fileName, stepLog);
     [summaryText, ~] = exportReport(fileReport, pathName);
     allSummaries{end+1} = summaryText; %#ok<AGROW>
+    allReports{end+1}   = fileReport;  %#ok<AGROW>
     eeglab redraw
     disp('-----------------Data processed!-----------------')
 end
 
 if isvalid(dlg); close(dlg); end
-showReportDialog(app, allSummaries);
+showReportDialog(app, allSummaries, allReports);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1091,11 +1093,18 @@ else
 end
 end
 
-function showReportDialog(~, summaries)
-% SHOWREPORTDIALOG  Display per-file pipeline report summaries in a modal window.
+function showReportDialog(~, summaries, reports)
+% SHOWREPORTDIALOG  Display pipeline report summaries in a modal window.
+% For multiple files, a cross-file summary is prepended before the
+% individual per-file reports.
 if isempty(summaries); return; end
 separator = [newline repmat('=', 1, 60) newline];
-combined  = strjoin(summaries, separator);
+if numel(summaries) > 1
+    crossSummary = summarizeReports(reports);
+    combined = [crossSummary, separator, strjoin(summaries, separator)];
+else
+    combined = summaries{1};
+end
 fig = uifigure('Name', 'Pipeline Report', 'Position', [150 100 660 540], ...
     'WindowStyle', 'modal');
 uitextarea(fig, 'Position', [10 50 640 480], ...
