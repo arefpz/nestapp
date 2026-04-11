@@ -371,6 +371,36 @@ classdef nestapp < matlab.apps.AppBase
     % Callbacks that handle component events
     methods (Access = private)
 
+        % Apply tooltips to controls that are not self-explanatory.
+        % Called once from startupFcn. Add new tooltips here as needed.
+        function applyTooltips(app)
+            % Pipeline builder
+            app.AddButton.Tooltip           = 'Add the selected step to the pipeline';
+            app.RemoveButton.Tooltip        = 'Remove the selected step from the pipeline';
+            app.MoveUpButton.Tooltip        = 'Move the selected step earlier in the pipeline';
+            app.MoveDownButton.Tooltip      = 'Move the selected step later in the pipeline';
+            app.SavePipelineButton.Tooltip  = 'Save current pipeline steps and parameters to a .mat file';
+            app.LoadPipelineButton.Tooltip  = 'Load a previously saved pipeline .mat file';
+            app.DefaultValueButton.Tooltip  = 'Reset the selected parameter to its default value';
+            app.ReStartStepsButton.Tooltip  = ['Resume processing from the current step index. ' ...
+                'Increment the step counter manually to skip steps, or reset to 1 to reprocess from the start.'];
+            app.RunAnalysisButton.Tooltip   = 'Run the pipeline on the selected data file(s)';
+            app.SelectDataButton.Tooltip    = 'Select a folder or individual files to process';
+
+            % Visualizing tab
+            app.PLOTTEPButton.Tooltip       = 'Plot TMS-evoked potential waveforms for the selected files and electrodes';
+            app.TOPOPLOTButton.Tooltip      = 'Plot a scalp topographic map at the specified time point';
+            app.ExportTEPFigureButton.Tooltip = 'Save the current TEP figure as .fig and .png';
+            app.ReLoadAvailableElectrodesButton.Tooltip = ...
+                'Reload the electrode list from the currently selected files';
+            app.SelectAllCheckBox.Tooltip   = 'Select all available files for TEP plotting';
+            app.UseCurrentlyCleanedDataCheckBox.Tooltip = ...
+                'Use the most recently processed output instead of selecting files manually';
+            app.DontfindcommonelectrodesCheckBox.Tooltip = ...
+                ['When checked: show all selected electrodes regardless of whether they ' ...
+                'appear in every file. When unchecked: restrict to electrodes present across all selected files.'];
+        end
+
         % Code that executes after component creation
         function startupFcn(app)
             clc
@@ -419,6 +449,7 @@ classdef nestapp < matlab.apps.AppBase
             app.UITable.Data = [];
             app.ItemNum = 1;
             app.needchanloc = 1;
+            applyTooltips(app);
             clc
         end
 
