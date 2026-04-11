@@ -196,6 +196,29 @@ classdef nestapp < matlab.apps.AppBase
     end
 
     methods (Access = private)
+        function loadPrefs(app)
+        % LOADPREFS  Read persistent preferences and apply to app state.
+        %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.
+            eeglabPath = getpref('nestapp', 'eeglabPath', '');
+            if ~isempty(eeglabPath) && isfolder(eeglabPath)
+                addpath(eeglabPath);
+                app.PathEditField.Value = eeglabPath;
+                app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
+            end
+            lastDataFolder = getpref('nestapp', 'lastDataFolder', '');
+            if ~isempty(lastDataFolder) && isfolder(lastDataFolder)
+                app.FolderEditField.Value = lastDataFolder;
+            end
+        end
+
+        function pushRecent(app, prefKey, newEntry) %#ok<INUSL>
+        % PUSHRECENT  Prepend newEntry to a 5-item MRU list stored in prefs.
+            list = getpref('nestapp', prefKey, {});
+            list = [{newEntry}, list(~strcmp(list, newEntry))];
+            list = list(1:min(end, 5));
+            setpref('nestapp', prefKey, list);
+        end
+
         function rescaleComponents(app, sX, sY)
         % RESCALECOMPONENTS  Rescale all UI components proportionally.
         %   sX = newWidth/867, sY = newHeight/529 (base dimensions).
@@ -651,7 +674,8 @@ classdef nestapp < matlab.apps.AppBase
             app.needchanloc = 1;
             app.originalSize = app.UIFigure.Position(3:4);
             applyTooltips(app);
-            % Auto-hide EEGLAB path panel when EEGLAB is already on the path.
+            loadPrefs(app);
+            % If EEGLAB is on path but not via saved pref, still hide the panel.
             if ~isempty(which('eeglab'))
                 app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
             end
@@ -727,7 +751,12 @@ classdef nestapp < matlab.apps.AppBase
             PLItemsData = app.SelectedListBox.ItemsData;
             VarIns = app.ChangedVal;
             ParamKeys = app.stepParamKeys;
-            uisave({'PLItems','PLItemsData','VarIns','ParamKeys'},'*.mat')
+            startFolder = getpref('nestapp', 'lastPipelineFolder', '');
+            uisave({'PLItems','PLItemsData','VarIns','ParamKeys'}, ...
+                fullfile(startFolder, '*.mat'));
+            % Note: uisave does not return the chosen path, so we cannot update
+            % lastPipelineFolder or recentPipelines here. That will be addressed
+            % when Save Pipeline is moved to a proper file dialog in M4b Commit 5.
         end
 
         % Button pushed function: RemoveButton
@@ -768,7 +797,8 @@ classdef nestapp < matlab.apps.AppBase
 
         % Button pushed function: LoadPipelineButton
         function LoadPipelineButtonPushed(app, event)
-            [pName,pPath] = uigetfile('*.mat');
+            startFolder = getpref('nestapp', 'lastPipelineFolder', '');
+            [pName,pPath] = uigetfile('*.mat', 'Load Pipeline', startFolder);
             pipeline = load([pPath,pName],'-mat');
             app.SelectedListBox.Items    = pipeline.PLItems;
             app.SelectedListBox.ItemsData= pipeline.PLItemsData;
@@ -818,24 +848,29 @@ classdef nestapp < matlab.apps.AppBase
                     app.ChangedVal{k}    = T;
                 end
             end
+            if ~isequal(pPath, 0)
+                setpref('nestapp', 'lastPipelineFolder', pPath);
+                pushRecent(app, 'recentPipelines', fullfile(pPath, pName));
+            end
         end
 
         % Button pushed function: SelectEEGLABFolderButton
         function SelectEEGLABFolderButtonPushed(app, event)
             try
                 eeglabpath = uigetdir('*.*','Select EEGLAB Folder');
-                app.PathEditField.Value=eeglabpath;
-                addpath(eeglabpath)
+                app.PathEditField.Value = eeglabpath;
+                addpath(eeglabpath);
+                setpref('nestapp', 'eeglabPath', eeglabpath);
             catch
                 warning('Please select at least one file!')
-                app.PathEditField.Value= '';
-
+                app.PathEditField.Value = '';
             end
         end
 
         % Button pushed function: SelectDataButton
         function SelectDataButtonPushed(app, event)
             try
+                startFolder = getpref('nestapp', 'lastDataFolder', '');
                 [app.file,app.path] = uigetfile( ...
                     {'*.set;*.vhdr;*.cdt;*.cnt',...
                     'Data Files (*.set,*.vhdr,*.cdt,*.cnt)'; ...
@@ -844,7 +879,7 @@ classdef nestapp < matlab.apps.AppBase
                     '*.cdt','CDT Files (*.cdt)'; ...
                     '*.cnt','CNT Files (*.cnt)'; ...
                     '*.*',  'All Files (*.*)'}, ...
-                    'Select File(s)','multiSelect','on');
+                    'Select File(s)', startFolder, 'multiSelect','on');
                 if iscell(app.file)
                     app.NSelecFiles = numel(app.file);
                 else
@@ -858,6 +893,8 @@ classdef nestapp < matlab.apps.AppBase
                 app.FileEditField.Value = app.file{1};
                 app.FolderEditField.Value = app.path;
                 app.outofEditField.Value = num2str(max(size(app.file)));
+                setpref('nestapp', 'lastDataFolder', app.path);
+                pushRecent(app, 'recentFiles', app.path);
 
             catch
                 warning('Please select at least one file!')
