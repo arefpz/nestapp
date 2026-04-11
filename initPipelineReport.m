@@ -30,7 +30,7 @@ function report = initPipelineReport(inputFile)
 %   See also: exportReport, runPipeline
 
 report.inputFile   = inputFile;
-report.processedAt = now;   % datenum — compatible with exportReport's datestr() calls
+report.processedAt = now;   % datenum — exportReport uses datestr() which requires datenum
 
 report.steps = {};
 
