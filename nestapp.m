@@ -219,6 +219,110 @@ classdef nestapp < matlab.apps.AppBase
             setpref('nestapp', prefKey, list);
         end
 
+        function openPreferences(app)
+        % OPENPREFERENCES  Show a modal Preferences dialog.
+        %   Lets users set the EEGLAB path, default data/pipeline folders,
+        %   and behavioural options. Changes are written to getpref/setpref
+        %   under the 'nestapp' group and applied immediately on Save.
+            dlg = uifigure('Name', 'nestapp Preferences', ...
+                'Position', [200 200 420 310], ...
+                'WindowStyle', 'modal', 'Resize', 'off');
+
+            % --- EEGLAB section ---
+            uilabel(dlg, 'Text', 'EEGLAB', 'FontWeight', 'bold', ...
+                'Position', [15 270 200 20]);
+            uilabel(dlg, 'Text', 'Path:', ...
+                'Position', [15 245 35 22], 'HorizontalAlignment', 'right');
+            fEeglab = uieditfield(dlg, 'text', ...
+                'Position', [55 245 275 22], 'Editable', 'on', ...
+                'Value', getpref('nestapp','eeglabPath',''));
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 245 70 22], ...
+                'ButtonPushedFcn', @(~,~) browseEeglab());
+
+            % --- Default Locations section ---
+            uilabel(dlg, 'Text', 'Default Locations', 'FontWeight', 'bold', ...
+                'Position', [15 215 200 20]);
+            uilabel(dlg, 'Text', 'Data folder:', ...
+                'Position', [15 190 65 22], 'HorizontalAlignment', 'right');
+            fData = uieditfield(dlg, 'text', ...
+                'Position', [85 190 245 22], 'Editable', 'on', ...
+                'Value', getpref('nestapp','lastDataFolder',''));
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 190 70 22], ...
+                'ButtonPushedFcn', @(~,~) browseFolder(fData));
+            uilabel(dlg, 'Text', 'Pipeline folder:', ...
+                'Position', [15 162 80 22], 'HorizontalAlignment', 'right');
+            fPipeline = uieditfield(dlg, 'text', ...
+                'Position', [100 162 230 22], 'Editable', 'on', ...
+                'Value', getpref('nestapp','lastPipelineFolder',''));
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 162 70 22], ...
+                'ButtonPushedFcn', @(~,~) browseFolder(fPipeline));
+
+            % --- Behaviour section ---
+            uilabel(dlg, 'Text', 'Behaviour', 'FontWeight', 'bold', ...
+                'Position', [15 130 200 20]);
+            cbReport = uicheckbox(dlg, 'Text', 'Show processing report after each run', ...
+                'Position', [15 106 300 22], ...
+                'Value', getpref('nestapp','showReport',true));
+            cbConfirm = uicheckbox(dlg, 'Text', 'Confirm before clearing pipeline', ...
+                'Position', [15 82 300 22], ...
+                'Value', getpref('nestapp','confirmClear',true));
+
+            % --- Buttons ---
+            uibutton(dlg, 'Text', 'Cancel', 'Position', [220 15 85 28], ...
+                'ButtonPushedFcn', @(~,~) close(dlg));
+            uibutton(dlg, 'Text', 'Save', 'Position', [315 15 85 28], ...
+                'BackgroundColor', [0.20 0.55 0.20], 'FontColor', [1 1 1], ...
+                'ButtonPushedFcn', @(~,~) savePrefs());
+
+            uiwait(dlg);
+
+            %% Nested helpers
+            function browseEeglab()
+                p = uigetdir('', 'Select EEGLAB Folder');
+                if ~isequal(p, 0); fEeglab.Value = p; end
+            end
+            function browseFolder(field)
+                p = uigetdir('', 'Select Folder');
+                if ~isequal(p, 0); field.Value = p; end
+            end
+            function savePrefs()
+                % EEGLAB path
+                ep = strtrim(fEeglab.Value);
+                if ~isempty(ep)
+                    if ~isfolder(ep)
+                        uialert(dlg, 'EEGLAB path does not exist.', 'Invalid Path');
+                        return
+                    end
+                    addpath(ep);
+                    app.PathEditField.Value = ep;
+                    app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
+                end
+                setpref('nestapp', 'eeglabPath',          ep);
+                setpref('nestapp', 'lastDataFolder',      strtrim(fData.Value));
+                setpref('nestapp', 'lastPipelineFolder',  strtrim(fPipeline.Value));
+                setpref('nestapp', 'showReport',          cbReport.Value);
+                setpref('nestapp', 'confirmClear',        cbConfirm.Value);
+                close(dlg);
+            end
+        end
+
+        function showAbout(app)
+        % SHOWABOUT  Display version and citation information.
+            eeglabVer = '';
+            if ~isempty(which('eeg_getversion'))
+                try, eeglabVer = eeg_getversion(); catch, end
+            end
+            msg = sprintf([ ...
+                'nestapp — TMS-EEG Processing\n\n' ...
+                'EEGLAB:  %s\n' ...
+                'MATLAB:  %s\n\n' ...
+                'Please cite:\n' ...
+                'Rogasch et al. (2017) NeuroImage — TESA toolbox\n' ...
+                'Delorme & Makeig (2004) J Neurosci Methods — EEGLAB'], ...
+                eeglabVer, version);
+            uialert(app.UIFigure, msg, 'About nestapp', 'Icon', 'info');
+        end
+
         function rescaleComponents(app, sX, sY)
         % RESCALECOMPONENTS  Rescale all UI components proportionally.
         %   sX = newWidth/867, sY = newHeight/529 (base dimensions).
