@@ -689,20 +689,6 @@ for nfile = 1:nFiles
                             vars{nInd}=vars{nInd}';
                         end
                     end
-                    % Capture component count and variance BEFORE pop_tesa_compselect.
-                    % TESA's compselect doesn't expose a rejection mask beforehand,
-                    % so we can only attribute count change, not per-component stats.
-                    nCompBeforeTESA = size(EEG.icaweights, 1);
-                    pendingICAStats = struct('nCompBefore', nCompBeforeTESA);
-                    if ~isempty(EEG.icaweights)
-                        act2D_tesa = computeICAActivation(EEG);
-                        data2D_tesa = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
-                        totalVar_tesa = sum(var(data2D_tesa, 0, 2));
-                        if totalVar_tesa > 0
-                            pendingICAStats.compVarPct = (var(act2D_tesa, 0, 2) / totalVar_tesa * 100)';
-                        end
-                    end
-
                     EEG = pop_tesa_compselect( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
 
@@ -922,15 +908,49 @@ for nfile = 1:nFiles
                     pendingICAStats = struct();
                 end
 
-                % ICA — TESA removal: use component count delta (no per-component breakdown)
+                % ICA — TESA removal: read full classification from EEG.icaCompClass.
+                % pop_tesa_compselect writes compClass and compVars for every component
+                % (including user-corrected categories) and they persist after removal.
                 if strcmp(stepName, 'Remove ICA Components (TESA)') && ...
-                        isfield(pendingICAStats, 'nCompBefore')
-                    nRejTESA = pendingICAStats.nCompBefore - size(EEG.icaweights, 1);
-                    if nRejTESA > 0
-                        fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
-                        fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                        isfield(EEG, 'icaCompClass') && isstruct(EEG.icaCompClass) && ...
+                        ~isempty(fieldnames(EEG.icaCompClass))
+                    tesaKeys = fieldnames(EEG.icaCompClass);
+                    cl = EEG.icaCompClass.(tesaKeys{end});
+
+                    % compClass: 1=keep, 2=reject, 3=TMS muscle, 4=blink,
+                    %            5=eye move, 6=muscle, 7=elec noise, 8=sensory
+                    rejIdx = cl.compClass > 1;
+                    nRejTESA = sum(rejIdx);
+                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
+                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+
+                    % Variance (compVars = per-component % of total EEG variance)
+                    if isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass)
+                        rejPct = cl.compVars(rejIdx);
+                        if isnan(fileReport.ica.varRemoved)
+                            fileReport.ica.varRemoved = sum(rejPct);
+                        else
+                            fileReport.ica.varRemoved = fileReport.ica.varRemoved + sum(rejPct);
+                        end
+                        if nRejTESA > 0
+                            fileReport.ica.varMin = min([fileReport.ica.varMin, rejPct]);
+                            fileReport.ica.varMax = max([fileReport.ica.varMax, rejPct]);
+                        end
                     end
-                    pendingICAStats = struct();
+
+                    % Per-category breakdown (TESA-specific categories)
+                    TESA_CATS  = {'TMS Muscle','Blink','Eye Move','Muscle','Elec Noise','Sensory','Reject'};
+                    TESA_CODES = [3, 4, 5, 6, 7, 8, 2];
+                    fileReport.ica.categories.names    = TESA_CATS;
+                    fileReport.ica.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                    fileReport.ica.categories.varShare = zeros(1, numel(TESA_CATS));
+                    for ci = 1:numel(TESA_CODES)
+                        inCat = (cl.compClass == TESA_CODES(ci));
+                        fileReport.ica.categories.nRemoved(ci) = sum(inCat);
+                        if isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass)
+                            fileReport.ica.categories.varShare(ci) = sum(cl.compVars(inCat));
+                        end
+                    end
                 end
             end
 
