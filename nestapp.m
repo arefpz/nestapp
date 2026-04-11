@@ -660,8 +660,9 @@ classdef nestapp < matlab.apps.AppBase
 
         % Clicked callback: StepsListBox
         function StepsListBoxClicked(app, event)
-            item = event.InteractionInformation.Item;
-
+            if event.InteractionInformation.NumClicks == 2
+                AddButtonPushed(app, event);
+            end
         end
 
         % Value changed function: StepsListBox
@@ -866,7 +867,16 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: ReStartStepsButton
-        function ReStartStepsButtonPushed(app, event)
+        function ReStartStepsButtonPushed(app, ~)
+            confirmClear = getpref('nestapp', 'confirmClear', true);
+            if confirmClear
+                answer = uiconfirm(app.UIFigure, ...
+                    'Clear all pipeline steps? This cannot be undone.', ...
+                    'Clear Pipeline', ...
+                    'Options', {'Clear', 'Cancel'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2);
+                if strcmp(answer, 'Cancel'); return; end
+            end
             clc
             app.SelectedListBox.Items(:)  = [];
             app.SelectedListBox.ItemsData(:) = [];
