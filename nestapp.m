@@ -193,9 +193,110 @@ classdef nestapp < matlab.apps.AppBase
         DefaulTEPxLim = [-100 300]; % Defaul xLim for time in TEP
         EEGtime
         TEP2Export
+        MenuRecentFiles     % Handle to 'Recent Files' submenu — rebuilt on open
+        MenuRecentPipelines % Handle to 'Recent Pipelines' submenu — rebuilt on open
     end
 
     methods (Access = private)
+        % MenuOpening function: MenuRecentFiles
+        function buildRecentFilesMenu(app, ~)
+            delete(app.MenuRecentFiles.Children);
+            list = getpref('nestapp', 'recentFiles', {});
+            if isempty(list)
+                uimenu(app.MenuRecentFiles, 'Text', '(none)', 'Enable', 'off');
+                return
+            end
+            for i = 1:numel(list)
+                folder = list{i};
+                uimenu(app.MenuRecentFiles, 'Text', folder, ...
+                    'MenuSelectedFcn', @(~,~) openRecentData(app, folder));
+            end
+        end
+
+        % MenuOpening function: MenuRecentPipelines
+        function buildRecentPipelinesMenu(app, ~)
+            delete(app.MenuRecentPipelines.Children);
+            list = getpref('nestapp', 'recentPipelines', {});
+            if isempty(list)
+                uimenu(app.MenuRecentPipelines, 'Text', '(none)', 'Enable', 'off');
+                return
+            end
+            for i = 1:numel(list)
+                pPath = list{i};
+                [~,nm,ex] = fileparts(pPath);
+                uimenu(app.MenuRecentPipelines, 'Text', [nm ex], ...
+                    'MenuSelectedFcn', @(~,~) openRecentPipeline(app, pPath));
+            end
+        end
+
+        function openRecentData(app, folder)
+        % Load data files from a recently used folder.
+            if ~isfolder(folder)
+                uialert(app.UIFigure, 'Folder no longer exists.', 'Not Found');
+                return
+            end
+            try
+                [app.file, app.path] = uigetfile( ...
+                    {'*.set;*.vhdr;*.cdt;*.cnt','Data Files'}, ...
+                    'Select File(s)', folder, 'multiSelect', 'on');
+                if isequal(app.file, 0); return; end
+                if ~iscell(app.file)
+                    app.NSelecFiles = 1;
+                    app.file = {app.file};
+                else
+                    app.NSelecFiles = numel(app.file);
+                end
+                assignin('base', 'files', app.file);
+                assignin('base', 'paths', app.path);
+                app.FileEditField.Value = app.file{1};
+                app.FolderEditField.Value = app.path;
+                app.outofEditField.Value = num2str(app.NSelecFiles);
+                setpref('nestapp', 'lastDataFolder', app.path);
+                pushRecent(app, 'recentFiles', app.path);
+            catch
+                warning('nestapp: could not open data from recent folder.');
+            end
+        end
+
+        function openRecentPipeline(app, pPath)
+        % Load a pipeline from a recently used full file path.
+            if ~isfile(pPath)
+                uialert(app.UIFigure, 'Pipeline file no longer exists.', 'Not Found');
+                return
+            end
+            [pFolder, ~, ~] = fileparts(pPath);
+            % Temporarily set the file so LoadPipelineButtonPushed can read it.
+            % We call the loader directly rather than through the button to avoid
+            % opening the file dialog again.
+            try
+                pipeline = load(pPath, '-mat');
+                app.SelectedListBox.Items     = pipeline.PLItems;
+                app.SelectedListBox.ItemsData = pipeline.PLItemsData;
+                app.ChangedVal                = pipeline.VarIns;
+                app.UITable.Data              = [];
+                if isfield(pipeline, 'ParamKeys')
+                    app.stepParamKeys = pipeline.ParamKeys;
+                else
+                    % Trigger the old-format upgrade path
+                    LoadPipelineButtonPushed(app, []);
+                    return
+                end
+                setpref('nestapp', 'lastPipelineFolder', pFolder);
+                pushRecent(app, 'recentPipelines', pPath);
+            catch err
+                uialert(app.UIFigure, err.message, 'Load Error', 'Icon', 'error');
+            end
+        end
+
+        % MenuSelected callback wrappers (thin shims so uimenu can call private methods)
+        function openPreferencesMenu(app, ~)
+            openPreferences(app);
+        end
+
+        function showAboutMenu(app, ~)
+            showAbout(app);
+        end
+
         function loadPrefs(app)
         % LOADPREFS  Read persistent preferences and apply to app state.
         %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.
@@ -310,7 +411,7 @@ classdef nestapp < matlab.apps.AppBase
         % SHOWABOUT  Display version and citation information.
             eeglabVer = '';
             if ~isempty(which('eeg_getversion'))
-                try, eeglabVer = eeg_getversion(); catch, end
+                try, eeglabVer = eeg_getversion(); catch, end %#ok<TRYNC>
             end
             msg = sprintf([ ...
                 'nestapp — TMS-EEG Processing\n\n' ...
@@ -1381,6 +1482,29 @@ classdef nestapp < matlab.apps.AppBase
             app.UIFigure.Name = 'nestapp — TMS-EEG Processing';
             app.UIFigure.AutoResizeChildren = 'off';
             app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @UIFigureSizeChanged, true);
+
+            % Create menu bar
+            mFile = uimenu(app.UIFigure, 'Text', 'File');
+            uimenu(mFile, 'Text', 'Open Data...', 'Accelerator', 'O', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @SelectDataButtonPushed, true));
+            app.MenuRecentFiles = uimenu(mFile, 'Text', 'Recent Files', ...
+                'MenuOpeningFcn', createCallbackFcn(app, @buildRecentFilesMenu, true));
+            uimenu(mFile, 'Text', 'Load Pipeline...', 'Accelerator', 'L', 'Separator', 'on', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @LoadPipelineButtonPushed, true));
+            uimenu(mFile, 'Text', 'Save Pipeline', 'Accelerator', 'S', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @SavePipelineButtonPushed, true));
+            app.MenuRecentPipelines = uimenu(mFile, 'Text', 'Recent Pipelines', ...
+                'MenuOpeningFcn', createCallbackFcn(app, @buildRecentPipelinesMenu, true));
+            uimenu(mFile, 'Text', 'Exit', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~) delete(app));
+
+            mSettings = uimenu(app.UIFigure, 'Text', 'Settings');
+            uimenu(mSettings, 'Text', 'Preferences...', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @openPreferencesMenu, true));
+
+            mHelp = uimenu(app.UIFigure, 'Text', 'Help');
+            uimenu(mHelp, 'Text', 'About nestapp', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
 
             % Create TabGroup
             app.TabGroup = uitabgroup(app.UIFigure);
