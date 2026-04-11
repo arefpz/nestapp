@@ -195,9 +195,45 @@ classdef nestapp < matlab.apps.AppBase
         TEP2Export
         MenuRecentFiles     % Handle to 'Recent Files' submenu — rebuilt on open
         MenuRecentPipelines % Handle to 'Recent Pipelines' submenu — rebuilt on open
+        StatusBar           % uilabel pinned to bottom of UIFigure — visible on both tabs
+        pipelineDirty = false % true when pipeline has unsaved changes
+        pipelineName  = ''    % filename of last saved/loaded pipeline
     end
 
     methods (Access = private)
+        function updateStatusBar(app)
+        % UPDATESTATUSBAR  Refresh the status bar text from current app state.
+        %   Called after any change to the pipeline list, data selection,
+        %   or save/load operations.
+            % Pipeline segment
+            items = app.SelectedListBox.Items;
+            nSteps = numel(items);
+            if nSteps == 0 || (nSteps == 1 && isempty(items{1}))
+                pipelineStr = 'Pipeline: (empty)';
+            else
+                name = app.pipelineName;
+                if isempty(name); name = 'unsaved'; end
+                if app.pipelineDirty
+                    pipelineStr = sprintf('Pipeline: %s*  (%d steps)', name, nSteps);
+                else
+                    pipelineStr = sprintf('Pipeline: %s  (%d steps)', name, nSteps);
+                end
+            end
+            % Data segment
+            if isempty(app.path)
+                dataStr = 'Data: (none)';
+            else
+                parts = strsplit(strtrim(app.path), {'\','/'});
+                parts(cellfun(@isempty, parts)) = [];
+                folder = parts{end};
+                n = app.NSelecFiles;
+                if isempty(n) || n == 0; n = 0; end
+                fileWord = 'files'; if n == 1; fileWord = 'file'; end
+                dataStr = sprintf('Data: %s/  (%d %s)', folder, n, fileWord);
+            end
+            app.StatusBar.Text = sprintf('  %s          %s', pipelineStr, dataStr);
+        end
+
         % MenuOpening function: MenuRecentFiles
         function buildRecentFilesMenu(app, ~)
             delete(app.MenuRecentFiles.Children);
@@ -411,7 +447,7 @@ classdef nestapp < matlab.apps.AppBase
         % SHOWABOUT  Display version and citation information.
             eeglabVer = '';
             if ~isempty(which('eeg_getversion'))
-                try, eeglabVer = eeg_getversion(); catch, end %#ok<TRYNC>
+                try, eeglabVer = eeg_getversion(); catch, end
             end
             msg = sprintf([ ...
                 'nestapp — TMS-EEG Processing\n\n' ...
@@ -433,8 +469,10 @@ classdef nestapp < matlab.apps.AppBase
             p  = @(o) round(o .* [sX, sY, sX, sY]);
             fs = @(o) max(8, round(o * sf));
 
-            % TabGroup fills the entire figure
-            app.TabGroup.Position = round([1, 1, 867*sX, 529*sY]);
+            % Status bar spans full width, pinned to bottom
+            app.StatusBar.Position = round([0, 0, 867*sX, 20]);
+            % TabGroup sits above the status bar (base: y=20, h=509)
+            app.TabGroup.Position = round([1, 20, 867*sX, 509*sY]);
 
             %% Cleaning Tab
             app.StepsListBox.Position             = p([10 173 207 294]);
@@ -884,6 +922,7 @@ classdef nestapp < matlab.apps.AppBase
             if ~isempty(which('eeglab'))
                 app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
             end
+            updateStatusBar(app);
             clc
         end
 
@@ -923,7 +962,8 @@ classdef nestapp < matlab.apps.AppBase
                 app.ChangedVal{app.ItemNum+1}    = app.DefaultsVal{ind};
                 app.stepParamKeys{app.ItemNum+1} = app.defaultParamKeys{ind};
             end
-            % app.updateAppLayout
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Button pushed function: MoveUpButton
@@ -948,6 +988,8 @@ classdef nestapp < matlab.apps.AppBase
                 app.stepParamKeys{ind1}   = Ck;
             end
             app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1-1};
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Button pushed function: SavePipelineButton
@@ -959,9 +1001,8 @@ classdef nestapp < matlab.apps.AppBase
             startFolder = getpref('nestapp', 'lastPipelineFolder', '');
             uisave({'PLItems','PLItemsData','VarIns','ParamKeys'}, ...
                 fullfile(startFolder, '*.mat'));
-            % Note: uisave does not return the chosen path, so we cannot update
-            % lastPipelineFolder or recentPipelines here. That will be addressed
-            % when Save Pipeline is moved to a proper file dialog in M4b Commit 5.
+            % uisave does not return the chosen path; dirty flag and name update
+            % deferred until Save Pipeline moves to a proper uiputfile dialog.
         end
 
         % Button pushed function: RemoveButton
@@ -974,6 +1015,8 @@ classdef nestapp < matlab.apps.AppBase
             for i = ind : length(app.SelectedListBox.ItemsData)
                 app.SelectedListBox.ItemsData{i} = ['Item',num2str(i)];
             end
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Button pushed function: MoveDownButton
@@ -998,6 +1041,8 @@ classdef nestapp < matlab.apps.AppBase
                 app.stepParamKeys{ind1}   = Ck;
             end
             app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1+1};
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Button pushed function: LoadPipelineButton
@@ -1056,6 +1101,10 @@ classdef nestapp < matlab.apps.AppBase
             if ~isequal(pPath, 0)
                 setpref('nestapp', 'lastPipelineFolder', pPath);
                 pushRecent(app, 'recentPipelines', fullfile(pPath, pName));
+                [~, nm, ~] = fileparts(pName);
+                app.pipelineName  = nm;
+                app.pipelineDirty = false;
+                updateStatusBar(app);
             end
         end
 
@@ -1100,6 +1149,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.outofEditField.Value = num2str(max(size(app.file)));
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
+                updateStatusBar(app);
 
             catch
                 warning('Please select at least one file!')
@@ -1187,6 +1237,8 @@ classdef nestapp < matlab.apps.AppBase
             app.stepParamKeys{ind2} = app.defaultParamKeys{ind1};
             app.UITable.Data        = app.DefaultsVal{ind1};
             styleParamTable(app);
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Value changed function: outofEditField
@@ -1218,13 +1270,14 @@ classdef nestapp < matlab.apps.AppBase
 
         % Cell edit callback: UITable
         function UITableCellEdit(app, event)
-            indices = event.Indices;
-            newData = event.NewData;
+            indices = event.Indices; %#ok<NASGU>
+            newData = event.NewData; %#ok<NASGU>
 
             value = app.SelectedListBox.Value;
             indNum2 = find(ismember(app.SelectedListBox.ItemsData,value));
             app.ChangedVal{indNum2} = app.UITable.Data;
-
+            app.pipelineDirty = true;
+            updateStatusBar(app);
         end
 
         % Value changed function: SelectedListBox
@@ -1506,10 +1559,18 @@ classdef nestapp < matlab.apps.AppBase
             uimenu(mHelp, 'Text', 'About nestapp', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
 
-            % Create TabGroup
+            % Create status bar — pinned to bottom of UIFigure, visible on both tabs
+            app.StatusBar = uilabel(app.UIFigure);
+            app.StatusBar.Position = [0 0 867 20];
+            app.StatusBar.BackgroundColor = [0.90 0.90 0.90];
+            app.StatusBar.FontSize = 10;
+            app.StatusBar.Text = '  Ready';
+            app.StatusBar.HorizontalAlignment = 'left';
+
+            % Create TabGroup — starts at y=20 to leave room for status bar
             app.TabGroup = uitabgroup(app.UIFigure);
             app.TabGroup.AutoResizeChildren = 'off';
-            app.TabGroup.Position = [1 1 867 529];
+            app.TabGroup.Position = [1 20 867 509];
 
             % Create CleaningTab
             app.CleaningTab = uitab(app.TabGroup);
