@@ -39,17 +39,16 @@ else
         app.steps2run{2*i} = app.ChangedVal(i);
     end
 
-    % Build registry lookup once for resolving friendly display labels back to raw keys.
-    reg = stepRegistry();
+    % Convert display tables to flat key-value inputvals arrays.
+    % app.stepParamKeys{k} holds the raw EEGLAB keys in the same row order
+    % as ChangedVal{k}, so no display-label reverse mapping is needed.
     for i = 2:2:size(app.steps2run,2)
-        stepNameForLookup = app.steps2run{i-1}{:};
-        regIdx  = find(strcmp({reg.name}, stepNameForLookup), 1);
-        regStep = [];
-        if ~isempty(regIdx); regStep = reg(regIdx); end
+        stepIdx = i / 2;
+        rawKeys = app.stepParamKeys{stepIdx};
         x = table2cell(app.steps2run{i}{:});
         inputvals = cell(1,2*size(x,1));
         for j = 1:size(x,1)
-            inputvals{2*j-1} = resolveParamKey(x{j,1}, regStep);
+            inputvals{2*j-1} = rawKeys{j};
             v = x{j,2};
             if ischar(v) || isstring(v)
                 sv = string(v);
@@ -1088,26 +1087,6 @@ function writeSessionLog(pathName, fileName, stepLog)
     fclose(fid);
 end
 
-function rawKey = resolveParamKey(displayName, regStep)
-% RESOLVEPARAMKEY  Map a UITable display label back to a raw EEGLAB key.
-%   displayName may be a raw key (old saved pipelines) or a friendly label
-%   of the form "Friendly Name (unit)" (new pipelines). Falls back to
-%   displayName unchanged if no match is found, preserving backward compat.
-rawKey = char(displayName);
-if isempty(regStep) || isempty(regStep.params); return; end
-for pi = 1:numel(regStep.params)
-    p = regStep.params(pi);
-    if isempty(p.unit)
-        label = p.friendlyName;
-    else
-        label = [p.friendlyName, ' (', p.unit, ')'];
-    end
-    if strcmp(rawKey, label)
-        rawKey = p.key;
-        return;
-    end
-end
-end
 
 function act2D = computeICAActivation(EEG)
 % COMPUTEICAACTIVATION  Return 2-D ICA activations (nComp x nSamples).
