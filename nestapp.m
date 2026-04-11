@@ -417,7 +417,19 @@ classdef nestapp < matlab.apps.AppBase
                 paramPH     = {steps(i).params.placeholder};
 
                 for j = 1:numel(fields)
-                    var{j} = string(fields{j});
+                    % Show friendlyName (unit) when available; raw key otherwise.
+                    fn = fields{j};
+                    pIdx = find(strcmp(paramKeys, fn), 1);
+                    if ~isempty(pIdx)
+                        p = steps(i).params(pIdx);
+                        if isempty(p.unit)
+                            var{j} = string(p.friendlyName);
+                        else
+                            var{j} = string([p.friendlyName, ' (', p.unit, ')']);
+                        end
+                    else
+                        var{j} = string(fn);
+                    end
                     V = steps(i).defaults.(fields{j});
                     if ischar(V)
                         val{j} = string(V);
