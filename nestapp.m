@@ -196,8 +196,9 @@ classdef nestapp < matlab.apps.AppBase
 
     methods (Access = private)
         function styleParamTable(app)
-        % Grey out UITable rows whose Value is a display placeholder.
-        % Placeholders start with '(' by convention, e.g. '(all channels)'.
+        % Grey out UITable rows whose Value is a placeholder or literal '[]'.
+        % Placeholders start with '(' by convention (e.g. '(all channels)').
+        % '[]' from old-format saved pipelines is treated the same way.
         % Call this after any assignment of UITable.Data to a parameter table.
             removeStyle(app.UITable);
             T = app.UITable.Data;
@@ -208,7 +209,9 @@ classdef nestapp < matlab.apps.AppBase
                 % Only scalar strings can be placeholders; skip numerics and arrays.
                 if isscalar(v) && (isstring(v) || ischar(v))
                     sv = string(v);
-                    if strlength(sv) > 0 && startsWith(sv, '(')
+                    isPlaceholder = strlength(sv) > 0 && startsWith(sv, '(');
+                    isEmptyBracket = strcmp(sv, '[]');
+                    if isPlaceholder || isEmptyBracket
                         addStyle(app.UITable, grey, 'cell', [row, 2]);
                     end
                 end
@@ -606,10 +609,19 @@ classdef nestapp < matlab.apps.AppBase
                             pIdx = find(strcmp({reg(regIdx).params.key}, rawKey), 1);
                             if ~isempty(pIdx)
                                 p = reg(regIdx).params(pIdx);
+                                % Upgrade label: raw key → friendly name (unit)
                                 if isempty(p.unit)
                                     T.var{row} = string(p.friendlyName);
                                 else
                                     T.var{row} = string([p.friendlyName, ' (', p.unit, ')']);
+                                end
+                                % Upgrade value: '[]' → descriptive placeholder
+                                if isscalar(T.val{row}) && strcmp(string(T.val{row}), '[]')
+                                    if ~isempty(p.placeholder)
+                                        T.val{row} = string(p.placeholder);
+                                    else
+                                        T.val{row} = "(not set)";
+                                    end
                                 end
                             end
                         end
