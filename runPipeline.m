@@ -96,7 +96,7 @@ dlg = uiprogressdlg(app.UIFigure, ...
     'ShowPercentage',  'on');
 
 for nfile = 1:nFiles
-    app.ProcessingfileEditField.Value = num2str(nfile);
+    app.StatusBar.Text = sprintf('  Running file %d / %d ...', nfile, nFiles);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
     [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
@@ -129,7 +129,7 @@ for nfile = 1:nFiles
             return
         end
 
-        app.RunningstepEditField.Value = stepName; pause(0.1);
+        app.StatusBar.Text = sprintf('  File %d / %d — %s', nfile, nFiles, stepName);
         varin = app.steps2run{Step+1};
         disp(strcat('step ',num2str(stepIdx), ': "',stepName,'" is running!'));
 

@@ -8,33 +8,18 @@ classdef nestapp < matlab.apps.AppBase
         UIFigure                        matlab.ui.Figure
         TabGroup                        matlab.ui.container.TabGroup
         CleaningTab                     matlab.ui.container.Tab
-        RunningstepEditField            matlab.ui.control.EditField
-        RunningstepEditFieldLabel       matlab.ui.control.Label
-        ProcessingfileEditField         matlab.ui.control.EditField
-        ProcessingfileEditFieldLabel    matlab.ui.control.Label
-        outofEditField                  matlab.ui.control.EditField
-        outofEditFieldLabel             matlab.ui.control.Label
         ReStartStepsButton              matlab.ui.control.Button
-        EEGLABpathifalreadyisnotinpathPanel  matlab.ui.container.Panel
-        SelectEEGLABFolderButton        matlab.ui.control.Button
-        PathEditField                   matlab.ui.control.EditField
-        PathEditFieldLabel              matlab.ui.control.Label
         NESTAPPLabel                    matlab.ui.control.Label
         Image                           matlab.ui.control.Image
         RunAnalysisButton               matlab.ui.control.Button
         SelectDatatoPerformAnalysisPanel  matlab.ui.container.Panel
         SelectDataButton                matlab.ui.control.Button
-        FileEditField                   matlab.ui.control.EditField
-        FileEditFieldLabel              matlab.ui.control.Label
-        FolderEditField                 matlab.ui.control.EditField
-        FolderEditFieldLabel            matlab.ui.control.Label
+        SelectedFilesListBox            matlab.ui.control.ListBox
         SelectedListBoxLabel_2          matlab.ui.control.Label
         TextArea                        matlab.ui.control.TextArea
         DefaultValueButton              matlab.ui.control.Button
         UITable                         matlab.ui.control.Table
         SelectedListBoxLabel            matlab.ui.control.Label
-        SavePipelineButton              matlab.ui.control.Button
-        LoadPipelineButton              matlab.ui.control.Button
         RemoveButton                    matlab.ui.control.Button
         AddButton                       matlab.ui.control.Button
         MoveDownButton                  matlab.ui.control.Button
@@ -284,9 +269,7 @@ classdef nestapp < matlab.apps.AppBase
                 end
                 assignin('base', 'files', app.file);
                 assignin('base', 'paths', app.path);
-                app.FileEditField.Value = app.file{1};
-                app.FolderEditField.Value = app.path;
-                app.outofEditField.Value = num2str(app.NSelecFiles);
+                app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
             catch
@@ -333,18 +316,14 @@ classdef nestapp < matlab.apps.AppBase
             showAbout(app);
         end
 
-        function loadPrefs(app)
+        function loadPrefs(~)
         % LOADPREFS  Read persistent preferences and apply to app state.
         %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.
+        %   The app handle is accepted but not used — prefs apply globally
+        %   (addpath) rather than writing to removed UI components.
             eeglabPath = getpref('nestapp', 'eeglabPath', '');
             if ~isempty(eeglabPath) && isfolder(eeglabPath)
                 addpath(eeglabPath);
-                app.PathEditField.Value = eeglabPath;
-                app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
-            end
-            lastDataFolder = getpref('nestapp', 'lastDataFolder', '');
-            if ~isempty(lastDataFolder) && isfolder(lastDataFolder)
-                app.FolderEditField.Value = lastDataFolder;
             end
         end
 
@@ -356,7 +335,7 @@ classdef nestapp < matlab.apps.AppBase
             setpref('nestapp', prefKey, list);
         end
 
-        function openPreferences(app)
+        function openPreferences(~)
         % OPENPREFERENCES  Show a modal Preferences dialog.
         %   Lets users set the EEGLAB path, default data/pipeline folders,
         %   and behavioural options. Changes are written to getpref/setpref
@@ -431,8 +410,6 @@ classdef nestapp < matlab.apps.AppBase
                         return
                     end
                     addpath(ep);
-                    app.PathEditField.Value = ep;
-                    app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
                 end
                 setpref('nestapp', 'eeglabPath',          ep);
                 setpref('nestapp', 'lastDataFolder',      strtrim(fData.Value));
@@ -447,7 +424,10 @@ classdef nestapp < matlab.apps.AppBase
         % SHOWABOUT  Display version and citation information.
             eeglabVer = '';
             if ~isempty(which('eeg_getversion'))
-                try, eeglabVer = eeg_getversion(); catch, end
+                try
+                    eeglabVer = eeg_getversion();
+                catch
+                end
             end
             msg = sprintf([ ...
                 'nestapp — TMS-EEG Processing\n\n' ...
@@ -488,8 +468,6 @@ classdef nestapp < matlab.apps.AppBase
             app.MoveDownButton.Position           = p([305 12 66 36]);
             app.AddButton.Position                = p([233 56 66 36]);
             app.RemoveButton.Position             = p([232 12 66 36]);
-            app.LoadPipelineButton.Position       = p([377 12 66 36]);
-            app.SavePipelineButton.Position       = p([378 56 66 36]);
             app.SelectedListBoxLabel.Position     = p([278 472 119 25]);
             app.SelectedListBoxLabel.FontSize     = fs(16);
             app.UITable.Position                  = p([450 104 188 363]);
@@ -499,12 +477,9 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectedListBoxLabel_2.FontSize   = fs(16);
 
             % Select Data panel + children (children coords are panel-relative)
-            app.SelectDatatoPerformAnalysisPanel.Position = p([649 225 208 116]);
-            app.FolderEditFieldLabel.Position     = p([5 64 40 22]);
-            app.FolderEditField.Position          = p([53 64 145 22]);
-            app.FileEditFieldLabel.Position       = p([6 39 25 22]);
-            app.FileEditField.Position            = p([53 38 145 22]);
-            app.SelectDataButton.Position         = p([15 5 183 23]);
+            app.SelectDatatoPerformAnalysisPanel.Position = p([649 135 208 206]);
+            app.SelectedFilesListBox.Position     = p([5 30 195 145]);
+            app.SelectDataButton.Position         = p([5 5 195 23]);
 
             app.RunAnalysisButton.Position        = p([657 15 201 60]);
             app.RunAnalysisButton.FontSize        = fs(18);
@@ -512,24 +487,8 @@ classdef nestapp < matlab.apps.AppBase
             app.NESTAPPLabel.Position             = p([785 448 71 22]);
             app.NESTAPPLabel.FontSize             = fs(14);
 
-            % EEGLAB path panel + children
-            app.EEGLABpathifalreadyisnotinpathPanel.Position = p([651 342 208 90]);
-            app.PathEditFieldLabel.Position       = p([13 40 30 22]);
-            app.PathEditField.Position            = p([50 40 145 22]);
-            app.SelectEEGLABFolderButton.Position = p([15 10 183 23]);
-
             app.ReStartStepsButton.Position       = p([658 91 201 36]);
             app.ReStartStepsButton.FontSize       = fs(18);
-            app.outofEditFieldLabel.Position      = p([772 191 36 27]);
-            app.outofEditFieldLabel.FontSize      = fs(11);
-            app.outofEditField.Position           = p([808 193 32 22]);
-            app.outofEditField.FontSize           = fs(11);
-            app.ProcessingfileEditFieldLabel.Position = p([661 191 80 27]);
-            app.ProcessingfileEditFieldLabel.FontSize = fs(11);
-            app.ProcessingfileEditField.Position  = p([739 193 32 22]);
-            app.ProcessingfileEditField.FontSize  = fs(11);
-            app.RunningstepEditFieldLabel.Position= p([660 163 79 22]);
-            app.RunningstepEditField.Position     = p([664 140 181 22]);
 
             %% Visualizing Tab
             app.UIAxes.Position                   = p([344 299 300 200]);
@@ -832,8 +791,6 @@ classdef nestapp < matlab.apps.AppBase
             app.RemoveButton.Tooltip        = 'Remove the selected step from the pipeline';
             app.MoveUpButton.Tooltip        = 'Move the selected step earlier in the pipeline';
             app.MoveDownButton.Tooltip      = 'Move the selected step later in the pipeline';
-            app.SavePipelineButton.Tooltip  = 'Save current pipeline steps and parameters to a .mat file';
-            app.LoadPipelineButton.Tooltip  = 'Load a previously saved pipeline .mat file';
             app.DefaultValueButton.Tooltip  = 'Reset the selected parameter to its default value';
             app.ReStartStepsButton.Tooltip  = ['Resume processing from the current step index. ' ...
                 'Increment the step counter manually to skip steps, or reset to 1 to reprocess from the start.'];
@@ -918,10 +875,6 @@ classdef nestapp < matlab.apps.AppBase
             app.originalSize = app.UIFigure.Position(3:4);
             applyTooltips(app);
             loadPrefs(app);
-            % If EEGLAB is on path but not via saved pref, still hide the panel.
-            if ~isempty(which('eeglab'))
-                app.EEGLABpathifalreadyisnotinpathPanel.Visible = 'off';
-            end
             updateStatusBar(app);
             clc
         end
@@ -993,11 +946,11 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: SavePipelineButton
-        function SavePipelineButtonPushed(app, event)
-            PLItems = app.SelectedListBox.Items;
-            PLItemsData = app.SelectedListBox.ItemsData;
-            VarIns = app.ChangedVal;
-            ParamKeys = app.stepParamKeys;
+        function SavePipelineButtonPushed(app, event) %#ok<INUSD>
+            PLItems = app.SelectedListBox.Items;     %#ok<NASGU>
+            PLItemsData = app.SelectedListBox.ItemsData; %#ok<NASGU>
+            VarIns = app.ChangedVal;                 %#ok<NASGU>
+            ParamKeys = app.stepParamKeys;           %#ok<NASGU>
             startFolder = getpref('nestapp', 'lastPipelineFolder', '');
             uisave({'PLItems','PLItemsData','VarIns','ParamKeys'}, ...
                 fullfile(startFolder, '*.mat'));
@@ -1108,19 +1061,6 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
 
-        % Button pushed function: SelectEEGLABFolderButton
-        function SelectEEGLABFolderButtonPushed(app, event)
-            try
-                eeglabpath = uigetdir('*.*','Select EEGLAB Folder');
-                app.PathEditField.Value = eeglabpath;
-                addpath(eeglabpath);
-                setpref('nestapp', 'eeglabPath', eeglabpath);
-            catch
-                warning('Please select at least one file!')
-                app.PathEditField.Value = '';
-            end
-        end
-
         % Button pushed function: SelectDataButton
         function SelectDataButtonPushed(app, event)
             try
@@ -1144,17 +1084,14 @@ classdef nestapp < matlab.apps.AppBase
                 assignin('base','files',app.file)
                 assignin('base','paths',app.path)
 
-                app.FileEditField.Value = app.file{1};
-                app.FolderEditField.Value = app.path;
-                app.outofEditField.Value = num2str(max(size(app.file)));
+                app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
                 updateStatusBar(app);
 
             catch
                 warning('Please select at least one file!')
-                app.FileEditField.Value = '';
-                app.FolderEditField.Value = '';
+                app.SelectedFilesListBox.Items = {};
             end
         end
 
@@ -1239,18 +1176,6 @@ classdef nestapp < matlab.apps.AppBase
             styleParamTable(app);
             app.pipelineDirty = true;
             updateStatusBar(app);
-        end
-
-        % Value changed function: outofEditField
-        function outofEditFieldValueChanged(app, event)
-            value = app.FolderEditField.Value;
-
-        end
-
-        % Value changed function: RunningstepEditField
-        function RunningstepEditFieldValueChanged(app, event)
-            app.RunningstepEditField.Value=Step;
-
         end
 
         % Size changed function: UIFigure
@@ -1347,7 +1272,7 @@ classdef nestapp < matlab.apps.AppBase
         % Value changed function: FolderEditField_2
         function FolderEditField_2ValueChanged(app, event)
             if ~isempty(app.cleanedName) && ~isempty(app.path)
-                app.FolderEditField_2.Value = app.FolderEditField.Value;
+                app.FolderEditField_2.Value = app.path;
             else
                 app.FolderEditField_2.Value = '';
             end
@@ -1641,20 +1566,6 @@ classdef nestapp < matlab.apps.AppBase
             app.RemoveButton.Position = [232 12 66 36];
             app.RemoveButton.Text = 'Remove';
 
-            % Create LoadPipelineButton
-            app.LoadPipelineButton = uibutton(app.CleaningTab, 'push');
-            app.LoadPipelineButton.ButtonPushedFcn = createCallbackFcn(app, @LoadPipelineButtonPushed, true);
-            app.LoadPipelineButton.BackgroundColor = [0.8 0.8 0.8];
-            app.LoadPipelineButton.Position = [377 12 66 36];
-            app.LoadPipelineButton.Text = {'Load'; 'Pipeline'};
-
-            % Create SavePipelineButton
-            app.SavePipelineButton = uibutton(app.CleaningTab, 'push');
-            app.SavePipelineButton.ButtonPushedFcn = createCallbackFcn(app, @SavePipelineButtonPushed, true);
-            app.SavePipelineButton.BackgroundColor = [0.8 0.8 0.8];
-            app.SavePipelineButton.Position = [378 56 66 36];
-            app.SavePipelineButton.Text = {'Save'; 'Pipeline'};
-
             % Create SelectedListBoxLabel
             app.SelectedListBoxLabel = uilabel(app.CleaningTab);
             app.SelectedListBoxLabel.FontSize = 16;
@@ -1690,39 +1601,24 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectedListBoxLabel_2.Text = 'Parameter(s)';
 
             % Create SelectDatatoPerformAnalysisPanel
+            % Panel expanded to show file listbox (was 116px tall, now 206px)
             app.SelectDatatoPerformAnalysisPanel = uipanel(app.CleaningTab);
             app.SelectDatatoPerformAnalysisPanel.AutoResizeChildren = 'off';
             app.SelectDatatoPerformAnalysisPanel.BorderType = 'none';
             app.SelectDatatoPerformAnalysisPanel.Title = 'Select Data to Perform Analysis';
-            app.SelectDatatoPerformAnalysisPanel.Position = [649 225 208 116];
+            app.SelectDatatoPerformAnalysisPanel.Position = [649 135 208 206];
 
-            % Create FolderEditFieldLabel
-            app.FolderEditFieldLabel = uilabel(app.SelectDatatoPerformAnalysisPanel);
-            app.FolderEditFieldLabel.HorizontalAlignment = 'right';
-            app.FolderEditFieldLabel.Position = [5 64 40 22];
-            app.FolderEditFieldLabel.Text = 'Folder';
+            % Create SelectedFilesListBox — shows all queued files
+            app.SelectedFilesListBox = uilistbox(app.SelectDatatoPerformAnalysisPanel);
+            app.SelectedFilesListBox.Items = {};
+            app.SelectedFilesListBox.Position = [5 30 195 145];
+            app.SelectedFilesListBox.FontSize = 10;
 
-            % Create FolderEditField
-            app.FolderEditField = uieditfield(app.SelectDatatoPerformAnalysisPanel, 'text');
-            app.FolderEditField.Editable = 'off';
-            app.FolderEditField.Position = [53 64 145 22];
-
-            % Create FileEditFieldLabel
-            app.FileEditFieldLabel = uilabel(app.SelectDatatoPerformAnalysisPanel);
-            app.FileEditFieldLabel.HorizontalAlignment = 'right';
-            app.FileEditFieldLabel.Position = [6 39 25 22];
-            app.FileEditFieldLabel.Text = 'File';
-
-            % Create FileEditField
-            app.FileEditField = uieditfield(app.SelectDatatoPerformAnalysisPanel, 'text');
-            app.FileEditField.Editable = 'off';
-            app.FileEditField.Position = [53 38 145 22];
-
-            % Create SelectDataButton
+            % Create SelectDataButton (full-width, at bottom of panel)
             app.SelectDataButton = uibutton(app.SelectDatatoPerformAnalysisPanel, 'push');
             app.SelectDataButton.ButtonPushedFcn = createCallbackFcn(app, @SelectDataButtonPushed, true);
-            app.SelectDataButton.Position = [15 5 183 23];
-            app.SelectDataButton.Text = 'Select Data';
+            app.SelectDataButton.Position = [5 5 195 23];
+            app.SelectDataButton.Text = 'Select Data Files...';
 
             % Create RunAnalysisButton
             app.RunAnalysisButton = uibutton(app.CleaningTab, 'push');
@@ -1747,30 +1643,6 @@ classdef nestapp < matlab.apps.AppBase
             app.NESTAPPLabel.Position = [785 448 71 22];
             app.NESTAPPLabel.Text = 'NESTAPP';
 
-            % Create EEGLABpathifalreadyisnotinpathPanel
-            app.EEGLABpathifalreadyisnotinpathPanel = uipanel(app.CleaningTab);
-            app.EEGLABpathifalreadyisnotinpathPanel.AutoResizeChildren = 'off';
-            app.EEGLABpathifalreadyisnotinpathPanel.BorderType = 'none';
-            app.EEGLABpathifalreadyisnotinpathPanel.Title = 'EEGLAB path (if already is not in path)';
-            app.EEGLABpathifalreadyisnotinpathPanel.Position = [651 342 208 90];
-
-            % Create PathEditFieldLabel
-            app.PathEditFieldLabel = uilabel(app.EEGLABpathifalreadyisnotinpathPanel);
-            app.PathEditFieldLabel.HorizontalAlignment = 'right';
-            app.PathEditFieldLabel.Position = [13 40 30 22];
-            app.PathEditFieldLabel.Text = 'Path';
-
-            % Create PathEditField
-            app.PathEditField = uieditfield(app.EEGLABpathifalreadyisnotinpathPanel, 'text');
-            app.PathEditField.Editable = 'off';
-            app.PathEditField.Position = [50 40 145 22];
-
-            % Create SelectEEGLABFolderButton
-            app.SelectEEGLABFolderButton = uibutton(app.EEGLABpathifalreadyisnotinpathPanel, 'push');
-            app.SelectEEGLABFolderButton.ButtonPushedFcn = createCallbackFcn(app, @SelectEEGLABFolderButtonPushed, true);
-            app.SelectEEGLABFolderButton.Position = [15 10 183 23];
-            app.SelectEEGLABFolderButton.Text = 'Select EEGLAB Folder';
-
             % Create ReStartStepsButton
             app.ReStartStepsButton = uibutton(app.CleaningTab, 'push');
             app.ReStartStepsButton.ButtonPushedFcn = createCallbackFcn(app, @ReStartStepsButtonPushed, true);
@@ -1779,42 +1651,6 @@ classdef nestapp < matlab.apps.AppBase
             app.ReStartStepsButton.FontWeight = 'bold';
             app.ReStartStepsButton.Position = [658 91 201 36];
             app.ReStartStepsButton.Text = 'ReStart Steps';
-
-            % Create outofEditFieldLabel
-            app.outofEditFieldLabel = uilabel(app.CleaningTab);
-            app.outofEditFieldLabel.HorizontalAlignment = 'center';
-            app.outofEditFieldLabel.FontSize = 11;
-            app.outofEditFieldLabel.Position = [772 191 36 27];
-            app.outofEditFieldLabel.Text = 'out of';
-
-            % Create outofEditField
-            app.outofEditField = uieditfield(app.CleaningTab, 'text');
-            app.outofEditField.ValueChangedFcn = createCallbackFcn(app, @outofEditFieldValueChanged, true);
-            app.outofEditField.FontSize = 11;
-            app.outofEditField.Position = [808 193 32 22];
-
-            % Create ProcessingfileEditFieldLabel
-            app.ProcessingfileEditFieldLabel = uilabel(app.CleaningTab);
-            app.ProcessingfileEditFieldLabel.HorizontalAlignment = 'center';
-            app.ProcessingfileEditFieldLabel.FontSize = 11;
-            app.ProcessingfileEditFieldLabel.Position = [661 191 80 27];
-            app.ProcessingfileEditFieldLabel.Text = 'Processing file ';
-
-            % Create ProcessingfileEditField
-            app.ProcessingfileEditField = uieditfield(app.CleaningTab, 'text');
-            app.ProcessingfileEditField.Editable = 'off';
-            app.ProcessingfileEditField.Position = [739 193 32 22];
-
-            % Create RunningstepEditFieldLabel
-            app.RunningstepEditFieldLabel = uilabel(app.CleaningTab);
-            app.RunningstepEditFieldLabel.HorizontalAlignment = 'right';
-            app.RunningstepEditFieldLabel.Position = [660 163 79 22];
-            app.RunningstepEditFieldLabel.Text = 'Running step:';
-
-            % Create RunningstepEditField
-            app.RunningstepEditField = uieditfield(app.CleaningTab, 'text');
-            app.RunningstepEditField.ValueChangedFcn = createCallbackFcn(app, @RunningstepEditFieldValueChanged, true);
-            app.RunningstepEditField.Position = [664 140 181 22];
 
             % Create VisualizingTab
             app.VisualizingTab = uitab(app.TabGroup);
