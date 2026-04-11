@@ -172,6 +172,7 @@ classdef nestapp < matlab.apps.AppBase
         DefaultsVal      % Default display tables (registry-indexed, parallel to StepsListBox)
         defaultParamKeys % Raw EEGLAB keys (registry-indexed, same row order as DefaultsVal)
         stepParamKeys    % Raw EEGLAB keys (pipeline-indexed, same row order as ChangedVal)
+        originalSize     % [w h] of UIFigure at creation — used by UIFigureSizeChanged
         convert = 0;
         needchanloc = 1; % The EEG data must contain EEG channel Location
         NSelecFiles % Number of selcted Files for EEG preprocessing
@@ -195,6 +196,187 @@ classdef nestapp < matlab.apps.AppBase
     end
 
     methods (Access = private)
+        function rescaleComponents(app, sX, sY)
+        % RESCALECOMPONENTS  Rescale all UI components proportionally.
+        %   sX = newWidth/867, sY = newHeight/529 (base dimensions).
+        %   Position helper p() scales [x y w h] by [sX sY sX sY].
+        %   Font helper fs() uses the smaller scale factor to prevent distortion.
+            sf = min(sX, sY);
+            p  = @(o) round(o .* [sX, sY, sX, sY]);
+            fs = @(o) max(8, round(o * sf));
+
+            % TabGroup fills the entire figure
+            app.TabGroup.Position = round([1, 1, 867*sX, 529*sY]);
+
+            %% Cleaning Tab
+            app.StepsListBox.Position             = p([10 173 207 294]);
+            app.StepsListBox.FontSize             = fs(11);
+            app.CommandDescriptionLabel.Position  = p([12 152 31 22]);
+            app.CommandDescriptionLabel.FontSize  = fs(14);
+            app.InfoTextArea.Position             = p([10 10 207 143]);
+            app.StepsListBoxLabel.Position        = p([89 475 49 22]);
+            app.StepsListBoxLabel.FontSize        = fs(16);
+            app.SelectedListBox.Position          = p([230 104 215 360]);
+            app.SelectedListBox.FontSize          = fs(11);
+            app.MoveUpButton.Position             = p([306 56 66 36]);
+            app.MoveDownButton.Position           = p([305 12 66 36]);
+            app.AddButton.Position                = p([233 56 66 36]);
+            app.RemoveButton.Position             = p([232 12 66 36]);
+            app.LoadPipelineButton.Position       = p([377 12 66 36]);
+            app.SavePipelineButton.Position       = p([378 56 66 36]);
+            app.SelectedListBoxLabel.Position     = p([278 472 119 25]);
+            app.SelectedListBoxLabel.FontSize     = fs(16);
+            app.UITable.Position                  = p([450 104 188 363]);
+            app.DefaultValueButton.Position       = p([485 15 110 23]);
+            app.TextArea.Position                 = p([450 46 188 56]);
+            app.SelectedListBoxLabel_2.Position   = p([492 472 102 25]);
+            app.SelectedListBoxLabel_2.FontSize   = fs(16);
+
+            % Select Data panel + children (children coords are panel-relative)
+            app.SelectDatatoPerformAnalysisPanel.Position = p([649 225 208 116]);
+            app.FolderEditFieldLabel.Position     = p([5 64 40 22]);
+            app.FolderEditField.Position          = p([53 64 145 22]);
+            app.FileEditFieldLabel.Position       = p([6 39 25 22]);
+            app.FileEditField.Position            = p([53 38 145 22]);
+            app.SelectDataButton.Position         = p([15 5 183 23]);
+
+            app.RunAnalysisButton.Position        = p([657 15 201 60]);
+            app.RunAnalysisButton.FontSize        = fs(18);
+            app.Image.Position                    = p([653 453 203 44]);
+            app.NESTAPPLabel.Position             = p([785 448 71 22]);
+            app.NESTAPPLabel.FontSize             = fs(14);
+
+            % EEGLAB path panel + children
+            app.EEGLABpathifalreadyisnotinpathPanel.Position = p([651 342 208 90]);
+            app.PathEditFieldLabel.Position       = p([13 40 30 22]);
+            app.PathEditField.Position            = p([50 40 145 22]);
+            app.SelectEEGLABFolderButton.Position = p([15 10 183 23]);
+
+            app.ReStartStepsButton.Position       = p([658 91 201 36]);
+            app.ReStartStepsButton.FontSize       = fs(18);
+            app.outofEditFieldLabel.Position      = p([772 191 36 27]);
+            app.outofEditFieldLabel.FontSize      = fs(11);
+            app.outofEditField.Position           = p([808 193 32 22]);
+            app.outofEditField.FontSize           = fs(11);
+            app.ProcessingfileEditFieldLabel.Position = p([661 191 80 27]);
+            app.ProcessingfileEditFieldLabel.FontSize = fs(11);
+            app.ProcessingfileEditField.Position  = p([739 193 32 22]);
+            app.ProcessingfileEditField.FontSize  = fs(11);
+            app.RunningstepEditFieldLabel.Position= p([660 163 79 22]);
+            app.RunningstepEditField.Position     = p([664 140 181 22]);
+
+            %% Visualizing Tab
+            app.UIAxes.Position                   = p([344 299 300 200]);
+            app.UIAxes2.Position                  = p([359 87 176 168]);
+            app.PLOTTEPButton.Position            = p([21 113 108 23]);
+            app.ExportTEPFigureButton.Position    = p([21 84 108 23]);
+            app.PlotEEGdataButton.Position        = p([21 21 108 23]);
+            app.ExportTEPDataButton.Position      = p([21 56 108 23]);
+
+            % Select TEP data panel + children
+            app.SelectDatatoVisulaizeTEPsPanel.Position = p([651 342 208 90]);
+            app.FolderEditField_2Label.Position   = p([1 41 40 22]);
+            app.FolderEditField_2.Position        = p([49 41 145 22]);
+            app.SelectDataButton_2.Position       = p([13 10 183 23]);
+
+            app.UseCurrentlyCleanedDataCheckBox.Position = p([671 455 180 22]);
+            app.FilesListBoxLabel.Position        = p([740 325 30 22]);
+            app.FilesListBox.Position             = p([669 71 183 259]);
+            app.Image2.Position                   = p([-1 165 350 336]);
+            app.Slider.Position                   = p([371 38 254 3]);
+            app.WindowsizeforTopoplotLabel.Position = p([353 44 90 44]);
+            app.WindowsizefortimeaveragedTopoplotEditField.Position = p([453 58 41 22]);
+            app.TOPOPLOTButton.Position           = p([541 150 100 42]);
+
+            % Plotting mode button group + children
+            app.PlottingModeButtonGroup.Position  = p([174 88 149 67]);
+            app.NewFigureButton.Position          = p([11 21 83 22]);
+            app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
+
+            app.SelectAllCheckBox.Position        = p([670 46 71 22]);
+            app.DontfindcommonelectrodesCheckBox.Position = p([670 28 180 22]);
+            app.ReLoadAvailableElectrodesButton.Position  = p([686 7 153 23]);
+            app.TEPWindowSliderLabel.Position     = p([350 266 74 22]);
+            app.TEPWindowSlider.Position          = p([441 285 193 3]);
+            app.TopoplottimeSpinnerLabel.Position = p([496 57 76 22]);
+            app.TopoplottimeSpinner.Position      = p([574 57 66 22]);
+            app.EEGDatasetDropDownLabel.Position  = p([132 21 75 22]);
+            app.EEGDatasetDropDown.Position       = p([214 21 110 22]);
+            app.TEPvarNameEditFieldLabel.Position = p([128 56 83 22]);
+            app.TEPvarNameEditField.Position      = p([212 56 111 22]);
+
+            %% Electrode buttons (Visualizing Tab — 64 buttons)
+            app.AF3Button.Position   = p([108 410 25 23]);
+            app.FP1Button.Position   = p([131 433 25 23]);
+            app.FPZButton.Position   = p([161 439 25 23]);
+            app.FP2Button.Position   = p([191 433 25 23]);
+            app.AF4Button.Position   = p([215 409 25 23]);
+            app.F8Button.Position    = p([266 390 25 23]);
+            app.F6Button.Position    = p([240 385 25 23]);
+            app.F4Button.Position    = p([214 380 25 23]);
+            app.F2Button.Position    = p([187 385 25 23]);
+            app.F5Button.Position    = p([80 385 25 23]);
+            app.F3Button.Position    = p([107 380 25 23]);
+            app.FZButton.Position    = p([161 386 25 23]);
+            app.FC2Button.Position   = p([192 348 25 23]);
+            app.FC4Button.Position   = p([222 348 25 23]);
+            app.FC6Button.Position   = p([252 350 25 23]);
+            app.F1Button.Position    = p([134 385 25 23]);
+            app.C4Button.Position    = p([229 316 25 23]);
+            app.C6Button.Position    = p([262 316 25 23]);
+            app.FT8Button.Position   = p([285 354 25 23]);
+            app.F7Button.Position    = p([55 391 25 23]);
+            app.FC1Button.Position   = p([130 348 25 23]);
+            app.FCZButton.Position   = p([161 349 25 23]);
+            app.FC3Button.Position   = p([99 348 25 23]);
+            app.C1Button.Position    = p([128 316 25 23]);
+            app.CZButton.Position    = p([161 316 25 23]);
+            app.C2Button.Position    = p([195 316 25 23]);
+            app.CP3Button.Position   = p([97 283 25 23]);
+            app.CP1Button.Position   = p([128 284 25 23]);
+            app.CP2Button.Position   = p([192 284 25 23]);
+            app.T8Button.Position    = p([293 316 25 23]);
+            app.FT7Button.Position   = p([36 354 25 23]);
+            app.FC5Button.Position   = p([68 350 25 23]);
+            app.C5Button.Position    = p([59 316 25 23]);
+            app.C3Button.Position    = p([93 316 25 23]);
+            app.T7Button.Position    = p([26 316 25 23]);
+            app.TP7Button.Position   = p([34 277 25 23]);
+            app.CP5Button.Position   = p([62 279 25 23]);
+            app.CPZButton.Position   = p([161 286 25 23]);
+            app.CP4Button.Position   = p([224 283 25 23]);
+            app.CP6Button.Position   = p([258 279 25 23]);
+            app.TP8Button.Position   = p([288 277 25 23]);
+            app.P8Button.Position    = p([275 237 25 23]);
+            app.P3Button.Position    = p([105 251 25 23]);
+            app.P1Button.Position    = p([132 251 25 23]);
+            app.P2Button.Position    = p([188 251 25 23]);
+            app.P7Button.Position    = p([46 237 25 23]);
+            app.P5Button.Position    = p([76 246 25 23]);
+            app.PZButton.Position    = p([161 250 25 23]);
+            app.P4Button.Position    = p([216 251 25 23]);
+            app.P6Button.Position    = p([245 246 25 23]);
+            app.O1Button.Position    = p([128 179 25 23]);
+            app.PO3Button.Position   = p([106 216 25 23]);
+            app.POZButton.Position   = p([161 211 25 23]);
+            app.PO4Button.Position   = p([217 217 25 23]);
+            app.PO7Button.Position   = p([52 204 25 23]);
+            app.PO5Button.Position   = p([78 215 25 23]);
+            app.PO2Button.Position   = p([189 212 25 23]);
+            app.PO8Button.Position   = p([270 202 25 23]);
+            app.CB1Button.Position   = p([98 189 25 23]);
+            app.OZButton.Position    = p([160 177 25 23]);
+            app.O2Button.Position    = p([192 179 25 23]);
+            app.CB2Button.Position   = p([224 189 25 23]);
+            app.TP10Button.Position  = p([302 253 25 23]);
+            app.TP9Button.Position   = p([20 253 25 23]);
+            app.AFZButton.Position   = p([161 412 25 23]);
+            app.AF7Button.Position   = p([79 419 25 23]);
+            app.AF8Button.Position   = p([245 419 25 23]);
+            app.PO1Button.Position   = p([133 212 25 23]);
+            app.PO6Button.Position   = p([243 215 25 23]);
+        end
+
         function styleParamTable(app)
         % Grey out UITable rows whose Value is a placeholder or literal '[]'.
         % Placeholders start with '(' by convention (e.g. '(all channels)').
@@ -467,6 +649,7 @@ classdef nestapp < matlab.apps.AppBase
             app.UITable.Data = [];
             app.ItemNum = 1;
             app.needchanloc = 1;
+            app.originalSize = app.UIFigure.Position(3:4);
             applyTooltips(app);
             clc
         end
@@ -762,6 +945,21 @@ classdef nestapp < matlab.apps.AppBase
 
         end
 
+        % Size changed function: UIFigure
+        function UIFigureSizeChanged(app, ~)
+            if isempty(app.originalSize); return; end
+            newSize = app.UIFigure.Position(3:4);
+            minW = 650; minH = 420;
+            if newSize(1) < minW || newSize(2) < minH
+                newSize(1) = max(newSize(1), minW);
+                newSize(2) = max(newSize(2), minH);
+                app.UIFigure.Position(3:4) = newSize;
+            end
+            sX = newSize(1) / app.originalSize(1);
+            sY = newSize(2) / app.originalSize(2);
+            rescaleComponents(app, sX, sY);
+        end
+
         % Cell edit callback: UITable
         function UITableCellEdit(app, event)
             indices = event.Indices;
@@ -1026,6 +1224,8 @@ classdef nestapp < matlab.apps.AppBase
             app.UIFigure = uifigure('Visible', 'off');
             app.UIFigure.Position = [100 100 867 529];
             app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.AutoResizeChildren = 'off';
+            app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @UIFigureSizeChanged, true);
 
             % Create TabGroup
             app.TabGroup = uitabgroup(app.UIFigure);
