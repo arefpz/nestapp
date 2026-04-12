@@ -220,7 +220,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % MenuOpening function: MenuRecentFiles
-        function buildRecentFilesMenu(app, ~)
+        function buildRecentFilesMenu(app)
             delete(app.MenuRecentFiles.Children);
             list = getpref('nestapp', 'recentFiles', {});
             if isempty(list)
@@ -234,8 +234,7 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
 
-        % MenuOpening function: MenuRecentPipelines
-        function buildRecentPipelinesMenu(app, ~)
+        function buildRecentPipelinesMenu(app)
             delete(app.MenuRecentPipelines.Children);
             list = getpref('nestapp', 'recentPipelines', {});
             if isempty(list)
@@ -272,6 +271,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
+                buildRecentFilesMenu(app);
             catch
                 warning('nestapp: could not open data from recent folder.');
             end
@@ -302,6 +302,7 @@ classdef nestapp < matlab.apps.AppBase
                 end
                 setpref('nestapp', 'lastPipelineFolder', pFolder);
                 pushRecent(app, 'recentPipelines', pPath);
+                buildRecentPipelinesMenu(app);
             catch err
                 uialert(app.UIFigure, err.message, 'Load Error', 'Icon', 'error');
             end
@@ -442,17 +443,26 @@ classdef nestapp < matlab.apps.AppBase
 
         function rescaleComponents(app, sX, sY)
         % RESCALECOMPONENTS  Rescale all UI components proportionally.
-        %   sX = newWidth/867, sY = newHeight/529 (base dimensions).
+        %   sX = newWidth/origW, sY = newHeight/origH.
         %   Position helper p() scales [x y w h] by [sX sY sX sY].
         %   Font helper fs() uses the smaller scale factor to prevent distortion.
+        %
+        %   The figure coordinate space is 549px (529px TabGroup + 20px status bar).
+        %   The uimenu bar renders outside the coordinate space — MATLAB shifts the
+        %   window position when the menu is created, keeping the coordinate height
+        %   unchanged. No MENU_BAR_H correction needed here.
+            STATUS_H = 20;
+
             sf = min(sX, sY);
             p  = @(o) round(o .* [sX, sY, sX, sY]);
             fs = @(o) max(8, round(o * sf));
 
-            % Status bar spans full width, pinned to bottom
-            app.StatusBar.Position = round([0, 0, 867*sX, 20]);
-            % TabGroup sits above the status bar (base: y=20, h=509)
-            app.TabGroup.Position = round([1, 20, 867*sX, 509*sY]);
+            % Status bar: fixed height, pinned to bottom, full width
+            app.StatusBar.Position = round([0, 0, 867*sX, STATUS_H]);
+            % TabGroup fills all coordinate space above the status bar.
+            figH = round(sY * app.originalSize(2));
+            tabH = figH - STATUS_H;
+            app.TabGroup.Position = [1, STATUS_H, round(867*sX), tabH];
 
             %% Cleaning Tab
             app.StepsListBox.Position             = p([10 173 207 294]);
@@ -875,6 +885,8 @@ classdef nestapp < matlab.apps.AppBase
             app.originalSize = app.UIFigure.Position(3:4);
             applyTooltips(app);
             loadPrefs(app);
+            buildRecentFilesMenu(app);
+            buildRecentPipelinesMenu(app);
             updateStatusBar(app);
             clc
         end
@@ -1054,6 +1066,7 @@ classdef nestapp < matlab.apps.AppBase
             if ~isequal(pPath, 0)
                 setpref('nestapp', 'lastPipelineFolder', pPath);
                 pushRecent(app, 'recentPipelines', fullfile(pPath, pName));
+                buildRecentPipelinesMenu(app);
                 [~, nm, ~] = fileparts(pName);
                 app.pipelineName  = nm;
                 app.pipelineDirty = false;
@@ -1087,6 +1100,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
+                buildRecentFilesMenu(app);
                 updateStatusBar(app);
 
             catch
@@ -1456,7 +1470,10 @@ classdef nestapp < matlab.apps.AppBase
 
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.Position = [100 100 867 529];
+            % Height = 529px tab area + 20px status bar = 549px.
+            % uimenu renders outside the coordinate space (MATLAB shifts the window
+            % upward when the menu is created; coordinate height stays unchanged).
+            app.UIFigure.Position = [100 100 867 549];
             app.UIFigure.Name = 'nestapp — TMS-EEG Processing';
             app.UIFigure.AutoResizeChildren = 'off';
             app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @UIFigureSizeChanged, true);
@@ -1465,14 +1482,12 @@ classdef nestapp < matlab.apps.AppBase
             mFile = uimenu(app.UIFigure, 'Text', 'File');
             uimenu(mFile, 'Text', 'Open Data...', 'Accelerator', 'O', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @SelectDataButtonPushed, true));
-            app.MenuRecentFiles = uimenu(mFile, 'Text', 'Recent Files', ...
-                'MenuOpeningFcn', createCallbackFcn(app, @buildRecentFilesMenu, true));
+            app.MenuRecentFiles = uimenu(mFile, 'Text', 'Recent Files');
             uimenu(mFile, 'Text', 'Load Pipeline...', 'Accelerator', 'L', 'Separator', 'on', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @LoadPipelineButtonPushed, true));
             uimenu(mFile, 'Text', 'Save Pipeline', 'Accelerator', 'S', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @SavePipelineButtonPushed, true));
-            app.MenuRecentPipelines = uimenu(mFile, 'Text', 'Recent Pipelines', ...
-                'MenuOpeningFcn', createCallbackFcn(app, @buildRecentPipelinesMenu, true));
+            app.MenuRecentPipelines = uimenu(mFile, 'Text', 'Recent Pipelines');
             uimenu(mFile, 'Text', 'Exit', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~) delete(app));
 
@@ -1495,7 +1510,7 @@ classdef nestapp < matlab.apps.AppBase
             % Create TabGroup — starts at y=20 to leave room for status bar
             app.TabGroup = uitabgroup(app.UIFigure);
             app.TabGroup.AutoResizeChildren = 'off';
-            app.TabGroup.Position = [1 20 867 509];
+            app.TabGroup.Position = [1 20 867 529];
 
             % Create CleaningTab
             app.CleaningTab = uitab(app.TabGroup);
