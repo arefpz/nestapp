@@ -61,13 +61,20 @@ for k = 1:nComp
     segment  = waveform(inWin);
     winTimes = times(inWin);
 
-    % Find peaks with minimum prominence; negate segment for negative components
+    % Find peaks then filter by minimum prominence.
+    % Note: do not pass 'MinProminence' as a named argument — EEGLAB ships
+    % its own findpeaks.m that shadows the Signal Processing Toolbox version
+    % and does not support named parameters.
     if strcmp(polarity, 'neg')
-        [pv, locs, ~, proms] = findpeaks(-segment, 'MinProminence', minProm);
+        [pv, locs, ~, proms] = findpeaks(-segment);
         pv = -pv;   % restore original sign (negative amplitudes)
     else
-        [pv, locs, ~, proms] = findpeaks(segment, 'MinProminence', minProm);
+        [pv, locs, ~, proms] = findpeaks(segment);
     end
+    keep = proms >= minProm;
+    pv    = pv(keep);
+    locs  = locs(keep);
+    proms = proms(keep);
 
     if isempty(locs)
         continue
