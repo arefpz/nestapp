@@ -129,6 +129,8 @@ classdef nestapp < matlab.apps.AppBase
         FolderEditField_2               matlab.ui.control.EditField
         FolderEditField_2Label          matlab.ui.control.Label
         PLOTTEPButton                   matlab.ui.control.Button
+        ShowComponentsButton            matlab.ui.control.StateButton
+        TEPComponentTable               matlab.ui.control.Table
         UIAxes2                         matlab.ui.control.UIAxes
         UIAxes                          matlab.ui.control.UIAxes
     end
@@ -181,9 +183,10 @@ classdef nestapp < matlab.apps.AppBase
         MenuRecentFiles     % Handle to 'Recent Files' submenu — rebuilt on open
         MenuRecentPipelines % Handle to 'Recent Pipelines' submenu — rebuilt on open
         StatusBar           % uilabel pinned to bottom of UIFigure — visible on both tabs
-        pipelineDirty   = false % true when pipeline has unsaved changes
-        pipelineName    = ''    % filename of last saved/loaded pipeline
-        lastStepClick   = NaT        % datetime of last StepsListBox click (double-click detection)
+        pipelineDirty   = false    % true when pipeline has unsaved changes
+        pipelineName    = ''       % filename of last saved/loaded pipeline
+        lastStepClick   = NaT     % datetime of last StepsListBox click (double-click detection)
+        tepPeaks        = struct([]) % struct array from tepPeakFinder; cached after each PLOT TEP
     end
 
     methods (Access = private)
@@ -502,8 +505,12 @@ classdef nestapp < matlab.apps.AppBase
             app.ReStartStepsButton.FontSize       = fs(18);
 
             %% Visualizing Tab
-            app.UIAxes.Position                   = p([344 299 300 200]);
-            app.UIAxes2.Position                  = p([359 87 176 168]);
+            % UIAxes shrunk by 20px (200→180) and moved up; UIAxes2 shrunk by 20px (168→148)
+            % and moved down, creating a 104px gap at y=215..319 for TEPComponentTable.
+            app.UIAxes.Position                   = p([344 319 300 180]);
+            app.UIAxes2.Position                  = p([359 67 176 148]);
+            app.TEPComponentTable.Position        = p([344 215 300 104]);
+            app.ShowComponentsButton.Position     = p([21 143 108 23]);
             app.PLOTTEPButton.Position            = p([21 113 108 23]);
             app.ExportTEPFigureButton.Position    = p([21 84 108 23]);
             app.PlotEEGdataButton.Position        = p([21 21 108 23]);
@@ -693,40 +700,62 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
         
-        function plotTEP(app) %%%%%% LEGEND IS NOT GOOD
+        function plotTEP(app)
             if ~app.EEG_SelectedTEPFiles_Loaded
                 LoadSelecEEGdata(app)
             end
-            for nfile = 1:numel(app.SelectedFilesforTEP)
-                EEGaux = app.EEGofAllSelectedFiles{1,nfile};
-                ROIind = find(ismember({EEGaux.chanlocs.labels},app.ROIelecsLabels));
-                TEP_ROI(nfile,:)=mean(mean(EEGaux.data(ROIind,:,:),3,'omitmissing'),1,"omitmissing");
+            nFiles  = numel(app.EEGofAllSelectedFiles);
+            nTimes  = numel(app.EEGtime);
+            TEP_ROI = zeros(nFiles, nTimes);
+            for nfile = 1:nFiles
+                EEGaux = app.EEGofAllSelectedFiles{1, nfile};
+                ROIind = find(ismember({EEGaux.chanlocs.labels}, app.ROIelecsLabels));
+                TEP_ROI(nfile,:) = mean(mean(EEGaux.data(ROIind,:,:), 3, 'omitmissing'), 1, 'omitmissing');
             end
-            swin = 5;
+
+            swin   = 5;
             app.TEP2Export = TEP_ROI;
-            TEP_ROISD = std(TEP_ROI,1,1)/sqrt(size(TEP_ROI,1));
-            Colr = rand(1,3);
-            meanx = smoothdata(mean(TEP_ROI,1,"omitmissing"),'movmean',swin); sdx = smoothdata(TEP_ROISD,'movmean',swin);
-            xf=[app.EEGtime(1) app.EEGtime  app.EEGtime(end) app.EEGtime(end:-1:1)];
-            yf=[meanx(1)-sdx(1)/2 meanx+sdx/2 meanx(end)-sdx(end)/2 meanx(end:-1:1)-sdx(end:-1:1)/2];
-            
+            grandMean = mean(TEP_ROI, 1, 'omitmissing');
+            TEP_ROISD = std(TEP_ROI, 1, 1) / sqrt(nFiles);
+            Colr  = rand(1,3);
+            meanx = smoothdata(grandMean,   'movmean', swin);
+            sdx   = smoothdata(TEP_ROISD,  'movmean', swin);
+            xf = [app.EEGtime(1) app.EEGtime  app.EEGtime(end) app.EEGtime(end:-1:1)];
+            yf = [meanx(1)-sdx(1)/2 meanx+sdx/2 meanx(end)-sdx(end)/2 meanx(end:-1:1)-sdx(end:-1:1)/2];
+
+            % Legend label: base filename of first selected file
+            if iscell(app.SelectedFilesforTEP) && ~isempty(app.SelectedFilesforTEP)
+                [~, dispName, ~] = fileparts(app.SelectedFilesforTEP{1});
+            else
+                dispName = 'TEP';
+            end
 
             if app.NewFigureButton.Value
                 cla(app.UIAxes, 'reset');
                 hold(app.UIAxes, 'on');
-                fill(app.UIAxes,xf,yf,Colr(1,:),'FaceAlpha',0.5,'LineStyle','none')
-                plot(app.UIAxes,app.EEGtime,meanx,'Color',Colr(1,:),'LineWidth',2);
+                fill(app.UIAxes, xf, yf, Colr(1,:), 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr(1,:), 'LineWidth', 2, 'DisplayName', dispName);
                 hold(app.UIAxes, 'off');
-                xlim(app.UIAxes,app.DefaulTEPxLim);
+                xlim(app.UIAxes, app.DefaulTEPxLim);
             elseif app.AddtocurrentFigureButton.Value
+                prevYLim = ylim(app.UIAxes);
                 hold(app.UIAxes, 'on');
-                fill(app.UIAxes,xf,yf,Colr(1,:),'FaceAlpha',0.5,'LineStyle','none')
-                plot(app.UIAxes,app.EEGtime,meanx,'Color',Colr(1,:),'LineWidth',2);
-                xlim(app.UIAxes,app.DefaulTEPxLim);
+                fill(app.UIAxes, xf, yf, Colr(1,:), 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr(1,:), 'LineWidth', 2, 'DisplayName', dispName);
+                xlim(app.UIAxes, app.DefaulTEPxLim);
+                % Expand y-axis to accommodate new data; never shrink existing range
+                newYLim = ylim(app.UIAxes);
+                ylim(app.UIAxes, [min(prevYLim(1), newYLim(1)), max(prevYLim(2), newYLim(2))]);
             end
-                
-            
-            
+
+            legend(app.UIAxes, 'show', 'Location', 'best');
+
+            % Component detection on grand mean (runs regardless of toggle to cache peaks)
+            app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime);
+            if app.ShowComponentsButton.Value
+                overlayTEPComponents(app);
+            end
+            populateTEPComponentTable(app);
         end
         
         function EEG_topoplot(app)
@@ -786,8 +815,60 @@ classdef nestapp < matlab.apps.AppBase
                 selected = 1;
             end
 
-            
+
         end
+
+        function overlayTEPComponents(app)
+        % Draw dashed vertical lines and text labels for each detected TEP component.
+        % Assumes app.tepPeaks is already populated by tepPeakFinder.
+            if isempty(app.tepPeaks)
+                return
+            end
+            ax = app.UIAxes;
+            yLims = ylim(ax);
+            % Place labels near the top of the axes (80% height)
+            labelY = yLims(1) + 0.80 * (yLims(2) - yLims(1));
+            hold(ax, 'on');
+            for i = 1:numel(app.tepPeaks)
+                pk = app.tepPeaks(i);
+                if ~pk.found
+                    continue
+                end
+                xline(ax, pk.latencyMs, '--', 'Color', [0.4 0.4 0.4], ...
+                    'LineWidth', 1, 'HandleVisibility', 'off');
+                text(ax, pk.latencyMs, labelY, ...
+                    sprintf('%s\n%.0f ms\n%.1f µV', pk.name, pk.latencyMs, pk.amplitudeUV), ...
+                    'FontSize', 7, 'HorizontalAlignment', 'center', ...
+                    'Color', [0.3 0.3 0.3], 'VerticalAlignment', 'top');
+            end
+            hold(ax, 'off');
+        end
+
+        function populateTEPComponentTable(app)
+        % Fill TEPComponentTable from app.tepPeaks.
+        % Shows '—' for components not found.
+            if isempty(app.tepPeaks)
+                app.TEPComponentTable.Data = {};
+                return
+            end
+            nComp = numel(app.tepPeaks);
+            tableData = cell(nComp, 4);
+            for i = 1:nComp
+                pk = app.tepPeaks(i);
+                tableData{i, 1} = pk.name;
+                if pk.found
+                    tableData{i, 2} = pk.latencyMs;
+                    tableData{i, 3} = pk.amplitudeUV;
+                    tableData{i, 4} = true;
+                else
+                    tableData{i, 2} = NaN;
+                    tableData{i, 3} = NaN;
+                    tableData{i, 4} = false;
+                end
+            end
+            app.TEPComponentTable.Data = tableData;
+        end
+
     end
 
 
@@ -809,9 +890,10 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectDataButton.Tooltip    = 'Select a folder or individual files to process';
 
             % Visualizing tab
-            app.PLOTTEPButton.Tooltip       = 'Plot TMS-evoked potential waveforms for the selected files and electrodes';
-            app.TOPOPLOTButton.Tooltip      = 'Plot a scalp topographic map at the specified time point';
-            app.ExportTEPFigureButton.Tooltip = 'Save the current TEP figure as .fig and .png';
+            app.PLOTTEPButton.Tooltip         = 'Plot TMS-evoked potential waveforms for the selected files and electrodes';
+            app.ShowComponentsButton.Tooltip  = 'Detect and overlay N15/P30/N45/P60/N100/P180 peaks on the TEP plot';
+            app.TOPOPLOTButton.Tooltip        = 'Plot a scalp topographic map at the specified time point';
+            app.ExportTEPFigureButton.Tooltip = 'Export the current TEP plot as PNG or PDF';
             app.ReLoadAvailableElectrodesButton.Tooltip = ...
                 'Reload the electrode list from the currently selected files';
             app.SelectAllCheckBox.Tooltip   = 'Select all available files for TEP plotting';
@@ -1395,30 +1477,18 @@ classdef nestapp < matlab.apps.AppBase
         % Button pushed function: ExportTEPFigureButton
         function ExportTEPFigureButtonPushed(app, event)
             if ~app.TEPCreated
-                warning('Please plot TEP first!')
-            else
-                % Create a new figure and axes
-                fig = figure;
-                ax = axes('Parent', fig);
-
-                % Copy all children (plots, lines, etc.) from app.UIAxes to the new axes
-                copyobj(allchild(app.UIAxes), ax);
-
-                % Copy axis labels, title, and limits
-                ax.XLabel.String = app.UIAxes.XLabel.String;
-                ax.YLabel.String = app.UIAxes.YLabel.String;
-                ax.Title.String  = app.UIAxes.Title.String;
-
-                % Optional: Match axis limits
-                ax.XLim = app.UIAxes.XLim;
-                ax.YLim = app.UIAxes.YLim;
-
-                % Optional: Copy legend if exists
-                lgd = findobj(app.UIAxes.Parent, 'Type', 'Legend');
-                if ~isempty(lgd)
-                    legend(ax, '');
-                end
+                uialert(app.UIFigure, 'Please plot a TEP first.', 'No figure');
+                return
             end
+            [fname, fpath] = uiputfile( ...
+                {'*.png','PNG image';'*.pdf','PDF file';'*.fig','MATLAB figure'}, ...
+                'Export TEP Figure', 'tep_figure');
+            if isequal(fname, 0)
+                return
+            end
+            exportgraphics(app.UIAxes, fullfile(fpath, fname), 'Resolution', 300);
+            [~, nm, ~] = fileparts(fname);
+            savefig(ancestor(app.UIAxes, 'figure'), fullfile(fpath, [nm '.fig']));
         end
 
         % Value changing function: TEPWindowSlider
@@ -1460,8 +1530,21 @@ classdef nestapp < matlab.apps.AppBase
         % Value changed function: TEPvarNameEditField
         function TEPvarNameEditFieldValueChanged(app, event)
             value = app.TEPvarNameEditField.Value;
-            
+
         end
+
+        % Value changed function: ShowComponentsButton
+        function ShowComponentsButtonValueChanged(app, ~)
+            if app.TEPCreated
+                if app.ShowComponentsButton.Value
+                    overlayTEPComponents(app);
+                else
+                    % Replot without overlays — cla then replot
+                    plotTEP(app);
+                end
+            end
+        end
+
     end
 
     % Component initialization
@@ -1683,7 +1766,7 @@ classdef nestapp < matlab.apps.AppBase
             xlabel(app.UIAxes, 'Time')
             ylabel(app.UIAxes, 'TEP')
             app.UIAxes.TickDir = 'both';
-            app.UIAxes.Position = [344 299 300 200];
+            app.UIAxes.Position = [344 319 300 180];
 
             % Create UIAxes2
             app.UIAxes2 = uiaxes(app.VisualizingTab);
@@ -1693,7 +1776,21 @@ classdef nestapp < matlab.apps.AppBase
             app.UIAxes2.YAxisLocation = 'origin';
             app.UIAxes2.YTick = [];
             app.UIAxes2.ZTick = [];
-            app.UIAxes2.Position = [359 87 176 168];
+            app.UIAxes2.Position = [359 67 176 148];
+
+            % Create TEPComponentTable
+            app.TEPComponentTable = uitable(app.VisualizingTab);
+            app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)', 'Found'};
+            app.TEPComponentTable.ColumnWidth = {80, 100, 110, 50};
+            app.TEPComponentTable.RowName = {};
+            app.TEPComponentTable.Enable = 'off';
+            app.TEPComponentTable.Position = [344 215 300 104];
+
+            % Create ShowComponentsButton
+            app.ShowComponentsButton = uibutton(app.VisualizingTab, 'state');
+            app.ShowComponentsButton.ValueChangedFcn = createCallbackFcn(app, @ShowComponentsButtonValueChanged, true);
+            app.ShowComponentsButton.Text = 'Show Components';
+            app.ShowComponentsButton.Position = [21 143 108 23];
 
             % Create PLOTTEPButton
             app.PLOTTEPButton = uibutton(app.VisualizingTab, 'push');
