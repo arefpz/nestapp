@@ -206,7 +206,7 @@ classdef nestapp < matlab.apps.AppBase
                 end
             end
             % Data segment
-            if isempty(app.path)
+            if ~ischar(app.path) && ~isstring(app.path) || isempty(app.path)
                 dataStr = 'Data: (none)';
             else
                 parts = strsplit(strtrim(app.path), {'\','/'});
