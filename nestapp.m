@@ -181,8 +181,9 @@ classdef nestapp < matlab.apps.AppBase
         MenuRecentFiles     % Handle to 'Recent Files' submenu — rebuilt on open
         MenuRecentPipelines % Handle to 'Recent Pipelines' submenu — rebuilt on open
         StatusBar           % uilabel pinned to bottom of UIFigure — visible on both tabs
-        pipelineDirty = false % true when pipeline has unsaved changes
-        pipelineName  = ''    % filename of last saved/loaded pipeline
+        pipelineDirty   = false % true when pipeline has unsaved changes
+        pipelineName    = ''    % filename of last saved/loaded pipeline
+        lastStepClick   = NaT        % datetime of last StepsListBox click (double-click detection)
     end
 
     methods (Access = private)
@@ -892,10 +893,14 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Clicked callback: StepsListBox
-        function StepsListBoxClicked(app, event)
-            if event.InteractionInformation.NumClicks == 2
-                AddButtonPushed(app, event);
+        function StepsListBoxClicked(app, ~)
+            % Detect double-click via inter-click interval (< 500 ms).
+            % ListBoxInteraction has no NumClicks property in R2025b.
+            t = datetime('now');
+            if seconds(t - app.lastStepClick) < 0.5
+                AddButtonPushed(app, []);
             end
+            app.lastStepClick = t;
         end
 
         % Value changed function: StepsListBox
