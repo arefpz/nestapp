@@ -1792,7 +1792,7 @@ classdef nestapp < matlab.apps.AppBase
             % Create TEPComponentTable
             app.TEPComponentTable = uitable(app.VisualizingTab);
             app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)'};
-            app.TEPComponentTable.ColumnWidth = {90, 110, 115};
+            app.TEPComponentTable.ColumnWidth = {90, 110, 'auto'};
             app.TEPComponentTable.RowName = {};
             app.TEPComponentTable.Enable = 'on';
             app.TEPComponentTable.Position = [340 215 315 104];
