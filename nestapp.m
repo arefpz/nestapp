@@ -523,8 +523,8 @@ classdef nestapp < matlab.apps.AppBase
             app.EEGDatasetDropDown.Position       = p([230 50 100 22]);
 
             % Center column — TEP window slider above the TEP plot
-            app.TEPWindowSliderLabel.Position     = p([344 508 80 18]);
-            app.TEPWindowSlider.Position          = p([428 511 222 3]);
+            app.TEPWindowSliderLabel.Position     = p([658 420 85 16]);
+            app.TEPWindowSlider.Position          = p([658 388 196 3]);
             app.UIAxes.Position                   = p([340 319 315 186]);
             app.TEPComponentTable.Position        = p([340 215 315 104]);
 
@@ -2563,14 +2563,14 @@ classdef nestapp < matlab.apps.AppBase
             % Create TEPWindowSliderLabel
             app.TEPWindowSliderLabel = uilabel(app.VisualizingTab);
             app.TEPWindowSliderLabel.HorizontalAlignment = 'right';
-            app.TEPWindowSliderLabel.Position = [344 508 80 18];
+            app.TEPWindowSliderLabel.Position = [658 420 85 16];
             app.TEPWindowSliderLabel.Text = 'TEP Window';
 
             % Create TEPWindowSlider
             app.TEPWindowSlider = uislider(app.VisualizingTab, 'range');
             app.TEPWindowSlider.Limits = [-100 300];
             app.TEPWindowSlider.ValueChangingFcn = createCallbackFcn(app, @TEPWindowSliderValueChanging, true);
-            app.TEPWindowSlider.Position = [428 511 222 3];
+            app.TEPWindowSlider.Position = [658 388 196 3];
             app.TEPWindowSlider.Value = [-50 250];
 
             % Create TopoplottimeSpinnerLabel
