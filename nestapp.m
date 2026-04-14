@@ -505,48 +505,55 @@ classdef nestapp < matlab.apps.AppBase
             app.ReStartStepsButton.FontSize       = fs(18);
 
             %% Visualizing Tab
-            % UIAxes shrunk by 20px (200→180) and moved up; UIAxes2 shrunk by 20px (168→148)
-            % and moved down, creating a 104px gap at y=215..319 for TEPComponentTable.
-            app.UIAxes.Position                   = p([344 319 300 180]);
-            app.UIAxes2.Position                  = p([359 67 176 148]);
-            app.TEPComponentTable.Position        = p([344 215 300 104]);
-            app.ShowComponentsButton.Position     = p([21 143 108 23]);
-            app.PLOTTEPButton.Position            = p([21 113 108 23]);
-            app.ExportTEPFigureButton.Position    = p([21 84 108 23]);
-            app.PlotEEGdataButton.Position        = p([21 21 108 23]);
-            app.ExportTEPDataButton.Position      = p([21 56 108 23]);
+            % Three zones: left (x:0-340 electrode map), center (x:340-655 TEP/topo),
+            % right (x:655-867 file selection). Bottom strip (y:0-165) holds controls.
+            % TEP window slider lives above UIAxes; topoplot controls sit right of UIAxes2.
 
-            % Select TEP data panel + children
-            app.SelectDatatoVisulaizeTEPsPanel.Position = p([651 342 208 90]);
+            % Left action column — bottom strip (x:5-145)
+            app.ShowComponentsButton.Position     = p([5 140 140 23]);
+            app.PLOTTEPButton.Position            = p([5 108 140 29]);
+            app.ExportTEPFigureButton.Position    = p([5 80 140 23]);
+            app.ExportTEPDataButton.Position      = p([5 54 140 23]);
+            app.PlotEEGdataButton.Position        = p([5 28 140 23]);
+
+            % Center-left controls — bottom strip (x:152-340)
+            app.PlottingModeButtonGroup.Position  = p([152 88 150 67]);
+            app.NewFigureButton.Position          = p([11 21 83 22]);
+            app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
+            app.EEGDatasetDropDownLabel.Position  = p([152 58 75 22]);
+            app.EEGDatasetDropDown.Position       = p([230 58 100 22]);
+            app.TEPvarNameEditFieldLabel.Position = p([152 30 83 22]);
+            app.TEPvarNameEditField.Position      = p([238 30 95 22]);
+
+            % Center column — TEP window slider above the TEP plot
+            app.TEPWindowSliderLabel.Position     = p([344 508 80 18]);
+            app.TEPWindowSlider.Position          = p([428 511 222 3]);
+            app.UIAxes.Position                   = p([340 319 315 186]);
+            app.TEPComponentTable.Position        = p([340 215 315 104]);
+
+            % Center column — topoplot with controls to its right
+            app.UIAxes2.Position                  = p([340 65 200 148]);
+            app.TOPOPLOTButton.Position           = p([543 167 104 44]);
+            app.TopoplottimeSpinnerLabel.Position = p([543 145 103 20]);
+            app.TopoplottimeSpinner.Position      = p([543 120 103 22]);
+            app.WindowsizeforTopoplotLabel.Position = p([543 90 103 26]);
+            app.WindowsizefortimeaveragedTopoplotEditField.Position = p([543 65 70 22]);
+            app.Slider.Position                   = p([340 48 200 3]);
+
+            % Head image (electrode map) — unchanged
+            app.Image2.Position                   = p([-1 165 350 336]);
+
+            % Right column — data selection
+            app.UseCurrentlyCleanedDataCheckBox.Position = p([671 455 180 22]);
+            app.SelectDatatoVisulaizeTEPsPanel.Position  = p([651 342 208 90]);
             app.FolderEditField_2Label.Position   = p([1 41 40 22]);
             app.FolderEditField_2.Position        = p([49 41 145 22]);
             app.SelectDataButton_2.Position       = p([13 10 183 23]);
-
-            app.UseCurrentlyCleanedDataCheckBox.Position = p([671 455 180 22]);
             app.FilesListBoxLabel.Position        = p([740 325 30 22]);
             app.FilesListBox.Position             = p([669 71 183 259]);
-            app.Image2.Position                   = p([-1 165 350 336]);
-            app.Slider.Position                   = p([371 38 254 3]);
-            app.WindowsizeforTopoplotLabel.Position = p([353 44 90 44]);
-            app.WindowsizefortimeaveragedTopoplotEditField.Position = p([453 58 41 22]);
-            app.TOPOPLOTButton.Position           = p([541 150 100 42]);
-
-            % Plotting mode button group + children
-            app.PlottingModeButtonGroup.Position  = p([174 88 149 67]);
-            app.NewFigureButton.Position          = p([11 21 83 22]);
-            app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
-
             app.SelectAllCheckBox.Position        = p([670 46 71 22]);
             app.DontfindcommonelectrodesCheckBox.Position = p([670 28 180 22]);
             app.ReLoadAvailableElectrodesButton.Position  = p([686 7 153 23]);
-            app.TEPWindowSliderLabel.Position     = p([350 266 74 22]);
-            app.TEPWindowSlider.Position          = p([441 285 193 3]);
-            app.TopoplottimeSpinnerLabel.Position = p([496 57 76 22]);
-            app.TopoplottimeSpinner.Position      = p([574 57 66 22]);
-            app.EEGDatasetDropDownLabel.Position  = p([132 21 75 22]);
-            app.EEGDatasetDropDown.Position       = p([214 21 110 22]);
-            app.TEPvarNameEditFieldLabel.Position = p([128 56 83 22]);
-            app.TEPvarNameEditField.Position      = p([212 56 111 22]);
 
             %% Electrode buttons (Visualizing Tab — 64 buttons)
             app.AF3Button.Position   = p([108 410 25 23]);
@@ -1766,7 +1773,7 @@ classdef nestapp < matlab.apps.AppBase
             xlabel(app.UIAxes, 'Time')
             ylabel(app.UIAxes, 'TEP')
             app.UIAxes.TickDir = 'both';
-            app.UIAxes.Position = [344 319 300 180];
+            app.UIAxes.Position = [340 319 315 186];
 
             % Create UIAxes2
             app.UIAxes2 = uiaxes(app.VisualizingTab);
@@ -1776,7 +1783,7 @@ classdef nestapp < matlab.apps.AppBase
             app.UIAxes2.YAxisLocation = 'origin';
             app.UIAxes2.YTick = [];
             app.UIAxes2.ZTick = [];
-            app.UIAxes2.Position = [359 67 176 148];
+            app.UIAxes2.Position = [340 65 200 148];
 
             % Create TEPComponentTable
             app.TEPComponentTable = uitable(app.VisualizingTab);
@@ -1784,19 +1791,19 @@ classdef nestapp < matlab.apps.AppBase
             app.TEPComponentTable.ColumnWidth = {80, 100, 110, 50};
             app.TEPComponentTable.RowName = {};
             app.TEPComponentTable.Enable = 'off';
-            app.TEPComponentTable.Position = [344 215 300 104];
+            app.TEPComponentTable.Position = [340 215 315 104];
 
             % Create ShowComponentsButton
             app.ShowComponentsButton = uibutton(app.VisualizingTab, 'state');
             app.ShowComponentsButton.ValueChangedFcn = createCallbackFcn(app, @ShowComponentsButtonValueChanged, true);
             app.ShowComponentsButton.Text = 'Show Components';
-            app.ShowComponentsButton.Position = [21 143 108 23];
+            app.ShowComponentsButton.Position = [5 140 140 23];
 
             % Create PLOTTEPButton
             app.PLOTTEPButton = uibutton(app.VisualizingTab, 'push');
             app.PLOTTEPButton.ButtonPushedFcn = createCallbackFcn(app, @PLOTTEPButtonPushed, true);
             app.PLOTTEPButton.Enable = 'off';
-            app.PLOTTEPButton.Position = [21 113 108 23];
+            app.PLOTTEPButton.Position = [5 108 140 29];
             app.PLOTTEPButton.Text = 'PLOT TEP';
 
             % Create SelectDatatoVisulaizeTEPsPanel
@@ -1853,32 +1860,32 @@ classdef nestapp < matlab.apps.AppBase
             % Create Slider
             app.Slider = uislider(app.VisualizingTab);
             app.Slider.ValueChangingFcn = createCallbackFcn(app, @SliderValueChanging, true);
-            app.Slider.Position = [371 38 254 3];
+            app.Slider.Position = [340 48 200 3];
             app.Slider.Value = 60;
 
             % Create WindowsizeforTopoplotLabel
             app.WindowsizeforTopoplotLabel = uilabel(app.VisualizingTab);
             app.WindowsizeforTopoplotLabel.HorizontalAlignment = 'center';
-            app.WindowsizeforTopoplotLabel.Position = [353 44 90 44];
+            app.WindowsizeforTopoplotLabel.Position = [543 90 103 26];
             app.WindowsizeforTopoplotLabel.Text = {'Window size for'; ' time averaged'; ' Topoplot'};
 
             % Create WindowsizefortimeaveragedTopoplotEditField
             app.WindowsizefortimeaveragedTopoplotEditField = uieditfield(app.VisualizingTab, 'numeric');
             app.WindowsizefortimeaveragedTopoplotEditField.ValueDisplayFormat = '%.0f';
-            app.WindowsizefortimeaveragedTopoplotEditField.Position = [453 58 41 22];
+            app.WindowsizefortimeaveragedTopoplotEditField.Position = [543 65 70 22];
 
             % Create TOPOPLOTButton
             app.TOPOPLOTButton = uibutton(app.VisualizingTab, 'push');
             app.TOPOPLOTButton.ButtonPushedFcn = createCallbackFcn(app, @TOPOPLOTButtonPushed, true);
             app.TOPOPLOTButton.Enable = 'off';
-            app.TOPOPLOTButton.Position = [541 150 100 42];
+            app.TOPOPLOTButton.Position = [543 167 104 44];
             app.TOPOPLOTButton.Text = 'TOPOPLOT';
 
             % Create ExportTEPFigureButton
             app.ExportTEPFigureButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPFigureButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPFigureButtonPushed, true);
             app.ExportTEPFigureButton.Enable = 'off';
-            app.ExportTEPFigureButton.Position = [21 84 108 23];
+            app.ExportTEPFigureButton.Position = [5 80 140 23];
             app.ExportTEPFigureButton.Text = 'Export TEP Figure';
 
             % Create PlottingModeButtonGroup
@@ -1886,7 +1893,7 @@ classdef nestapp < matlab.apps.AppBase
             app.PlottingModeButtonGroup.AutoResizeChildren = 'off';
             app.PlottingModeButtonGroup.BorderType = 'none';
             app.PlottingModeButtonGroup.Title = 'Plotting Mode';
-            app.PlottingModeButtonGroup.Position = [174 88 149 67];
+            app.PlottingModeButtonGroup.Position = [152 88 150 67];
 
             % Create NewFigureButton
             app.NewFigureButton = uiradiobutton(app.PlottingModeButtonGroup);
@@ -2552,20 +2559,20 @@ classdef nestapp < matlab.apps.AppBase
             % Create TEPWindowSliderLabel
             app.TEPWindowSliderLabel = uilabel(app.VisualizingTab);
             app.TEPWindowSliderLabel.HorizontalAlignment = 'right';
-            app.TEPWindowSliderLabel.Position = [350 266 74 22];
+            app.TEPWindowSliderLabel.Position = [344 508 80 18];
             app.TEPWindowSliderLabel.Text = 'TEP Window';
 
             % Create TEPWindowSlider
             app.TEPWindowSlider = uislider(app.VisualizingTab, 'range');
             app.TEPWindowSlider.Limits = [-100 300];
             app.TEPWindowSlider.ValueChangingFcn = createCallbackFcn(app, @TEPWindowSliderValueChanging, true);
-            app.TEPWindowSlider.Position = [441 285 193 3];
+            app.TEPWindowSlider.Position = [428 511 222 3];
             app.TEPWindowSlider.Value = [-50 250];
 
             % Create TopoplottimeSpinnerLabel
             app.TopoplottimeSpinnerLabel = uilabel(app.VisualizingTab);
             app.TopoplottimeSpinnerLabel.HorizontalAlignment = 'right';
-            app.TopoplottimeSpinnerLabel.Position = [496 57 76 22];
+            app.TopoplottimeSpinnerLabel.Position = [543 145 103 20];
             app.TopoplottimeSpinnerLabel.Text = 'Topoplot time';
 
             % Create TopoplottimeSpinner
@@ -2573,13 +2580,13 @@ classdef nestapp < matlab.apps.AppBase
             app.TopoplottimeSpinner.RoundFractionalValues = 'on';
             app.TopoplottimeSpinner.ValueDisplayFormat = '%.0f';
             app.TopoplottimeSpinner.ValueChangedFcn = createCallbackFcn(app, @TopoplottimeSpinnerValueChanged, true);
-            app.TopoplottimeSpinner.Position = [574 57 66 22];
+            app.TopoplottimeSpinner.Position = [543 120 103 22];
             app.TopoplottimeSpinner.Value = 60;
 
             % Create EEGDatasetDropDownLabel
             app.EEGDatasetDropDownLabel = uilabel(app.VisualizingTab);
             app.EEGDatasetDropDownLabel.HorizontalAlignment = 'right';
-            app.EEGDatasetDropDownLabel.Position = [132 21 75 22];
+            app.EEGDatasetDropDownLabel.Position = [152 58 75 22];
             app.EEGDatasetDropDownLabel.Text = 'EEG Dataset';
 
             % Create EEGDatasetDropDown
@@ -2587,35 +2594,35 @@ classdef nestapp < matlab.apps.AppBase
             app.EEGDatasetDropDown.Items = {'Select a file'};
             app.EEGDatasetDropDown.ValueChangedFcn = createCallbackFcn(app, @EEGDatasetDropDownValueChanged, true);
             app.EEGDatasetDropDown.Enable = 'off';
-            app.EEGDatasetDropDown.Position = [214 21 110 22];
+            app.EEGDatasetDropDown.Position = [230 58 100 22];
             app.EEGDatasetDropDown.Value = 'Select a file';
 
             % Create PlotEEGdataButton
             app.PlotEEGdataButton = uibutton(app.VisualizingTab, 'push');
             app.PlotEEGdataButton.ButtonPushedFcn = createCallbackFcn(app, @PlotEEGdataButtonPushed, true);
             app.PlotEEGdataButton.Enable = 'off';
-            app.PlotEEGdataButton.Position = [21 21 108 23];
+            app.PlotEEGdataButton.Position = [5 28 140 23];
             app.PlotEEGdataButton.Text = 'Plot EEG data';
 
             % Create ExportTEPDataButton
             app.ExportTEPDataButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPDataButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPDataButtonPushed, true);
             app.ExportTEPDataButton.Enable = 'off';
-            app.ExportTEPDataButton.Position = [21 56 108 23];
+            app.ExportTEPDataButton.Position = [5 54 140 23];
             app.ExportTEPDataButton.Text = 'Export TEP Data';
 
             % Create TEPvarNameEditFieldLabel
             app.TEPvarNameEditFieldLabel = uilabel(app.VisualizingTab);
             app.TEPvarNameEditFieldLabel.HorizontalAlignment = 'right';
             app.TEPvarNameEditFieldLabel.Enable = 'off';
-            app.TEPvarNameEditFieldLabel.Position = [128 56 83 22];
+            app.TEPvarNameEditFieldLabel.Position = [152 30 83 22];
             app.TEPvarNameEditFieldLabel.Text = 'TEP var Name';
 
             % Create TEPvarNameEditField
             app.TEPvarNameEditField = uieditfield(app.VisualizingTab, 'text');
             app.TEPvarNameEditField.ValueChangedFcn = createCallbackFcn(app, @TEPvarNameEditFieldValueChanged, true);
             app.TEPvarNameEditField.Enable = 'off';
-            app.TEPvarNameEditField.Position = [212 56 111 22];
+            app.TEPvarNameEditField.Position = [238 30 95 22];
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
