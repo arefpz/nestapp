@@ -510,11 +510,9 @@ classdef nestapp < matlab.apps.AppBase
             % TEP window slider lives above UIAxes; topoplot controls sit right of UIAxes2.
 
             % Left action column — bottom strip (x:5-145)
-            app.ShowComponentsButton.Position     = p([5 140 140 23]);
-            app.PLOTTEPButton.Position            = p([5 108 140 29]);
-            app.ExportTEPFigureButton.Position    = p([5 80 140 23]);
-            app.ExportTEPDataButton.Position      = p([5 54 140 23]);
-            app.PlotEEGdataButton.Position        = p([5 28 140 23]);
+            app.ShowComponentsButton.Position     = p([5 104 140 23]);
+            app.PLOTTEPButton.Position            = p([5 130 140 30]);
+            app.PlotEEGdataButton.Position        = p([5 76 140 23]);
 
             % Center-left controls — bottom strip (x:152-340)
             app.PlottingModeButtonGroup.Position  = p([152 88 150 67]);
@@ -522,8 +520,6 @@ classdef nestapp < matlab.apps.AppBase
             app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
             app.EEGDatasetDropDownLabel.Position  = p([152 58 75 22]);
             app.EEGDatasetDropDown.Position       = p([230 58 100 22]);
-            app.TEPvarNameEditFieldLabel.Position = p([152 30 83 22]);
-            app.TEPvarNameEditField.Position      = p([238 30 95 22]);
 
             % Center column — TEP window slider above the TEP plot
             app.TEPWindowSliderLabel.Position     = p([344 508 80 18]);
@@ -550,7 +546,12 @@ classdef nestapp < matlab.apps.AppBase
             app.FolderEditField_2.Position        = p([49 41 145 22]);
             app.SelectDataButton_2.Position       = p([13 10 183 23]);
             app.FilesListBoxLabel.Position        = p([740 325 30 22]);
-            app.FilesListBox.Position             = p([669 71 183 259]);
+            app.FilesListBox.Position             = p([669 197 183 128]);
+            % Export controls moved here from action column (freed by listbox shrink)
+            app.ExportTEPFigureButton.Position    = p([669 163 183 23]);
+            app.ExportTEPDataButton.Position      = p([669 133 183 23]);
+            app.TEPvarNameEditFieldLabel.Position = p([669 103 80 22]);
+            app.TEPvarNameEditField.Position      = p([754 103 98 22]);
             app.SelectAllCheckBox.Position        = p([670 46 71 22]);
             app.DontfindcommonelectrodesCheckBox.Position = p([670 28 180 22]);
             app.ReLoadAvailableElectrodesButton.Position  = p([686 7 153 23]);
@@ -1796,20 +1797,20 @@ classdef nestapp < matlab.apps.AppBase
             app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)', 'Found'};
             app.TEPComponentTable.ColumnWidth = {80, 100, 110, 50};
             app.TEPComponentTable.RowName = {};
-            app.TEPComponentTable.Enable = 'off';
+            app.TEPComponentTable.Enable = 'on';
             app.TEPComponentTable.Position = [340 215 315 104];
 
             % Create ShowComponentsButton
             app.ShowComponentsButton = uibutton(app.VisualizingTab, 'state');
             app.ShowComponentsButton.ValueChangedFcn = createCallbackFcn(app, @ShowComponentsButtonValueChanged, true);
             app.ShowComponentsButton.Text = 'Show Components';
-            app.ShowComponentsButton.Position = [5 140 140 23];
+            app.ShowComponentsButton.Position = [5 104 140 23];
 
             % Create PLOTTEPButton
             app.PLOTTEPButton = uibutton(app.VisualizingTab, 'push');
             app.PLOTTEPButton.ButtonPushedFcn = createCallbackFcn(app, @PLOTTEPButtonPushed, true);
             app.PLOTTEPButton.Enable = 'off';
-            app.PLOTTEPButton.Position = [5 108 140 29];
+            app.PLOTTEPButton.Position = [5 130 140 30];
             app.PLOTTEPButton.Text = 'PLOT TEP';
 
             % Create SelectDatatoVisulaizeTEPsPanel
@@ -1855,7 +1856,7 @@ classdef nestapp < matlab.apps.AppBase
             app.FilesListBox.Items = {};
             app.FilesListBox.Multiselect = 'on';
             app.FilesListBox.ValueChangedFcn = createCallbackFcn(app, @FilesListBoxValueChanged, true);
-            app.FilesListBox.Position = [669 71 183 259];
+            app.FilesListBox.Position = [669 197 183 128];
             app.FilesListBox.Value = {};
 
             % Create Image2
@@ -1891,7 +1892,7 @@ classdef nestapp < matlab.apps.AppBase
             app.ExportTEPFigureButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPFigureButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPFigureButtonPushed, true);
             app.ExportTEPFigureButton.Enable = 'off';
-            app.ExportTEPFigureButton.Position = [5 80 140 23];
+            app.ExportTEPFigureButton.Position = [669 163 183 23];
             app.ExportTEPFigureButton.Text = 'Export TEP Figure';
 
             % Create PlottingModeButtonGroup
@@ -2607,28 +2608,28 @@ classdef nestapp < matlab.apps.AppBase
             app.PlotEEGdataButton = uibutton(app.VisualizingTab, 'push');
             app.PlotEEGdataButton.ButtonPushedFcn = createCallbackFcn(app, @PlotEEGdataButtonPushed, true);
             app.PlotEEGdataButton.Enable = 'off';
-            app.PlotEEGdataButton.Position = [5 28 140 23];
+            app.PlotEEGdataButton.Position = [5 76 140 23];
             app.PlotEEGdataButton.Text = 'Plot EEG data';
 
-            % Create ExportTEPDataButton
+            % Create ExportTEPDataButton — right column, below files listbox
             app.ExportTEPDataButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPDataButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPDataButtonPushed, true);
             app.ExportTEPDataButton.Enable = 'off';
-            app.ExportTEPDataButton.Position = [5 54 140 23];
+            app.ExportTEPDataButton.Position = [669 133 183 23];
             app.ExportTEPDataButton.Text = 'Export TEP Data';
 
-            % Create TEPvarNameEditFieldLabel
+            % Create TEPvarNameEditFieldLabel — right column, below Export TEP Data
             app.TEPvarNameEditFieldLabel = uilabel(app.VisualizingTab);
             app.TEPvarNameEditFieldLabel.HorizontalAlignment = 'right';
             app.TEPvarNameEditFieldLabel.Enable = 'off';
-            app.TEPvarNameEditFieldLabel.Position = [152 30 83 22];
+            app.TEPvarNameEditFieldLabel.Position = [669 103 80 22];
             app.TEPvarNameEditFieldLabel.Text = 'TEP var Name';
 
             % Create TEPvarNameEditField
             app.TEPvarNameEditField = uieditfield(app.VisualizingTab, 'text');
             app.TEPvarNameEditField.ValueChangedFcn = createCallbackFcn(app, @TEPvarNameEditFieldValueChanged, true);
             app.TEPvarNameEditField.Enable = 'off';
-            app.TEPvarNameEditField.Position = [238 30 95 22];
+            app.TEPvarNameEditField.Position = [754 103 98 22];
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
