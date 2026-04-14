@@ -2,8 +2,8 @@ function peaks = tepPeakFinder(waveform, times)
 % TEPPEAKFINDER  Detect canonical TMS-EEG components in a TEP waveform.
 %
 %   peaks = tepPeakFinder(waveform, times) searches for six canonical
-%   TMS-EEG components in the 1×T grand-mean waveform (µV) using
-%   MATLAB's findpeaks (Signal Processing Toolbox).
+%   TMS-EEG components in the 1×T grand-mean waveform (µV) using simple
+%   max/min within each component's canonical time window.
 %
 %   Inputs
 %     waveform  1×T numeric vector — the ROI-averaged grand-mean TEP (µV)
@@ -21,10 +21,11 @@ function peaks = tepPeakFinder(waveform, times)
 %     Rogasch et al. (2013) Clin Neurophysiol 124:2059-72
 %     Farzan et al. (2016) Ann NY Acad Sci 1265:1-28
 %
-%   Prominence threshold: max(0.05, 0.10 × waveform range). When multiple
-%   qualifying peaks exist in a window the one with highest prominence wins.
+%   Amplitude threshold: max(0.05, 0.10 × waveform range). A peak is
+%   reported only when the extremum deflects beyond this floor.
 %
-%   Requires: Signal Processing Toolbox (findpeaks).
+%   No Signal Processing Toolbox required — uses max/min within each window,
+%   consistent with TESA's own tesa_peakanalysis approach.
 %
 %   See also: computeTEPTStat, computeSplitHalf, computeCompositeQuality
 
@@ -39,8 +40,8 @@ COMPONENTS = {
 };
 nComp = size(COMPONENTS, 1);
 
-% Prominence threshold: 10% of waveform range, floored at 0.05 µV
-minProm = max(0.05, 0.10 * (max(waveform) - min(waveform)));
+% Amplitude threshold: 10% of waveform range, floored at 0.05 µV
+minAmp = max(0.05, 0.10 * (max(waveform) - min(waveform)));
 
 % Pre-allocate output struct array
 blank = struct('name','','polarity','','latencyMs',NaN,'amplitudeUV',NaN,'found',false);
@@ -61,29 +62,20 @@ for k = 1:nComp
     segment  = waveform(inWin);
     winTimes = times(inWin);
 
-    % Find peaks then filter by minimum prominence.
-    % Note: do not pass 'MinProminence' as a named argument — EEGLAB ships
-    % its own findpeaks.m that shadows the Signal Processing Toolbox version
-    % and does not support named parameters.
     if strcmp(polarity, 'neg')
-        [pv, locs, ~, proms] = findpeaks(-segment);
-        pv = -pv;   % restore original sign (negative amplitudes)
+        [peakVal, peakIdx] = min(segment);
+        if peakVal < -minAmp   % deflects below noise floor
+            peaks(k).latencyMs   = winTimes(peakIdx);
+            peaks(k).amplitudeUV = peakVal;
+            peaks(k).found       = true;
+        end
     else
-        [pv, locs, ~, proms] = findpeaks(segment);
+        [peakVal, peakIdx] = max(segment);
+        if peakVal > minAmp
+            peaks(k).latencyMs   = winTimes(peakIdx);
+            peaks(k).amplitudeUV = peakVal;
+            peaks(k).found       = true;
+        end
     end
-    keep = proms >= minProm;
-    pv    = pv(keep);
-    locs  = locs(keep);
-    proms = proms(keep);
-
-    if isempty(locs)
-        continue
-    end
-
-    % Select the peak with highest prominence
-    [~, best] = max(proms);
-    peaks(k).latencyMs   = winTimes(locs(best));
-    peaks(k).amplitudeUV = pv(best);
-    peaks(k).found       = true;
 end
 end
