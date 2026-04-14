@@ -651,6 +651,12 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function LoadSelecEEGdata(app)
+            % Ensure EEGLAB functions are on the path.  eeglab('nogui') is
+            % normally called by runPipeline, but the Visualizing tab can be
+            % used independently, so initialise on demand if needed.
+            if ~exist('pop_loadset', 'file')
+                eeglab('nogui');
+            end
             for nfile = 1:numel(app.SelectedFilesforTEP)
                 EEGaux = pop_loadset(app.SelectedFilesforTEP(nfile),app.PathofSelectedFilesforTEP);
                 app.EEGofAllSelectedFiles{nfile} = EEGaux;
