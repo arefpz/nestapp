@@ -519,12 +519,12 @@ classdef nestapp < matlab.apps.AppBase
             app.PlottingModeButtonGroup.Position  = p([152 88 150 67]);
             app.NewFigureButton.Position          = p([11 21 83 22]);
             app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
-            app.EEGDatasetDropDownLabel.Position  = p([152 50 75 22]);
-            app.EEGDatasetDropDown.Position       = p([230 50 100 22]);
+            app.EEGDatasetDropDownLabel.Position  = p([152 58 75 22]);
+            app.EEGDatasetDropDown.Position       = p([230 58 100 22]);
 
             % Center column — TEP window slider above the TEP plot
-            app.TEPWindowSliderLabel.Position     = p([658 420 85 16]);
-            app.TEPWindowSlider.Position          = p([658 388 196 3]);
+            app.TEPWindowSliderLabel.Position     = p([669 420 85 16]);
+            app.TEPWindowSlider.Position          = p([669 388 183 3]);
             app.UIAxes.Position                   = p([340 319 315 186]);
             app.TEPComponentTable.Position        = p([340 215 315 104]);
 
@@ -2557,20 +2557,20 @@ classdef nestapp < matlab.apps.AppBase
             app.ReLoadAvailableElectrodesButton.FontWeight = 'bold';
             app.ReLoadAvailableElectrodesButton.FontColor = [0.9294 0.6941 0.1255];
             app.ReLoadAvailableElectrodesButton.Enable = 'off';
-            app.ReLoadAvailableElectrodesButton.Position = [686 7 153 23];
+            app.ReLoadAvailableElectrodesButton.Position = [669 7 183 23];
             app.ReLoadAvailableElectrodesButton.Text = 'Re/Load Available Electrodes';
 
             % Create TEPWindowSliderLabel
             app.TEPWindowSliderLabel = uilabel(app.VisualizingTab);
             app.TEPWindowSliderLabel.HorizontalAlignment = 'right';
-            app.TEPWindowSliderLabel.Position = [658 420 85 16];
+            app.TEPWindowSliderLabel.Position = [669 420 85 16];
             app.TEPWindowSliderLabel.Text = 'TEP Window';
 
             % Create TEPWindowSlider
             app.TEPWindowSlider = uislider(app.VisualizingTab, 'range');
             app.TEPWindowSlider.Limits = [-100 300];
             app.TEPWindowSlider.ValueChangingFcn = createCallbackFcn(app, @TEPWindowSliderValueChanging, true);
-            app.TEPWindowSlider.Position = [658 388 196 3];
+            app.TEPWindowSlider.Position = [669 388 183 3];
             app.TEPWindowSlider.Value = [-50 250];
 
             % Create TopoplottimeSpinnerLabel
