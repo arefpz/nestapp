@@ -177,7 +177,7 @@ classdef nestapp < matlab.apps.AppBase
         TEPCreated = 0; % If the TEP plot bottomn has been pressed once
         EEG_SelectedTEPFiles_Loaded = 0;
         EEGofAllSelectedFiles = [];
-        DefaulTEPxLim = [-100 300]; % Defaul xLim for time in TEP
+        DefaulTEPxLim = [-50 300]; % Default xLim for time in TEP
         EEGtime
         TEP2Export
         MenuRecentFiles     % Handle to 'Recent Files' submenu — rebuilt on open
@@ -505,8 +505,8 @@ classdef nestapp < matlab.apps.AppBase
             app.ReStartStepsButton.FontSize       = fs(18);
 
             %% Visualizing Tab
-            % Three zones: left (x:0-340 electrode map), center (x:340-655 TEP/topo),
-            % right (x:655-867 file selection). Bottom strip (y:0-165) holds controls.
+            % Three zones: left (x:0-340 electrode map), center (x:340-648 TEP/topo),
+            % right (x:651-867 file selection). Bottom strip (y:0-165) holds controls.
             % TEP window slider lives above UIAxes; topoplot controls sit right of UIAxes2.
 
             % Left action column — bottom strip (x:5-145)
@@ -525,8 +525,9 @@ classdef nestapp < matlab.apps.AppBase
             % Center column — TEP window slider above the TEP plot
             app.TEPWindowSliderLabel.Position     = p([669 420 85 16]);
             app.TEPWindowSlider.Position          = p([669 388 183 3]);
-            app.UIAxes.Position                   = p([340 319 315 186]);
-            app.TEPComponentTable.Position        = p([340 215 315 104]);
+            app.UIAxes.Position                   = p([340 319 308 186]);
+            app.TEPComponentTable.Position        = p([340 215 308 104]);
+            app.TEPComponentTable.ColumnWidth     = num2cell(round([80, 100, 128] * sX));
 
             % Center column — topoplot with controls to its right
             app.UIAxes2.Position                  = p([340 65 200 148]);
@@ -1777,7 +1778,7 @@ classdef nestapp < matlab.apps.AppBase
             xlabel(app.UIAxes, 'Time')
             ylabel(app.UIAxes, 'TEP')
             app.UIAxes.TickDir = 'both';
-            app.UIAxes.Position = [340 319 315 186];
+            app.UIAxes.Position = [340 319 308 186];
 
             % Create UIAxes2
             app.UIAxes2 = uiaxes(app.VisualizingTab);
@@ -1792,10 +1793,10 @@ classdef nestapp < matlab.apps.AppBase
             % Create TEPComponentTable
             app.TEPComponentTable = uitable(app.VisualizingTab);
             app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)'};
-            app.TEPComponentTable.ColumnWidth = {90, 110, 'auto'};
+            app.TEPComponentTable.ColumnWidth = {80, 100, 128};
             app.TEPComponentTable.RowName = {};
             app.TEPComponentTable.Enable = 'on';
-            app.TEPComponentTable.Position = [340 215 315 104];
+            app.TEPComponentTable.Position = [340 215 308 104];
 
             % Create ShowComponentsButton
             app.ShowComponentsButton = uibutton(app.VisualizingTab, 'state');
@@ -2571,7 +2572,7 @@ classdef nestapp < matlab.apps.AppBase
             app.TEPWindowSlider.Limits = [-100 300];
             app.TEPWindowSlider.ValueChangingFcn = createCallbackFcn(app, @TEPWindowSliderValueChanging, true);
             app.TEPWindowSlider.Position = [669 388 183 3];
-            app.TEPWindowSlider.Value = [-50 250];
+            app.TEPWindowSlider.Value = [-50 300];
 
             % Create TopoplottimeSpinnerLabel
             app.TopoplottimeSpinnerLabel = uilabel(app.VisualizingTab);
