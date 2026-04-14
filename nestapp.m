@@ -865,18 +865,16 @@ classdef nestapp < matlab.apps.AppBase
                 return
             end
             nComp = numel(app.tepPeaks);
-            tableData = cell(nComp, 4);
+            tableData = cell(nComp, 3);
             for i = 1:nComp
                 pk = app.tepPeaks(i);
                 tableData{i, 1} = pk.name;
                 if pk.found
                     tableData{i, 2} = pk.latencyMs;
                     tableData{i, 3} = pk.amplitudeUV;
-                    tableData{i, 4} = true;
                 else
-                    tableData{i, 2} = NaN;
-                    tableData{i, 3} = NaN;
-                    tableData{i, 4} = false;
+                    tableData{i, 2} = '—';
+                    tableData{i, 3} = '—';
                 end
             end
             app.TEPComponentTable.Data = tableData;
@@ -1793,8 +1791,8 @@ classdef nestapp < matlab.apps.AppBase
 
             % Create TEPComponentTable
             app.TEPComponentTable = uitable(app.VisualizingTab);
-            app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)', 'Found'};
-            app.TEPComponentTable.ColumnWidth = {80, 100, 110, 50};
+            app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)'};
+            app.TEPComponentTable.ColumnWidth = {90, 110, 115};
             app.TEPComponentTable.RowName = {};
             app.TEPComponentTable.Enable = 'on';
             app.TEPComponentTable.Position = [340 215 315 104];
