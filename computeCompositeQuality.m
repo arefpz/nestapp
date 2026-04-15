@@ -38,19 +38,19 @@ function score = computeCompositeQuality(EEG, report, varargin)
 % statistical cost of trial loss in a single interpretable number.
 % Split-half (0.35) provides an independent reproducibility check that
 % penalises consistent artifacts the SNR term cannot detect.
-W_SNR = 0.65;
-W_SH  = 0.35;
-SNR_MAX = 8;  % adjusted SNR above this → full score (typical clean TMS-EEG ceiling)
+W_SNR    = 0.65;
+W_SH     = 0.35;
+SNR_HALF = 4;  % adjusted SNR at which the score reaches 0.5 (hyperbolic normalisation)
 
 p = inputParser;
 addParameter(p, 'snrWeight', W_SNR);
 addParameter(p, 'shWeight',  W_SH);
-addParameter(p, 'snrMax',    SNR_MAX);
+addParameter(p, 'snrHalf',   SNR_HALF);
 parse(p, varargin{:});
 
-wSNR   = p.Results.snrWeight;
-wSH    = p.Results.shWeight;
-snrMax = p.Results.snrMax;
+wSNR    = p.Results.snrWeight;
+wSH     = p.Results.shWeight;
+snrHalf = p.Results.snrHalf;
 
 %% Adjusted SNR — SNR × sqrt(trial retention), normalised to [0, 1]
 snrRaw = computeTEPSNR(EEG);
@@ -68,7 +68,7 @@ else
     else
         adjSNR = snrRaw;
     end
-    adjSNRnorm = min(max(adjSNR / snrMax, 0), 1);
+    adjSNRnorm = adjSNR / (adjSNR + snrHalf);  % hyperbolic: bounded [0,1], no ceiling
 end
 
 %% Split-half — Spearman-Brown corrected, mapped from [-1, 1] to [0, 1]
