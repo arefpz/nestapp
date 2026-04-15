@@ -91,6 +91,28 @@ if any(hasICA)
     lines{end+1} = '';
 end
 
+%% TEP Quality
+hasQ = cellfun(@(r) isfield(r.teps,'composite') && ~isnan(r.teps.composite), reports);
+if any(hasQ)
+    qReports = reports(hasQ);
+    tstat = cellfun(@(r) r.teps.tstat,     qReports);
+    sh    = cellfun(@(r) r.teps.splitHalf, qReports);
+    snr   = cellfun(@(r) r.teps.snr,       qReports);
+    comp  = cellfun(@(r) r.teps.composite, qReports);
+    lines{end+1} = 'TEP QUALITY';
+    if any(~isnan(tstat))
+        lines{end+1} = sprintf('  T-statistic:  %s', fmtStat(tstat(~isnan(tstat))));
+    end
+    if any(~isnan(sh))
+        lines{end+1} = sprintf('  Split-half r: %s', fmtStat(sh(~isnan(sh))));
+    end
+    if any(~isnan(snr))
+        lines{end+1} = sprintf('  SNR:          %s', fmtStat(snr(~isnan(snr))));
+    end
+    lines{end+1} = sprintf('  Composite:    %s', fmtStat(comp));
+    lines{end+1} = '';
+end
+
 summaryText = strjoin(lines, newline);
 end
 

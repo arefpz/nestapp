@@ -135,18 +135,22 @@ else
 end
 lines{end+1} = '';
 
-% TEPs (reserved for M5)
-lines{end+1} = 'TEP COMPONENTS';
-if isfield(report.teps, 'components') && ~isempty(report.teps.components)
-    tepData = report.teps.components;
-    for k = 1:size(tepData, 1)
-        lines{end+1} = sprintf('  %-6s  %6.1f ms  %8.4f uV  ROI: %s', ...
-            tepData{k,1}, tepData{k,2}, tepData{k,3}, tepData{k,4});
+% TEP quality
+hasQuality = isfield(report.teps, 'composite') && ~isnan(report.teps.composite);
+if hasQuality
+    lines{end+1} = 'TEP QUALITY';
+    if ~isnan(report.teps.tstat)
+        lines{end+1} = sprintf('  T-statistic:  %.2f', report.teps.tstat);
     end
-else
-    lines{end+1} = '  TEP analysis not run';
+    if ~isnan(report.teps.splitHalf)
+        lines{end+1} = sprintf('  Split-half r: %.2f', report.teps.splitHalf);
+    end
+    if ~isnan(report.teps.snr)
+        lines{end+1} = sprintf('  SNR:          %.2f', report.teps.snr);
+    end
+    lines{end+1} = sprintf('  Composite:    %.2f / 1.00', report.teps.composite);
+    lines{end+1} = '';
 end
-lines{end+1} = '';
 
 % Steps run
 lines{end+1} = 'STEPS RUN';
