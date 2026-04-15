@@ -139,9 +139,6 @@ lines{end+1} = '';
 hasQuality = isfield(report.teps, 'composite') && ~isnan(report.teps.composite);
 if hasQuality
     lines{end+1} = 'TEP QUALITY';
-    if ~isnan(report.teps.tstat)
-        lines{end+1} = sprintf('  T-statistic:  %.2f', report.teps.tstat);
-    end
     if ~isnan(report.teps.splitHalf)
         lines{end+1} = sprintf('  Split-half r: %.2f', report.teps.splitHalf);
     end

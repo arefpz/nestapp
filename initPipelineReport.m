@@ -56,7 +56,6 @@ report.ica.categories.names    = ICA_CATEGORIES;
 report.ica.categories.nRemoved = zeros(1, 7);
 report.ica.categories.varShare = zeros(1, 7);
 
-report.teps.tstat     = NaN;
 report.teps.splitHalf = NaN;
 report.teps.snr       = NaN;
 report.teps.composite = NaN;

@@ -1040,7 +1040,6 @@ for nfile = 1:nFiles
 
     % Compute TEP quality metrics on the final epoched EEG
     if isstruct(EEG) && isfield(EEG, 'trials') && EEG.trials > 1
-        fileReport.teps.tstat     = computeTEPTStat(EEG);
         fileReport.teps.splitHalf = computeSplitHalf(EEG);
         fileReport.teps.snr       = computeTEPSNR(EEG);
         fileReport.teps.composite = computeCompositeQuality(EEG, fileReport);
