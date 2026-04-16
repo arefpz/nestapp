@@ -14,11 +14,25 @@ function templates = pipelineTemplates()
 %   Adding a template: append one block below following the existing
 %   pattern and ensure every step name matches an entry in stepRegistry.
 %
+%   Pipeline designs follow published best practices:
+%     TMS-EEG  — Rogasch et al. 2017 (NeuroImage), TESA toolbox documentation
+%     Resting  — Bigdely-Shamlo et al. 2015 (PREP), EEGLAB tutorials
+%     Minimal  — EEGLAB standard cleaning recommendations
+%
 %   See also: stepRegistry, nestapp
 
 templates = struct('name', {}, 'steps', {}, 'overrides', {});
 
 %% ---- TMS-EEG / TEP (TESA) -----------------------------------------------
+% Two-round ICA pipeline per Rogasch et al. 2017 and the TESA toolbox
+% documentation.  Key decisions:
+%   - Average re-reference applied after channel interpolation so that all
+%     surviving channels contribute equally to the reference (Rogasch 2017).
+%   - Two separate FastICA + compselect passes: Round 1 targets TMS-evoked
+%     muscle artifact and electrode noise; Round 2 targets blink, eye
+%     movement, and residual muscle after the cleaner signal is available.
+%   - Baseline correction and bad-epoch rejection come last so that the full
+%     artefact-removal chain is complete before any data is discarded.
 t = blankTemplate();
 t.name = 'TMS-EEG / TEP (TESA)';
 t.steps = { ...
@@ -33,17 +47,31 @@ t.steps = { ...
     'Epoching', ...
     'Remove Bad Channels', ...
     'Interpolate Channels', ...
+    'Re-Reference', ...
+    'Run TESA ICA', ...
+    'Remove ICA Components (TESA)', ...
     'Run TESA ICA', ...
     'Remove ICA Components (TESA)', ...
     'Remove Baseline', ...
     'Remove Bad Epoch', ...
     'Save New Set'};
-% All step defaults already match standard TESA best-practice settings;
-% no overrides needed.
-t.overrides = repmat({struct()}, 1, numel(t.steps));
+ov = repmat({struct()}, 1, numel(t.steps));
+% Step 12 — average re-reference (empty string = average in EEGLAB)
+ov{12}.ref = '[]';
+t.overrides = ov;
 templates(end+1) = t;
 
 %% ---- Resting-State EEG --------------------------------------------------
+% Continuous-data pipeline per the PREP pipeline (Bigdely-Shamlo 2015) and
+% standard EEGLAB recommendations.  Key decisions:
+%   - Data stays continuous throughout cleaning; ICA trained on the full
+%     recording gives better component stability than on short epochs.
+%   - Average re-reference applied before ICA so the unmixing matrix is
+%     learned on the intended reference (EEGLAB FAQ).
+%   - CleanLine removes line noise via multi-taper decomposition, preserving
+%     spectral content better than a notch filter.
+%   - Epoching is a downstream analysis step, not part of cleaning — it is
+%     deliberately omitted here.
 t = blankTemplate();
 t.name = 'Resting-State EEG';
 t.steps = { ...
@@ -58,31 +86,37 @@ t.steps = { ...
     'Label ICA Components', ...
     'Flag ICA Components for Rejection', ...
     'Remove Flagged ICA Components', ...
-    'Epoching', ...
-    'Remove Bad Epoch', ...
     'Save New Set'};
-% Override defaults for resting-state conventions
 ov = repmat({struct()}, 1, numel(t.steps));
-ov{3}.locutoff = 0.5;   % HPF at 0.5 Hz instead of 1 Hz
-ov{3}.hicutoff = 40;    % LPF at 40 Hz instead of 80 Hz
-ov{7}.ref      = '[]';  % average reference (empty = average in EEGLAB)
-ov{12}.timelim = [-1 1]; % 2-second epochs
+ov{3}.locutoff = 0.5;   % HPF at 0.5 Hz (wider than default 1 Hz for resting-state)
+ov{3}.hicutoff = 40;    % LPF at 40 Hz (removes high-freq noise before ICA)
+ov{7}.ref      = '[]';  % average reference
 t.overrides = ov;
 templates(end+1) = t;
 
-%% ---- Minimal (HPF + bad channel removal) --------------------------------
+%% ---- Minimal (HPF + ICA + bad channel removal) --------------------------
+% The smallest pipeline that meets basic publication quality standards.
+% Includes average re-referencing and a single ICA pass for blink/muscle
+% removal — both are required for credible EEG reporting.  No line noise
+% removal, no bad-epoch rejection, and no epoching are included; add those
+% steps manually if the recording requires them.
 t = blankTemplate();
-t.name = 'Minimal (HPF + bad channels)';
+t.name = 'Minimal (HPF + ICA + bad channels)';
 t.steps = { ...
     'Load Data', ...
     'Load Channel Location', ...
     'Frequency Filter', ...
     'Remove Bad Channels', ...
     'Interpolate Channels', ...
+    'Re-Reference', ...
+    'Run ICA', ...
+    'Label ICA Components', ...
+    'Flag ICA Components for Rejection', ...
+    'Remove Flagged ICA Components', ...
     'Save New Set'};
-% HPF at 0.5 Hz; no ICA, no epoching, no re-referencing
 ov = repmat({struct()}, 1, numel(t.steps));
-ov{3}.locutoff = 0.5;
+ov{3}.locutoff = 0.5;   % HPF at 0.5 Hz
+ov{6}.ref      = '[]';  % average reference
 t.overrides = ov;
 templates(end+1) = t;
 
