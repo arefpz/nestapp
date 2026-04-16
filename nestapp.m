@@ -1512,6 +1512,101 @@ classdef nestapp < matlab.apps.AppBase
             app.needchanloc     = 1;
         end
 
+        % Menu selected function: Load Template...
+        function LoadTemplateMenuSelected(app, ~)
+        % LOADTEMPLATEMENUSELECTED  Show a template picker and load the chosen template.
+        %   Clears the current pipeline (without confirmation) and populates
+        %   the step list from the template, applying any parameter overrides.
+            templates = pipelineTemplates();
+            if isempty(templates); return; end
+
+            % Build a small modal picker
+            names = {templates.name};
+            dlg = uifigure('Name', 'Load Template', ...
+                'Position', [300 300 320 200], ...
+                'WindowStyle', 'modal', 'Resize', 'off');
+            uilabel(dlg, 'Text', 'Select a pipeline template:', ...
+                'Position', [15 165 290 22]);
+            lb = uilistbox(dlg, 'Items', names, ...
+                'Position', [15 60 290 100], 'Value', names{1});
+            uibutton(dlg, 'Text', 'Cancel', 'Position', [120 15 85 30], ...
+                'ButtonPushedFcn', @(~,~) close(dlg));
+            uibutton(dlg, 'Text', 'Load', 'Position', [215 15 90 30], ...
+                'BackgroundColor', [0.20 0.55 0.20], 'FontColor', [1 1 1], ...
+                'ButtonPushedFcn', @(~,~) doLoad());
+            uiwait(dlg);
+
+            function doLoad()
+                idx = find(strcmp(names, lb.Value), 1);
+                close(dlg);
+                if isempty(idx); return; end
+                t = templates(idx);
+
+                % Clear pipeline without confirmation
+                app.SelectedListBox.Items(:)  = [];
+                app.SelectedListBox.ItemsData(:) = [];
+                app.UITable.Data    = [];
+                app.ChangedVal      = {};
+                app.stepParamKeys   = {};
+                app.ItemNum         = 0;
+                app.nstep           = 1;
+                app.needchanloc     = 1;
+                clc
+
+                % Add each step and apply overrides
+                for si = 1:numel(t.steps)
+                    stepLabel = t.steps{si};
+                    regIdx = find(strcmp(app.StepsListBox.Items, stepLabel), 1);
+                    if isempty(regIdx)
+                        warning('nestapp:template', ...
+                            'Template step "%s" not found in registry — skipped.', stepLabel);
+                        continue
+                    end
+                    % Add the step using the same logic as AddButtonPushed
+                    n = numel(app.SelectedListBox.Items);
+                    if n == 0 || (n == 1 && isempty(app.SelectedListBox.Items{1}))
+                        pos = 1;
+                    else
+                        pos = n + 1;
+                    end
+                    app.SelectedListBox.Items{pos}    = stepLabel;
+                    app.SelectedListBox.ItemsData{pos} = ['item' num2str(pos)];
+                    app.ChangedVal{pos}    = app.DefaultsVal{regIdx};
+                    app.stepParamKeys{pos} = app.defaultParamKeys{regIdx};
+
+                    % Apply parameter overrides for this step
+                    if si <= numel(t.overrides) && ~isempty(fieldnames(t.overrides{si}))
+                        ov = t.overrides{si};
+                        ovFields = fieldnames(ov);
+                        keys = app.stepParamKeys{pos};
+                        T    = app.ChangedVal{pos};
+                        for fi = 1:numel(ovFields)
+                            rawKey = ovFields{fi};
+                            row = find(strcmp(keys, rawKey), 1);
+                            if isempty(row); continue; end
+                            v = ov.(rawKey);
+                            if isnumeric(v)
+                                T.val{row} = v;
+                            else
+                                T.val{row} = string(v);
+                            end
+                        end
+                        app.ChangedVal{pos} = T;
+                    end
+                end
+
+                app.pipelineName  = t.name;
+                app.pipelineDirty = true;
+                updateStatusBar(app);
+                % Show the first step's params if any steps were added
+                if ~isempty(app.SelectedListBox.Items) && ~isempty(app.SelectedListBox.Items{1})
+                    app.SelectedListBox.Value = app.SelectedListBox.ItemsData{1};
+                    app.UITable.Data = app.ChangedVal{1};
+                    styleParamTable(app);
+                end
+            end
+        end
+
         % Button pushed function: RunAnalysisButton
         function RunAnalysisButtonPushed(app, event)
             app.RunAnalysisButton.Text = {'Run';'Analysis'};
@@ -1870,6 +1965,8 @@ classdef nestapp < matlab.apps.AppBase
             uimenu(mFile, 'Text', 'Save Pipeline', 'Accelerator', 'S', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @SavePipelineButtonPushed, true));
             app.MenuRecentPipelines = uimenu(mFile, 'Text', 'Recent Pipelines');
+            uimenu(mFile, 'Text', 'Load Template...', 'Separator', 'on', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @LoadTemplateMenuSelected, true));
             uimenu(mFile, 'Text', 'Exit', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~) delete(app));
 
