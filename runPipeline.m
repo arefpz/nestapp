@@ -553,7 +553,14 @@ for nfile = 1:nFiles
                     % Capture rejection mask and per-component variance BEFORE pop_subcomp.
                     % After removal icaweights loses the rejected rows, making the full
                     % logical mask invalid for indexing component activations.
-                    rejMask = logical(reshape(EEG.reject.gcompreject, 1, []));
+                    % gcompreject may be non-numeric in some EEGLAB versions (e.g. empty
+                    % char) — fall back to zeros if the type is not convertible to logical.
+                    gcr = EEG.reject.gcompreject;
+                    if isnumeric(gcr) || islogical(gcr)
+                        rejMask = logical(reshape(gcr, 1, []));
+                    else
+                        rejMask = false(1, max(size(EEG.icaweights, 1), 0));
+                    end
                     pendingICAStats = struct('rejMask', rejMask);
                     if ~isempty(EEG.icaweights) && size(EEG.icaweights,1) == numel(rejMask)
                         act2D = computeICAActivation(EEG);
