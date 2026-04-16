@@ -133,6 +133,16 @@ classdef nestapp < matlab.apps.AppBase
         TEPComponentTable               matlab.ui.control.Table
         UIAxes2                         matlab.ui.control.UIAxes
         UIAxes                          matlab.ui.control.UIAxes
+        ReportsTab                      matlab.ui.container.Tab
+        ReportsListBox                  matlab.ui.control.ListBox
+        ReportsListBoxLabel             matlab.ui.control.Label
+        LoadReportsButton               matlab.ui.control.Button
+        RefreshReportsButton            matlab.ui.control.Button
+        ReportsFolderLabel              matlab.ui.control.Label
+        ReportsStatusLabel              matlab.ui.control.Label
+        ReportsTextArea                 matlab.ui.control.TextArea
+        ExportReportsCSVButton          matlab.ui.control.Button
+        CopyMethodsButton               matlab.ui.control.Button
     end
 
     properties (Access = private)
@@ -187,6 +197,8 @@ classdef nestapp < matlab.apps.AppBase
         pipelineName    = ''       % filename of last saved/loaded pipeline
         lastStepClick   = NaT     % datetime of last StepsListBox click (double-click detection)
         tepPeaks        = struct([]) % struct array from tepPeakFinder; cached after each PLOT TEP
+        allPipelineReports = {}    % cell array of report entry structs from current session
+        loadedReports      = {}    % cell array of report entry structs loaded from disk
     end
 
     methods (Access = private)
@@ -346,60 +358,70 @@ classdef nestapp < matlab.apps.AppBase
         %   and behavioural options. Changes are written to getpref/setpref
         %   under the 'nestapp' group and applied immediately on Save.
             dlg = uifigure('Name', 'nestapp Preferences', ...
-                'Position', [200 200 420 360], ...
+                'Position', [200 200 420 415], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
 
             % --- EEGLAB section ---
             uilabel(dlg, 'Text', 'EEGLAB', 'FontWeight', 'bold', ...
-                'Position', [15 320 200 20]);
+                'Position', [15 375 200 20]);
             uilabel(dlg, 'Text', 'Path:', ...
-                'Position', [15 295 35 22], 'HorizontalAlignment', 'right');
+                'Position', [15 350 35 22], 'HorizontalAlignment', 'right');
             fEeglab = uieditfield(dlg, 'text', ...
-                'Position', [55 295 275 22], 'Editable', 'on', ...
+                'Position', [55 350 275 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','eeglabPath',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 295 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 350 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseEeglab());
 
             % --- Default Locations section ---
             uilabel(dlg, 'Text', 'Default Locations', 'FontWeight', 'bold', ...
-                'Position', [15 265 200 20]);
+                'Position', [15 320 200 20]);
             uilabel(dlg, 'Text', 'Data folder:', ...
-                'Position', [15 240 65 22], 'HorizontalAlignment', 'right');
+                'Position', [15 295 65 22], 'HorizontalAlignment', 'right');
             fData = uieditfield(dlg, 'text', ...
-                'Position', [85 240 245 22], 'Editable', 'on', ...
+                'Position', [85 295 245 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastDataFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 240 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 295 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fData));
             uilabel(dlg, 'Text', 'Pipeline folder:', ...
-                'Position', [15 212 80 22], 'HorizontalAlignment', 'right');
+                'Position', [15 267 80 22], 'HorizontalAlignment', 'right');
             fPipeline = uieditfield(dlg, 'text', ...
-                'Position', [100 212 230 22], 'Editable', 'on', ...
+                'Position', [100 267 230 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastPipelineFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 212 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 267 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fPipeline));
+            uilabel(dlg, 'Text', 'Reports folder:', ...
+                'Position', [15 239 80 22], 'HorizontalAlignment', 'right');
+            fReports = uieditfield(dlg, 'text', ...
+                'Position', [100 239 230 22], 'Editable', 'on', ...
+                'Value', getpref('nestapp','reportFolder',''));
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 239 70 22], ...
+                'ButtonPushedFcn', @(~,~) browseFolder(fReports));
 
             % --- Behaviour section ---
             uilabel(dlg, 'Text', 'Behaviour', 'FontWeight', 'bold', ...
-                'Position', [15 180 200 20]);
-            cbReport = uicheckbox(dlg, 'Text', 'Show processing report after each run', ...
-                'Position', [15 156 300 22], ...
+                'Position', [15 208 200 20]);
+            cbReport = uicheckbox(dlg, 'Text', 'Switch to Reports tab after each run', ...
+                'Position', [15 184 300 22], ...
                 'Value', getpref('nestapp','showReport',true));
             cbConfirm = uicheckbox(dlg, 'Text', 'Confirm before clearing pipeline', ...
-                'Position', [15 132 300 22], ...
+                'Position', [15 160 300 22], ...
                 'Value', getpref('nestapp','confirmClear',true));
+            cbOverwrite = uicheckbox(dlg, 'Text', 'Overwrite existing report files (no timestamp)', ...
+                'Position', [15 136 320 22], ...
+                'Value', getpref('nestapp','overwriteReports',false));
 
             % --- Experimental Features section ---
             uilabel(dlg, 'Text', 'Experimental Features', 'FontWeight', 'bold', ...
-                'Position', [15 100 200 20]);
+                'Position', [15 104 200 20]);
             cbQuality = uicheckbox(dlg, ...
                 'Text', 'Compute TEP quality metrics after each run', ...
-                'Position', [15 76 300 22], ...
+                'Position', [15 80 300 22], ...
                 'Value', getpref('nestapp','computeQuality',false));
             uilabel(dlg, ...
                 'Text', ['Results are approximate and under active development. ' ...
                          'See documentation for interpretation.'], ...
                 'FontColor', [0.5 0.5 0.5], 'FontSize', 10, ...
-                'WordWrap', 'on', 'Position', [15 48 390 26]);
+                'WordWrap', 'on', 'Position', [15 52 390 26]);
 
             % --- Buttons ---
             uibutton(dlg, 'Text', 'Cancel', 'Position', [220 15 85 28], ...
@@ -432,11 +454,243 @@ classdef nestapp < matlab.apps.AppBase
                 setpref('nestapp', 'eeglabPath',          ep);
                 setpref('nestapp', 'lastDataFolder',      strtrim(fData.Value));
                 setpref('nestapp', 'lastPipelineFolder',  strtrim(fPipeline.Value));
+                setpref('nestapp', 'reportFolder',        strtrim(fReports.Value));
                 setpref('nestapp', 'showReport',          cbReport.Value);
                 setpref('nestapp', 'confirmClear',        cbConfirm.Value);
+                setpref('nestapp', 'overwriteReports',    cbOverwrite.Value);
                 setpref('nestapp', 'computeQuality',      cbQuality.Value);
                 close(dlg);
             end
+        end
+
+        function updateReportsTabImpl(app)
+        % UPDATEREPORTSTABIMPL  Refresh the Reports tab listbox from session and loaded reports.
+        %   Combines app.allPipelineReports (from current run) with app.loadedReports
+        %   (loaded from disk). Updates listbox labels and status text.
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            n = numel(allEntries);
+            if n == 0
+                app.ReportsListBox.Items = {};
+                app.ReportsListBox.ItemsData = {};
+                app.ReportsStatusLabel.Text = 'No reports loaded.';
+                app.ReportsTextArea.Value = '';
+                app.ExportReportsCSVButton.Enable = 'off';
+                app.CopyMethodsButton.Enable = 'off';
+                return
+            end
+
+            labels = cell(1, n);
+            for i = 1:n
+                e = allEntries{i};
+                [~, baseName] = fileparts(e.report.inputFile);
+                try
+                    dateLabel = datestr(e.report.processedAt, 'yyyy-mm-dd HH:MM'); %#ok<DATST>
+                catch
+                    dateLabel = '?';
+                end
+                labels{i} = sprintf('%s (%s)', baseName, dateLabel);
+            end
+
+            % Preserve selection index across refresh if still valid
+            prevIdx = app.ReportsListBox.Value;
+            app.ReportsListBox.Items = labels;
+            app.ReportsListBox.ItemsData = num2cell(1:n);
+
+            if isnumeric(prevIdx) && ~isempty(prevIdx) && prevIdx >= 1 && prevIdx <= n
+                app.ReportsListBox.Value = prevIdx;
+                app.ReportsTextArea.Value = allEntries{prevIdx}.text;
+            else
+                app.ReportsListBox.Value = n;
+                app.ReportsTextArea.Value = allEntries{n}.text;
+            end
+
+            nSess   = numel(app.allPipelineReports);
+            nLoaded = numel(app.loadedReports);
+            parts   = {};
+            if nSess   > 0; parts{end+1} = sprintf('%d from session', nSess);   end
+            if nLoaded > 0; parts{end+1} = sprintf('%d from disk', nLoaded); end
+            app.ReportsStatusLabel.Text = strjoin(parts, ', ');
+            app.ExportReportsCSVButton.Enable = 'on';
+            app.CopyMethodsButton.Enable = 'on';
+        end
+
+        function ReportsListBoxValueChanged(app, ~)
+        % Callback — show the report text for the newly selected entry.
+            idx = app.ReportsListBox.Value;
+            if isempty(idx); return; end
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if isnumeric(idx) && idx >= 1 && idx <= numel(allEntries)
+                app.ReportsTextArea.Value = allEntries{idx}.text;
+            end
+        end
+
+        function LoadReportsButtonPushed(app, ~)
+        % Browse for a folder containing *_report_*.mat files and load them.
+            folder = uigetdir(getpref('nestapp','lastDataFolder',''), ...
+                'Select Folder with Pipeline Reports');
+            if isequal(folder, 0); return; end
+
+            matFiles = dir(fullfile(folder, '*_report_*.mat'));
+            if isempty(matFiles)
+                uialert(app.UIFigure, 'No *_report_*.mat files found in that folder.', ...
+                    'No Reports Found');
+                return
+            end
+
+            loaded = 0;
+            for k = 1:numel(matFiles)
+                fpath = fullfile(folder, matFiles(k).name);
+                try
+                    S = load(fpath, 'pipelineReport');
+                    if ~isfield(S, 'pipelineReport'); continue; end
+                    [txt, ~] = exportReport(S.pipelineReport, tempdir());
+                    entry.text   = txt;
+                    entry.report = S.pipelineReport;
+                    app.loadedReports{end+1} = entry;
+                    loaded = loaded + 1;
+                catch ME
+                    warning('nestapp:loadReport', 'Could not load %s: %s', matFiles(k).name, ME.message);
+                end
+            end
+
+            folderParts = strsplit(folder, {'\','/'});
+            folderParts(cellfun(@isempty, folderParts)) = [];
+            app.ReportsFolderLabel.Text = folderParts{end};
+            updateReportsTabImpl(app);
+
+            if loaded > 0
+                app.TabGroup.SelectedTab = app.ReportsTab;
+            end
+        end
+
+        function RefreshReportsButtonPushed(app, ~)
+        % Reload reports from disk for any loadedReports entries, then refresh tab.
+            if isempty(app.loadedReports)
+                updateReportsTabImpl(app);
+                return
+            end
+            % Re-derive the folder from the first loaded report
+            firstPath = app.loadedReports{1}.report.inputFile;
+            folder = fileparts(firstPath);
+            if ~isfolder(folder)
+                updateReportsTabImpl(app);
+                return
+            end
+            % Clear disk-loaded reports and reload
+            app.loadedReports = {};
+            matFiles = dir(fullfile(folder, '*_report_*.mat'));
+            for k = 1:numel(matFiles)
+                fpath = fullfile(folder, matFiles(k).name);
+                try
+                    S = load(fpath, 'pipelineReport');
+                    if ~isfield(S, 'pipelineReport'); continue; end
+                    [txt, ~] = exportReport(S.pipelineReport, tempdir());
+                    entry.text   = txt;
+                    entry.report = S.pipelineReport;
+                    app.loadedReports{end+1} = entry;
+                catch
+                end
+            end
+            updateReportsTabImpl(app);
+        end
+
+        function ExportReportsCSVButtonPushed(app, ~)
+        % Export a CSV table of key metrics for all visible reports.
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if isempty(allEntries)
+                uialert(app.UIFigure, 'No reports to export.', 'Export CSV');
+                return
+            end
+
+            [fname, fpath] = uiputfile('*.csv', 'Export Reports as CSV', 'nestapp_reports.csv');
+            if isequal(fname, 0); return; end
+
+            fid = fopen(fullfile(fpath, fname), 'w');
+            if fid == -1
+                uialert(app.UIFigure, 'Could not open file for writing.', 'Export CSV');
+                return
+            end
+
+            % Header
+            fprintf(fid, ['File,Processed,Channels (orig),Channels (final),' ...
+                'Trials (orig),Trials (final),ICA removed,' ...
+                'Retention,Artifact reduction,Background,' ...
+                'Reproducibility,AEP likeness\n']);
+
+            for i = 1:numel(allEntries)
+                r = allEntries{i}.report;
+                [~, baseName] = fileparts(r.inputFile);
+                try
+                    dStr = datestr(r.processedAt, 'yyyy-mm-dd HH:MM:SS'); %#ok<DATST>
+                catch
+                    dStr = '?';
+                end
+                safeVal = @(axField) safeAxisVal(r.teps, axField);
+
+                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d,%s,%s,%s,%s,%s\n', ...
+                    baseName, dStr, ...
+                    r.channels.original, r.channels.final, ...
+                    r.trials.original, r.trials.final, ...
+                    r.ica.nRejected, ...
+                    safeVal('retention'), safeVal('artifactReduction'), ...
+                    safeVal('bgRestoration'), safeVal('reproducibility'), ...
+                    safeVal('aepLikeness'));
+            end
+            fclose(fid);
+            app.ReportsStatusLabel.Text = sprintf('CSV saved: %s', fname);
+
+            function s = safeAxisVal(teps, axField)
+                if isstruct(teps) && isfield(teps, axField) && ~isnan(teps.(axField).value)
+                    s = sprintf('%.3f', teps.(axField).value);
+                else
+                    s = '';
+                end
+            end
+        end
+
+        function CopyMethodsButtonPushed(app, ~)
+        % Build a brief methods paragraph from the selected report and copy to clipboard.
+            idx = app.ReportsListBox.Value;
+            if isempty(idx); return; end
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if ~isnumeric(idx) || idx < 1 || idx > numel(allEntries); return; end
+            r = allEntries{idx}.report;
+
+            parts = {};
+            if r.channels.original > 0
+                nRej  = r.channels.nRejected;
+                nIntp = r.channels.nInterpolated;
+                if nRej > 0 && nIntp > 0
+                    parts{end+1} = sprintf('%d of %d channels were retained (%d rejected, %d interpolated)', ...
+                        r.channels.final, r.channels.original, nRej, nIntp);
+                elseif nRej > 0
+                    parts{end+1} = sprintf('%d of %d channels were retained (%d rejected)', ...
+                        r.channels.final, r.channels.original, nRej);
+                elseif nIntp > 0
+                    parts{end+1} = sprintf('%d channels were retained (%d interpolated)', ...
+                        r.channels.final, nIntp);
+                else
+                    parts{end+1} = sprintf('%d channels were retained', r.channels.final);
+                end
+            end
+            if r.trials.original > 0
+                parts{end+1} = sprintf('%d of %d epochs were retained (%d rejected)', ...
+                    r.trials.final, r.trials.original, r.trials.rejected);
+            end
+            if r.ica.nComponents > 0
+                parts{end+1} = sprintf('%d ICA components were identified and %d removed', ...
+                    r.ica.nComponents, r.ica.nRejected);
+            end
+
+            if isempty(parts)
+                methodsText = 'TMS-EEG data were preprocessed using nestapp.';
+            else
+                methodsText = sprintf('TMS-EEG data were preprocessed using nestapp. %s.', ...
+                    strjoin(parts, '; '));
+            end
+
+            clipboard('copy', methodsText);
+            app.ReportsStatusLabel.Text = 'Methods text copied to clipboard.';
         end
 
         function showAbout(app)
@@ -640,6 +894,20 @@ classdef nestapp < matlab.apps.AppBase
             app.AF8Button.Position   = p([245 419 25 23]);
             app.PO1Button.Position   = p([133 212 25 23]);
             app.PO6Button.Position   = p([243 215 25 23]);
+
+            %% Reports Tab
+            app.ReportsListBoxLabel.Position    = p([5 472 205 22]);
+            app.ReportsListBoxLabel.FontSize     = fs(16);
+            app.ReportsListBox.Position          = p([5 73 205 393]);
+            app.ReportsListBox.FontSize          = fs(11);
+            app.LoadReportsButton.Position       = p([5 45 100 25]);
+            app.RefreshReportsButton.Position    = p([110 45 100 25]);
+            app.ReportsFolderLabel.Position      = p([5 25 205 18]);
+            app.ReportsStatusLabel.Position      = p([5 5 205 18]);
+            app.ExportReportsCSVButton.Position  = p([580 470 130 24]);
+            app.CopyMethodsButton.Position       = p([715 470 147 24]);
+            app.ReportsTextArea.Position         = p([220 10 637 457]);
+            app.ReportsTextArea.FontSize         = fs(10);
         end
 
         function styleParamTable(app)
@@ -2643,9 +2911,83 @@ classdef nestapp < matlab.apps.AppBase
             app.TEPvarNameEditField.Enable = 'off';
             app.TEPvarNameEditField.Position = [754 438 98 22];
 
+            % Create ReportsTab
+            app.ReportsTab = uitab(app.TabGroup);
+            app.ReportsTab.AutoResizeChildren = 'off';
+            app.ReportsTab.Title = 'Reports';
+
+            % Reports tab — left column: session list
+            app.ReportsListBoxLabel = uilabel(app.ReportsTab);
+            app.ReportsListBoxLabel.FontSize = 16;
+            app.ReportsListBoxLabel.FontWeight = 'bold';
+            app.ReportsListBoxLabel.Position = [5 472 205 22];
+            app.ReportsListBoxLabel.Text = 'Session Reports';
+
+            app.ReportsListBox = uilistbox(app.ReportsTab);
+            app.ReportsListBox.Items = {};
+            app.ReportsListBox.Position = [5 73 205 393];
+            app.ReportsListBox.ValueChangedFcn = createCallbackFcn(app, @ReportsListBoxValueChanged, true);
+
+            app.LoadReportsButton = uibutton(app.ReportsTab, 'push');
+            app.LoadReportsButton.ButtonPushedFcn = createCallbackFcn(app, @LoadReportsButtonPushed, true);
+            app.LoadReportsButton.Position = [5 45 100 25];
+            app.LoadReportsButton.Text = 'Load from Folder';
+            app.LoadReportsButton.Tooltip = 'Load pipeline reports from a folder on disk';
+
+            app.RefreshReportsButton = uibutton(app.ReportsTab, 'push');
+            app.RefreshReportsButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshReportsButtonPushed, true);
+            app.RefreshReportsButton.Position = [110 45 100 25];
+            app.RefreshReportsButton.Text = 'Refresh';
+            app.RefreshReportsButton.Tooltip = 'Reload reports from the current folder';
+
+            app.ReportsFolderLabel = uilabel(app.ReportsTab);
+            app.ReportsFolderLabel.FontSize = 9;
+            app.ReportsFolderLabel.FontColor = [0.5 0.5 0.5];
+            app.ReportsFolderLabel.Position = [5 25 205 18];
+            app.ReportsFolderLabel.Text = '';
+
+            app.ReportsStatusLabel = uilabel(app.ReportsTab);
+            app.ReportsStatusLabel.FontSize = 9;
+            app.ReportsStatusLabel.FontColor = [0.5 0.5 0.5];
+            app.ReportsStatusLabel.Position = [5 5 205 18];
+            app.ReportsStatusLabel.Text = 'No reports loaded.';
+
+            % Reports tab — right column: report text + actions
+            app.ExportReportsCSVButton = uibutton(app.ReportsTab, 'push');
+            app.ExportReportsCSVButton.ButtonPushedFcn = createCallbackFcn(app, @ExportReportsCSVButtonPushed, true);
+            app.ExportReportsCSVButton.Position = [580 470 130 24];
+            app.ExportReportsCSVButton.Text = 'Export CSV';
+            app.ExportReportsCSVButton.Tooltip = 'Export a CSV summary of all loaded reports';
+            app.ExportReportsCSVButton.Enable = 'off';
+
+            app.CopyMethodsButton = uibutton(app.ReportsTab, 'push');
+            app.CopyMethodsButton.ButtonPushedFcn = createCallbackFcn(app, @CopyMethodsButtonPushed, true);
+            app.CopyMethodsButton.Position = [715 470 147 24];
+            app.CopyMethodsButton.Text = 'Copy Methods Text';
+            app.CopyMethodsButton.Tooltip = 'Copy a methods paragraph for the selected report to the clipboard';
+            app.CopyMethodsButton.Enable = 'off';
+
+            app.ReportsTextArea = uitextarea(app.ReportsTab);
+            app.ReportsTextArea.Editable = 'off';
+            app.ReportsTextArea.FontName = 'Courier New';
+            app.ReportsTextArea.FontSize = 10;
+            app.ReportsTextArea.Position = [220 10 637 457];
+
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
         end
+    end
+
+    % Public methods callable from external functions (e.g. runPipeline)
+    methods (Access = public)
+
+        function updateReportsTab(app)
+        % UPDATEREPORTSTAB  Public entry point — refreshes the Reports tab.
+        %   Delegates to the private implementation. Exposed as public so
+        %   runPipeline.m can call it after each processing run.
+            updateReportsTabImpl(app);
+        end
+
     end
 
     % App creation and deletion

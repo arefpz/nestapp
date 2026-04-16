@@ -1057,7 +1057,17 @@ for nfile = 1:nFiles
 end
 
 if isvalid(dlg); close(dlg); end
-showReportDialog(app, allSummaries, allReports);
+
+% Store reports on app and update the Reports tab
+for ri = 1:numel(allSummaries)
+    entry.text   = allSummaries{ri};
+    entry.report = allReports{ri};
+    app.allPipelineReports{end+1} = entry;
+end
+app.updateReportsTab();
+if getpref('nestapp', 'showReport', true) && ~isempty(allSummaries)
+    app.TabGroup.SelectedTab = app.ReportsTab;
+end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1109,24 +1119,3 @@ else
 end
 end
 
-function showReportDialog(~, summaries, reports)
-% SHOWREPORTDIALOG  Display pipeline report summaries in a modal window.
-% For multiple files, a cross-file summary is prepended before the
-% individual per-file reports.
-if isempty(summaries); return; end
-separator = [newline repmat('=', 1, 60) newline];
-if numel(summaries) > 1
-    crossSummary = summarizeReports(reports);
-    combined = [crossSummary, separator, strjoin(summaries, separator)];
-else
-    combined = summaries{1};
-end
-fig = uifigure('Name', 'Pipeline Report', 'Position', [150 100 660 540], ...
-    'WindowStyle', 'modal');
-uitextarea(fig, 'Position', [10 50 640 480], ...
-    'Editable', 'off', 'FontName', 'Courier New', 'FontSize', 10, ...
-    'Value', combined);
-uibutton(fig, 'Text', 'Close', 'Position', [280 10 100 30], ...
-    'ButtonPushedFcn', @(~,~) close(fig));
-uiwait(fig);
-end

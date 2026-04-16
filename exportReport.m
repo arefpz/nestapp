@@ -12,9 +12,15 @@ function [summaryText, matPath] = exportReport(report, outputDir)
 %   See also: initPipelineReport, runPipeline
 
 if nargin < 2 || isempty(outputDir)
-    outputDir = fileparts(report.inputFile);
-    if isempty(outputDir)
-        outputDir = pwd;
+    % Use the user-specified report folder if set, otherwise data folder
+    prefFolder = getpref('nestapp', 'reportFolder', '');
+    if ~isempty(prefFolder) && isfolder(prefFolder)
+        outputDir = prefFolder;
+    else
+        outputDir = fileparts(report.inputFile);
+        if isempty(outputDir)
+            outputDir = pwd;
+        end
     end
 end
 
@@ -200,9 +206,13 @@ summaryText = strjoin(lines, newline);
 if isempty(baseName)
     baseName = 'pipeline';
 end
-timestamp   = datestr(report.processedAt, 'yyyymmdd_HHMMSS');
-matFileName = sprintf('%s_report_%s.mat', baseName, timestamp);
-matPath     = fullfile(outputDir, matFileName);
+if getpref('nestapp', 'overwriteReports', false)
+    matFileName = sprintf('%s_report.mat', baseName);
+else
+    timestamp   = datestr(report.processedAt, 'yyyymmdd_HHMMSS');
+    matFileName = sprintf('%s_report_%s.mat', baseName, timestamp);
+end
+matPath = fullfile(outputDir, matFileName);
 
 try
     pipelineReport = report;
