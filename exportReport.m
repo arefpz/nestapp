@@ -135,17 +135,18 @@ else
 end
 lines{end+1} = '';
 
-% TEP quality
-hasQuality = isfield(report.teps, 'composite') && ~isnan(report.teps.composite);
-if hasQuality
-    lines{end+1} = 'TEP QUALITY';
-    if ~isnan(report.teps.splitHalf)
-        lines{end+1} = sprintf('  Split-half r: %.2f', report.teps.splitHalf);
+% TEP quality vector
+if isstruct(report.teps) && isfield(report.teps, 'version')
+    q = report.teps;
+    lines{end+1} = sprintf('TEP QUALITY  [metric %s]', q.version);
+    if ~isempty(q.baselineWarning)
+        lines{end+1} = sprintf('  WARNING: %s', q.baselineWarning);
     end
-    if ~isnan(report.teps.snr)
-        lines{end+1} = sprintf('  SNR:          %.2f', report.teps.snr);
-    end
-    lines{end+1} = sprintf('  Composite:    %.2f / 1.00', report.teps.composite);
+    lines = appendAxis(lines, q.retention,         'Retention',          '');
+    lines = appendAxis(lines, q.artifactReduction,  'Artifact reduction', '');
+    lines = appendAxis(lines, q.bgRestoration,      'Background',         '');
+    lines = appendAxis(lines, q.reproducibility,    'Reproducibility',    '');
+    lines = appendAxis(lines, q.aepLikeness,        'AEP-likeness',       '[EXPERIMENTAL]');
     lines{end+1} = '';
 end
 
@@ -208,5 +209,27 @@ try
     save(matPath, 'pipelineReport');
 catch
     matPath = '';
+end
+end
+
+%% ---- helpers ---------------------------------------------------------------
+
+function lines = appendAxis(lines, ax, label, tag)
+% Format one quality axis as a single report line.
+if isempty(tag)
+    prefix = sprintf('  %-22s', label);
+else
+    prefix = sprintf('  %-22s', [label ' ' tag]);
+end
+if isnan(ax.value)
+    lines{end+1} = sprintf('%s  —  (%s)', prefix, ax.status);
+    if ~isempty(ax.status_detail)
+        lines{end+1} = sprintf('    %s', ax.status_detail);
+    end
+else
+    lines{end+1} = sprintf('%s  %.2f  %s', prefix, ax.value, ax.interpretation);
+    if ~strcmp(ax.status, 'ok') && ~isempty(ax.status_detail)
+        lines{end+1} = sprintf('    [%s] %s', upper(ax.status), ax.status_detail);
+    end
 end
 end

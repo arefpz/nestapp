@@ -114,6 +114,9 @@ for nfile = 1:nFiles
     fileReport = initPipelineReport(fullfile(pathName, fileName));
     % ICA stats captured before pop_subcomp/pop_tesa_compselect (indices invalid after removal).
     pendingICAStats = struct();
+    % Pre-cleaning epoch snapshot for Axis 2 (artifact reduction).
+    % Populated immediately after the Epoching step, before ICA / artifact rejection.
+    EEGraw = [];
 
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
@@ -862,9 +865,10 @@ for nfile = 1:nFiles
                         (nChanAfter - nChanBefore);
                 end
 
-                % Trial/epoch counts
+                % Trial/epoch counts + snapshot for TEP quality Axis 2
                 if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
                     fileReport.trials.original = size(EEG.data, 3);
+                    EEGraw = EEG;  % pre-cleaning reference (before ICA / artifact rejection)
                 end
                 if size(EEG.data, 3) > 1
                     fileReport.trials.final = nEpochAfter;
@@ -1038,11 +1042,10 @@ for nfile = 1:nFiles
         end
     end
 
-    % Compute TEP quality metrics on the final epoched EEG
-    if isstruct(EEG) && isfield(EEG, 'trials') && EEG.trials > 1
-        fileReport.teps.splitHalf = computeSplitHalf(EEG);
-        fileReport.teps.snr       = computeTEPSNR(EEG);
-        fileReport.teps.composite = computeCompositeQuality(EEG, fileReport);
+    % Compute five-axis TEP quality vector (opt-in; off by default)
+    if getpref('nestapp', 'computeQuality', false) && ...
+            isstruct(EEG) && isfield(EEG, 'trials') && EEG.trials > 1
+        fileReport.teps = computeTEPQuality(EEG, EEGraw, fileReport);
     end
 
     writeSessionLog(pathName, fileName, stepLog);

@@ -22,7 +22,7 @@ function report = initPipelineReport(inputFile)
 %     ica.varRemoved        - total % data variance removed (NaN if unavailable)
 %     ica.varMin / varMax   - per-component variance range (NaN if unavailable)
 %     ica.categories        - ICLabel breakdown (populated when ICLabel was run)
-%     teps                  - struct for TEP results (reserved for M5)
+%     teps                  - struct returned by computeTEPQuality (five-axis quality vector)
 %
 %   Each element of .steps is a struct with fields:
 %     name, chansBefore, chansAfter, trialsBefore, trialsAfter, duration, timestamp
@@ -56,7 +56,8 @@ report.ica.categories.names    = ICA_CATEGORIES;
 report.ica.categories.nRemoved = zeros(1, 7);
 report.ica.categories.varShare = zeros(1, 7);
 
-report.teps.splitHalf = NaN;
-report.teps.snr       = NaN;
-report.teps.composite = NaN;
+% TEP quality axes — populated after the pipeline by computeTEPQuality.
+% Each field is a struct with .value, .status, .interpretation, etc.
+% See computeTEPQuality for the full output contract.
+report.teps = struct();
 end
