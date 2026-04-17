@@ -130,6 +130,7 @@ classdef nestapp < matlab.apps.AppBase
         FolderEditField_2Label          matlab.ui.control.Label
         PLOTTEPButton                   matlab.ui.control.Button
         ShowComponentsButton            matlab.ui.control.StateButton
+        EditComponentWindowsButton      matlab.ui.control.Button
         TEPComponentTable               matlab.ui.control.Table
         UIAxes2                         matlab.ui.control.UIAxes
         UIAxes                          matlab.ui.control.UIAxes
@@ -197,6 +198,7 @@ classdef nestapp < matlab.apps.AppBase
         pipelineName    = ''       % filename of last saved/loaded pipeline
         lastStepClick   = NaT     % datetime of last StepsListBox click (double-click detection)
         tepPeaks        = struct([]) % struct array from tepPeakFinder; cached after each PLOT TEP
+        tepComponentDefs = struct([]) % component window definitions used by tepPeakFinder
         allPipelineReports = {}    % cell array of report entry structs from current session
         loadedReports      = {}    % cell array of report entry structs loaded from disk
     end
@@ -778,10 +780,11 @@ classdef nestapp < matlab.apps.AppBase
             % TEP window slider lives above UIAxes; topoplot controls sit right of UIAxes2.
 
             % Left action column — bottom strip (x:5-145)
-            app.PLOTTEPButton.Position            = p([5 130 140 30]);
-            app.ShowComponentsButton.Position     = p([5 104 140 23]);
-            app.ExportTEPFigureButton.Position    = p([5 76 140 23]);
-            app.PlotEEGdataButton.Position        = p([5 50 108 23]);
+            app.PLOTTEPButton.Position                = p([5 130 140 30]);
+            app.ShowComponentsButton.Position         = p([5 104 140 23]);
+            app.EditComponentWindowsButton.Position   = p([5 78 140 23]);
+            app.ExportTEPFigureButton.Position        = p([5 52 140 23]);
+            app.PlotEEGdataButton.Position            = p([5 26 108 23]);
 
             % Center-left controls — bottom strip (x:152-340)
             app.PlottingModeButtonGroup.Position  = p([152 88 150 67]);
@@ -1047,7 +1050,7 @@ classdef nestapp < matlab.apps.AppBase
             legend(app.UIAxes, 'show', 'Location', 'best');
 
             % Component detection on grand mean (runs regardless of toggle to cache peaks)
-            app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime);
+            app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime, app.tepComponentDefs);
             if app.ShowComponentsButton.Value
                 overlayTEPComponents(app);
             end
@@ -1185,7 +1188,8 @@ classdef nestapp < matlab.apps.AppBase
 
             % Visualizing tab
             app.PLOTTEPButton.Tooltip         = 'Plot TMS-evoked potential waveforms for the selected files and electrodes';
-            app.ShowComponentsButton.Tooltip  = 'Detect and overlay N15/P30/N45/P60/N100/P180 peaks on the TEP plot';
+            app.ShowComponentsButton.Tooltip          = 'Detect and overlay TEP component peaks on the TEP plot';
+            app.EditComponentWindowsButton.Tooltip    = 'Customise the search windows used for each TEP component';
             app.TOPOPLOTButton.Tooltip        = 'Plot a scalp topographic map at the specified time point';
             app.ExportTEPFigureButton.Tooltip = 'Export the current TEP plot as PNG or PDF';
             app.ReLoadAvailableElectrodesButton.Tooltip = ...
@@ -1259,7 +1263,8 @@ classdef nestapp < matlab.apps.AppBase
             app.UITable.Data = [];
             app.ItemNum = 1;
             app.needchanloc = 1;
-            app.originalSize = app.UIFigure.Position(3:4);
+            app.originalSize      = app.UIFigure.Position(3:4);
+            app.tepComponentDefs  = defaultTEPComponentDefs(app);
             applyTooltips(app);
             loadPrefs(app);
             buildRecentFilesMenu(app);
@@ -1936,6 +1941,89 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
 
+        % Button pushed function: EditComponentWindowsButton
+        function EditComponentWindowsButtonPushed(app, ~)
+        % EDITCOMPONENTWINDOWSBUTTONPUSHED  Open a modal dialog for editing TEP component windows.
+            defs = app.tepComponentDefs;
+            nComp = numel(defs);
+
+            fig = uifigure('Name', 'TEP Component Windows', ...
+                'Position', [200 200 530 265], 'WindowStyle', 'modal');
+
+            % Build editable table
+            tableData = cell(nComp, 5);
+            for i = 1:nComp
+                tableData{i, 1} = defs(i).name;
+                tableData{i, 2} = defs(i).polarity;
+                tableData{i, 3} = defs(i).nomLatency;
+                tableData{i, 4} = defs(i).winStart;
+                tableData{i, 5} = defs(i).winEnd;
+            end
+
+            tbl = uitable(fig, ...
+                'Position',       [10 55 510 195], ...
+                'Data',           tableData, ...
+                'ColumnName',     {'Component', 'Polarity', 'Nom. Latency (ms)', 'Win Start (ms)', 'Win End (ms)'}, ...
+                'ColumnEditable', [false, false, true, true, true], ...
+                'ColumnWidth',    {80, 65, 130, 110, 100}, ...
+                'RowName',        {});
+
+            uibutton(fig, 'Text', 'Reset Defaults', ...
+                'Position', [10 12 130 30], ...
+                'ButtonPushedFcn', @(~,~) resetDefaults(tbl));
+
+            uibutton(fig, 'Text', 'Cancel', ...
+                'Position', [300 12 100 30], ...
+                'ButtonPushedFcn', @(~,~) close(fig));
+
+            uibutton(fig, 'Text', 'Apply', ...
+                'Position', [410 12 110 30], ...
+                'ButtonPushedFcn', @(~,~) applyAndClose(tbl, fig));
+
+            uiwait(fig);
+
+            function resetDefaults(t)
+                % app is accessible from the enclosing method scope
+                defaults = defaultTEPComponentDefs(app);
+                d = cell(numel(defaults), 5);
+                for k = 1:numel(defaults)
+                    d{k, 1} = defaults(k).name;
+                    d{k, 2} = defaults(k).polarity;
+                    d{k, 3} = defaults(k).nomLatency;
+                    d{k, 4} = defaults(k).winStart;
+                    d{k, 5} = defaults(k).winEnd;
+                end
+                t.Data = d;
+            end
+
+            function applyAndClose(t, f)
+                % app is accessible from the enclosing method scope
+                d = t.Data;
+                for k = 1:size(d, 1)
+                    app.tepComponentDefs(k).nomLatency = d{k, 3};
+                    app.tepComponentDefs(k).winStart   = d{k, 4};
+                    app.tepComponentDefs(k).winEnd     = d{k, 5};
+                end
+                % Re-detect and replot if TEP is already shown
+                if app.TEPCreated
+                    PLOTTEPButtonPushed(app, []);
+                end
+                close(f);
+            end
+        end
+
+        function defs = defaultTEPComponentDefs(~)
+        % DEFAULTTEPCOMPONENTDEFS  Return canonical TEP component window definitions.
+        %   Windows follow Rogasch et al. 2013 (Clin Neurophysiol) and
+        %   Farzan et al. 2016 (Ann NY Acad Sci).
+            defs = struct( ...
+                'name',       {'N15',  'P30',  'N45',  'P60',  'N100', 'P180'}, ...
+                'polarity',   {'neg',  'pos',  'neg',  'pos',  'neg',  'pos'}, ...
+                'nomLatency', {15,     30,     45,     60,     100,    180}, ...
+                'winStart',   {5,      22,     38,     50,     80,     140}, ...
+                'winEnd',     {28,     50,     65,     90,     140,    260});
+        end
+
     end
 
     % Component initialization
@@ -2185,6 +2273,12 @@ classdef nestapp < matlab.apps.AppBase
             app.ShowComponentsButton.Text = 'Show Components';
             app.ShowComponentsButton.Position = [5 104 140 23];
 
+            % Create EditComponentWindowsButton
+            app.EditComponentWindowsButton = uibutton(app.VisualizingTab, 'push');
+            app.EditComponentWindowsButton.ButtonPushedFcn = createCallbackFcn(app, @EditComponentWindowsButtonPushed, true);
+            app.EditComponentWindowsButton.Text = 'Edit Windows...';
+            app.EditComponentWindowsButton.Position = [5 78 140 23];
+
             % Create PLOTTEPButton
             app.PLOTTEPButton = uibutton(app.VisualizingTab, 'push');
             app.PLOTTEPButton.ButtonPushedFcn = createCallbackFcn(app, @PLOTTEPButtonPushed, true);
@@ -2271,7 +2365,7 @@ classdef nestapp < matlab.apps.AppBase
             app.ExportTEPFigureButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPFigureButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPFigureButtonPushed, true);
             app.ExportTEPFigureButton.Enable = 'off';
-            app.ExportTEPFigureButton.Position = [5 76 140 23];
+            app.ExportTEPFigureButton.Position = [5 52 140 23];
             app.ExportTEPFigureButton.Text = 'Export TEP Figure';
 
             % Create PlottingModeButtonGroup
@@ -2987,7 +3081,7 @@ classdef nestapp < matlab.apps.AppBase
             app.PlotEEGdataButton = uibutton(app.VisualizingTab, 'push');
             app.PlotEEGdataButton.ButtonPushedFcn = createCallbackFcn(app, @PlotEEGdataButtonPushed, true);
             app.PlotEEGdataButton.Enable = 'off';
-            app.PlotEEGdataButton.Position = [5 50 108 23];
+            app.PlotEEGdataButton.Position = [5 26 108 23];
             app.PlotEEGdataButton.Text = 'Plot EEG data';
 
             % Create ExportTEPDataButton — right column, below files listbox
