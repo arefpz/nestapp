@@ -1586,7 +1586,9 @@ classdef nestapp < matlab.apps.AppBase
                             if isempty(row); continue; end
                             v = ov.(rawKey);
                             if isnumeric(v)
-                                T.val{row} = v;
+                                % Store as mat2str string, consistent with
+                                % how DefaultsVal is built in startupFcn.
+                                T.val{row} = string(mat2str(v));
                             else
                                 T.val{row} = string(v);
                             end

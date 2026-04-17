@@ -56,7 +56,15 @@ t.steps = { ...
     'Remove Bad Epoch', ...
     'Save New Set'};
 ov = repmat({struct()}, 1, numel(t.steps));
-% Step 12 — average re-reference (empty string = average in EEGLAB)
+% Step 6 — cubic interpolation of removed TMS window (TESA paper recommends
+%           cubic; default is linear which is less accurate for the artifact
+%           boundary).
+ov{6}.interpolation = 'cubic';
+% Step 9 — epoch window: [-1, 1] s gives 1 s pre-stim baseline and captures
+%           all standard TEP components (N15 through P180) plus the 500-1000 ms
+%           post-stim window required by the background-restoration quality metric.
+ov{9}.timelim = [-1, 1];
+% Step 12 — average re-reference (empty string = average reference in EEGLAB)
 ov{12}.ref = '[]';
 t.overrides = ov;
 templates(end+1) = t;
