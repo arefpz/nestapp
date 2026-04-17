@@ -446,6 +446,16 @@ for nfile = 1:nFiles
                 case 'Frequency Filter (CleanLine)'
                     %%  Frequency Filtering
 
+                    % CleanLine's helper functions (e.g. hlp_varargin2struct) live in
+                    % external/ subdirectories that eeglab('nogui') does not add to the
+                    % path.  Add them now if they are missing.
+                    if ~exist('hlp_varargin2struct', 'file')
+                        cleanlineRoot = fileparts(which('pop_cleanline'));
+                        if ~isempty(cleanlineRoot)
+                            addpath(genpath(cleanlineRoot));
+                        end
+                    end
+
                     % Below line will remove the notch frequency using cleanline extension.
                     % Notch frequency, 60 Hz and its first harmonic, 120 Hz is being filtered
                     % from all channels, 1:63
@@ -571,8 +581,18 @@ for nfile = 1:nFiles
                         end
                     end
                     if isfield(EEG,'etc') && isfield(EEG.etc,'ic_classification') && ...
-                            isfield(EEG.etc.ic_classification,'ICLabel')
-                        pendingICAStats.iclabelProbs = EEG.etc.ic_classification.ICLabel;
+                            isfield(EEG.etc.ic_classification,'ICLabel') && ...
+                            isfield(EEG.etc.ic_classification.ICLabel,'classifications')
+                        pendingICAStats.iclabelProbs = ...
+                            EEG.etc.ic_classification.ICLabel.classifications;
+                    end
+
+                    % pop_subcomp reads EEG.reject.gcompreject directly when
+                    % var_comp is empty. Ensure it is numeric before the call
+                    % so pop_subcomp's internal logical() conversion does not
+                    % throw "First input array is an invalid data type".
+                    if ~(isnumeric(EEG.reject.gcompreject) || islogical(EEG.reject.gcompreject))
+                        EEG.reject.gcompreject = zeros(1, size(EEG.icaweights, 1));
                     end
 
                     EEG = pop_subcomp( EEG, var_comp, vars{4}, vars{6});
