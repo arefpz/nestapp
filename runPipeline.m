@@ -39,11 +39,16 @@ else
         app.steps2run{2*i} = app.ChangedVal(i);
     end
 
+    % Convert display tables to flat key-value inputvals arrays.
+    % app.stepParamKeys{k} holds the raw EEGLAB keys in the same row order
+    % as ChangedVal{k}, so no display-label reverse mapping is needed.
     for i = 2:2:size(app.steps2run,2)
+        stepIdx = i / 2;
+        rawKeys = app.stepParamKeys{stepIdx};
         x = table2cell(app.steps2run{i}{:});
         inputvals = cell(1,2*size(x,1));
         for j = 1:size(x,1)
-            inputvals{2*j-1} = x{j,1};
+            inputvals{2*j-1} = rawKeys{j};
             v = x{j,2};
             if ischar(v) || isstring(v)
                 sv = string(v);
@@ -79,8 +84,19 @@ end
 
 %% MAIN
 
-for nfile = 1:app.NSelecFiles
-    app.ProcessingfileEditField.Value = num2str(nfile);
+nFiles = app.NSelecFiles;
+nSteps = numel(app.steps2run) / 2;
+allSummaries = {};
+allReports   = {};
+
+dlg = uiprogressdlg(app.UIFigure, ...
+    'Title',           'Running Pipeline', ...
+    'Message',         'Initialising...', ...
+    'Cancelable',      'on', ...
+    'ShowPercentage',  'on');
+
+for nfile = 1:nFiles
+    app.StatusBar.Text = sprintf('  Running file %d / %d ...', nfile, nFiles);
     % To avoid any unforseen error, for each data new eeglab window will be
     % used.
     [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
@@ -90,11 +106,47 @@ for nfile = 1:app.NSelecFiles
 
     disp(['!--------FILE ',fileName,' IS BEING PROCESSED--------!'])
 
+    % Per-file step log — accumulated across the step loop and written to disk.
+    stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
+                     'epochBefore',{},'epochAfter',{},'error',{});
+
+    % Per-file pipeline report (channels, trials, ICA, TEP metrics).
+    fileReport = initPipelineReport(fullfile(pathName, fileName));
+    % ICA stats captured before pop_subcomp/pop_tesa_compselect (indices invalid after removal).
+    pendingICAStats = struct();
+    % Pre-cleaning epoch snapshot for Axis 2 (artifact reduction).
+    % Populated immediately after the Epoching step, before ICA / artifact rejection.
+    EEGraw = [];
+
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
-        app.RunningstepEditField.Value=app.steps2run{Step}{:};pause(0.1);
+        stepName = app.steps2run{Step}{:};
+        stepIdx  = (Step - 1) / 2 + 1;
+
+        % Update progress dialog and check for user cancellation.
+        dlg.Value   = ((nfile - 1) * nSteps + stepIdx - 1) / (nFiles * nSteps);
+        dlg.Message = sprintf('File %d / %d  \x2014  %s', nfile, nFiles, stepName);
+        if dlg.CancelRequested
+            writeSessionLog(pathName, fileName, stepLog);
+            close(dlg);
+            return
+        end
+
+        app.StatusBar.Text = sprintf('  File %d / %d — %s', nfile, nFiles, stepName);
         varin = app.steps2run{Step+1};
-        disp(strcat('step ',num2str(fix(Step/2)+1), ': "',app.steps2run{Step},'" is running!'));
+        disp(strcat('step ',num2str(stepIdx), ': "',stepName,'" is running!'));
+
+        % Capture EEG state before the step runs.
+        % EEG is [] (double) until Load Data runs — guard against that.
+        if isstruct(EEG) && ~isempty(EEG)
+            nChanBefore  = EEG.nbchan;
+            nEpochBefore = size(EEG.data, 3);
+        else
+            nChanBefore  = 0;
+            nEpochBefore = 0;
+        end
+        t0 = tic;
+
         try
             switch app.steps2run{Step}{:}
                 case 'Load Channel Location'
@@ -394,6 +446,16 @@ for nfile = 1:app.NSelecFiles
                 case 'Frequency Filter (CleanLine)'
                     %%  Frequency Filtering
 
+                    % CleanLine's helper functions (e.g. hlp_varargin2struct) live in
+                    % external/ subdirectories that eeglab('nogui') does not add to the
+                    % path.  Add them now if they are missing.
+                    if ~exist('hlp_varargin2struct', 'file')
+                        cleanlineRoot = fileparts(which('pop_cleanline'));
+                        if ~isempty(cleanlineRoot)
+                            addpath(genpath(cleanlineRoot));
+                        end
+                    end
+
                     % Below line will remove the notch frequency using cleanline extension.
                     % Notch frequency, 60 Hz and its first harmonic, 120 Hz is being filtered
                     % from all channels, 1:63
@@ -423,7 +485,7 @@ for nfile = 1:app.NSelecFiles
                     ord = vars{ind3+1};
                     ind4=find(strcmp(vars,'type'));
                     type = vars{ind4+1};
-                    vars([ind1,ind1+1,ind2,ind2+2,ind3,ind3+1])=[];
+                    vars([ind1,ind1+1,ind2,ind2+2,ind3,ind3+1])=[]; %#ok<NASGU> intentional cleanup; named values already extracted above
 
                     EEG = pop_tesa_filtbutter( EEG, high, low, ord, type ); % Zero-phase, 4th-order band pass butterworth filter between 1-100 Hz.
                     EEG = eeg_checkset( EEG );
@@ -495,9 +557,44 @@ for nfile = 1:app.NSelecFiles
                     else
                         Rej = EEG.reject.gcompreject;
                         Rej = reshape(Rej, 1, numel(Rej));
-                        ICA_Rejected_Comp{end+1}=Rej;
+                        ICA_Rejected_Comp{end+1}=Rej; %#ok<AGROW> count of ICA rounds unknown at call time
                     end
-                    
+
+                    % Capture rejection mask and per-component variance BEFORE pop_subcomp.
+                    % After removal icaweights loses the rejected rows, making the full
+                    % logical mask invalid for indexing component activations.
+                    % gcompreject may be non-numeric in some EEGLAB versions (e.g. empty
+                    % char) — fall back to zeros if the type is not convertible to logical.
+                    gcr = EEG.reject.gcompreject;
+                    if isnumeric(gcr) || islogical(gcr)
+                        rejMask = logical(reshape(gcr, 1, []));
+                    else
+                        rejMask = false(1, max(size(EEG.icaweights, 1), 0));
+                    end
+                    pendingICAStats = struct('rejMask', rejMask);
+                    if ~isempty(EEG.icaweights) && size(EEG.icaweights,1) == numel(rejMask)
+                        act2D = computeICAActivation(EEG);
+                        data2D = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
+                        totalVar = sum(var(data2D, 0, 2));
+                        if totalVar > 0
+                            pendingICAStats.compVarPct = (var(act2D, 0, 2) / totalVar * 100)';
+                        end
+                    end
+                    if isfield(EEG,'etc') && isfield(EEG.etc,'ic_classification') && ...
+                            isfield(EEG.etc.ic_classification,'ICLabel') && ...
+                            isfield(EEG.etc.ic_classification.ICLabel,'classifications')
+                        pendingICAStats.iclabelProbs = ...
+                            EEG.etc.ic_classification.ICLabel.classifications;
+                    end
+
+                    % pop_subcomp reads EEG.reject.gcompreject directly when
+                    % var_comp is empty. Ensure it is numeric before the call
+                    % so pop_subcomp's internal logical() conversion does not
+                    % throw "First input array is an invalid data type".
+                    if ~(isnumeric(EEG.reject.gcompreject) || islogical(EEG.reject.gcompreject))
+                        EEG.reject.gcompreject = zeros(1, size(EEG.icaweights, 1));
+                    end
+
                     EEG = pop_subcomp( EEG, var_comp, vars{4}, vars{6});
                     EEG.ICA_Rejected_Comp=ICA_Rejected_Comp;
                     EEG = eeg_checkset( EEG );
@@ -516,7 +613,7 @@ for nfile = 1:app.NSelecFiles
                     if ~exist('interpElecs','var')
                         interpElecs = EEG.chaninfo.removedchans;
                     else
-                        interpElecs = [interpElecs;EEG.chaninfo.removedchans];
+                        interpElecs = [interpElecs;EEG.chaninfo.removedchans]; %#ok<AGROW> accumulates across interpolation rounds
                     end
                     EEG.interpElecs = interpElecs;
                     EEG.setname = [EEG.setname '_interp'];
@@ -764,16 +861,198 @@ for nfile = 1:app.NSelecFiles
                     assignin('base','tep_output',tepoutput)
 
             end
+
+            % Capture post-step channel/epoch counts (must precede report update).
+            if isstruct(EEG) && ~isempty(EEG)
+                nChanAfter  = EEG.nbchan;
+                nEpochAfter = size(EEG.data, 3);
+            else
+                nChanAfter  = nChanBefore;
+                nEpochAfter = nEpochBefore;
+            end
+
+            % Update fileReport with post-step metrics.
+            if isstruct(EEG) && ~isempty(EEG)
+                % Channel counts
+                if strcmp(stepName, 'Load Data')
+                    fileReport.channels.original = EEG.nbchan;
+                end
+                fileReport.channels.final = EEG.nbchan;
+                if nChanAfter < nChanBefore
+                    if any(strcmp(stepName, {'Remove Bad Channels','Remove un-needed Channels', ...
+                            'Automatic Cleaning Data','Clean Artifacts', ...
+                            'Automatic Continuous Rejection'}))
+                        fileReport.channels.nRejected = fileReport.channels.nRejected + ...
+                            (nChanBefore - nChanAfter);
+                    end
+                end
+                if any(strcmp(stepName, {'Interpolate Channels','Interpolate Missing Data (TESA)'})) ...
+                        && nChanAfter > nChanBefore
+                    fileReport.channels.nInterpolated = fileReport.channels.nInterpolated + ...
+                        (nChanAfter - nChanBefore);
+                end
+
+                % Trial/epoch counts + snapshot for TEP quality Axis 2
+                if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
+                    fileReport.trials.original = size(EEG.data, 3);
+                    EEGraw = EEG;  % pre-cleaning reference (before ICA / artifact rejection)
+                end
+                if size(EEG.data, 3) > 1
+                    fileReport.trials.final = nEpochAfter;
+                    if nEpochBefore > 1 && nEpochAfter < nEpochBefore
+                        fileReport.trials.rejected = fileReport.trials.rejected + ...
+                            (nEpochBefore - nEpochAfter);
+                    end
+                end
+
+                % ICA — component count after decomposition
+                if any(strcmp(stepName, {'Run ICA','Run TESA ICA'})) && ~isempty(EEG.icaweights)
+                    fileReport.ica.nComponents = size(EEG.icaweights, 1);
+                end
+
+                % ICA — standard removal: use rejMask captured before pop_subcomp
+                if strcmp(stepName, 'Remove Flagged ICA Components') && ...
+                        isfield(pendingICAStats, 'rejMask')
+                    rMask = pendingICAStats.rejMask;
+                    nRej  = sum(rMask);
+                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRej;
+                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                    if isfield(pendingICAStats, 'compVarPct') && ...
+                            numel(pendingICAStats.compVarPct) == numel(rMask)
+                        rejPct = pendingICAStats.compVarPct(rMask);
+                        if isnan(fileReport.ica.varRemoved)
+                            fileReport.ica.varRemoved = sum(rejPct);
+                        else
+                            fileReport.ica.varRemoved = fileReport.ica.varRemoved + sum(rejPct);
+                        end
+                        fileReport.ica.varMin = min([fileReport.ica.varMin, rejPct]);
+                        fileReport.ica.varMax = max([fileReport.ica.varMax, rejPct]);
+                    end
+                    if isfield(pendingICAStats, 'iclabelProbs')
+                        probs = pendingICAStats.iclabelProbs;
+                        [~, bestCat] = max(probs, [], 2);
+                        for ci = 1:7
+                            inCat = (bestCat == ci) & rMask(:);
+                            fileReport.ica.categories.nRemoved(ci) = ...
+                                fileReport.ica.categories.nRemoved(ci) + sum(inCat);
+                            if isfield(pendingICAStats, 'compVarPct')
+                                fileReport.ica.categories.varShare(ci) = ...
+                                    fileReport.ica.categories.varShare(ci) + ...
+                                    sum(pendingICAStats.compVarPct(inCat));
+                            end
+                        end
+                    end
+                    pendingICAStats = struct();
+                end
+
+                % ICA — TESA removal: read full classification from EEG.icaCompClass.
+                % pop_tesa_compselect stores compClass (user-confirmed) and compVars
+                % (% of this round's ICA activation variance) in EEG.icaCompClass.TESAn.
+                % compVars percentages are not additive across rounds (different ICA bases),
+                % so variance is stored per-round; totals accumulate counts only.
+                if strcmp(stepName, 'Remove ICA Components (TESA)') && ...
+                        isfield(EEG, 'icaCompClass') && isstruct(EEG.icaCompClass) && ...
+                        ~isempty(fieldnames(EEG.icaCompClass))
+                    tesaKeys = fieldnames(EEG.icaCompClass);
+                    cl = EEG.icaCompClass.(tesaKeys{end});
+
+                    % compClass codes: 1=keep, 2=reject, 3=TMS muscle, 4=blink,
+                    %                  5=eye move, 6=muscle, 7=elec noise, 8=sensory
+                    TESA_CATS  = {'TMS Muscle','Blink','Eye Move','Muscle','Elec Noise','Sensory','Reject'};
+                    TESA_CODES = [3, 4, 5, 6, 7, 8, 2];
+
+                    rejIdx   = cl.compClass > 1;
+                    nRejTESA = sum(rejIdx);
+
+                    % Build per-round record
+                    rnd.roundNum    = numel(tesaKeys);
+                    rnd.nComponents = numel(cl.compClass);
+                    rnd.nRejected   = nRejTESA;
+                    rnd.varRemoved  = NaN;
+                    rnd.varMin      = NaN;
+                    rnd.varMax      = NaN;
+                    rnd.categories.names    = TESA_CATS;
+                    rnd.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                    rnd.categories.varShare = zeros(1, numel(TESA_CATS));
+
+                    hasVars = isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass);
+                    if hasVars && nRejTESA > 0
+                        rejPct         = cl.compVars(rejIdx);
+                        rnd.varRemoved = sum(rejPct);
+                        rnd.varMin     = min(rejPct);
+                        rnd.varMax     = max(rejPct);
+                    end
+
+                    for ci = 1:numel(TESA_CODES)
+                        inCat = (cl.compClass == TESA_CODES(ci));
+                        rnd.categories.nRemoved(ci) = sum(inCat);
+                        if hasVars
+                            rnd.categories.varShare(ci) = sum(cl.compVars(inCat));
+                        end
+                    end
+
+                    fileReport.ica.rounds{end+1} = rnd;
+
+                    % Accumulate totals (counts only — variance not additive across rounds)
+                    fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
+                    fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
+
+                    % Summary-level categories: TESA names, counts summed across rounds
+                    if ~strcmp(fileReport.ica.categories.names{1}, 'TMS Muscle')
+                        fileReport.ica.categories.names    = TESA_CATS;
+                        fileReport.ica.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                        fileReport.ica.categories.varShare = zeros(1, numel(TESA_CATS));
+                    end
+                    fileReport.ica.categories.nRemoved = ...
+                        fileReport.ica.categories.nRemoved + rnd.categories.nRemoved;
+                    % varShare at summary level: only meaningful if single round
+                    if isscalar(fileReport.ica.rounds)
+                        fileReport.ica.varRemoved = rnd.varRemoved;
+                        fileReport.ica.varMin     = rnd.varMin;
+                        fileReport.ica.varMax     = rnd.varMax;
+                        fileReport.ica.categories.varShare = rnd.categories.varShare;
+                    end
+                end
+            end
+
+            % Append step record to fileReport.
+            stepRec.name         = stepName;
+            stepRec.chansBefore  = nChanBefore;
+            stepRec.chansAfter   = nChanAfter;
+            stepRec.trialsBefore = nEpochBefore;
+            stepRec.trialsAfter  = nEpochAfter;
+            stepRec.duration     = toc(t0);
+            stepRec.timestamp    = datetime('now');
+            fileReport.steps{end+1} = stepRec;
+
+            % Record successful step in session log.
+            stepLog(end+1) = struct( ...
+                'step',        stepName, ...
+                'duration_s',  toc(t0), ...
+                'chanBefore',  nChanBefore, ...
+                'chanAfter',   nChanAfter, ...
+                'epochBefore', nEpochBefore, ...
+                'epochAfter',  nEpochAfter, ...
+                'error',       ''); %#ok<AGROW>
+
         catch err
+            stepLog(end+1) = struct( ...
+                'step',        stepName, ...
+                'duration_s',  toc(t0), ...
+                'chanBefore',  nChanBefore, ...
+                'chanAfter',   nChanBefore, ...
+                'epochBefore', nEpochBefore, ...
+                'epochAfter',  nEpochBefore, ...
+                'error',       err.message); %#ok<AGROW>
+
             disp(err.message)
             warning(strcat('An error acoured at file ',fileName,...
-                ' at step ',num2str(round(Step/2)), ': ',app.steps2run{Step}{:}));
+                ' at step ',num2str(stepIdx), ': ',stepName));
             toContinue = uiconfirm(app.UIFigure, ...
                 sprintf('Error at step %d (%s):\n%s\n\nContinue to next step?', ...
-                    round(Step/2), app.steps2run{Step}{:}, err.message), ...
+                    stepIdx, stepName, err.message), ...
                 'Step Failed','Options',{'Continue','Abort'},'DefaultOption','Continue','CancelOption','Abort');
             if strcmp(toContinue,'Abort')
-                EEG.nestappSteps = app.steps2run;
                 postVars = who;
                 assignin('base','postVars',postVars)
                 for i = 1:numel(postVars)
@@ -783,16 +1062,87 @@ for nfile = 1:app.NSelecFiles
                 end
                 assignin('base','lastVarin',varin);
                 assignin('base','lastStepInd',Step);
-                eeglab redraw
-                break
+                writeSessionLog(pathName, fileName, stepLog);
+                if isvalid(dlg); close(dlg); end
+                return
             end
         end
     end
-    
-    % assignin('base','EEG',EEG)
-    % assignin('base','ALLEEG',ALLEEG)
+
+    % Compute five-axis TEP quality vector (opt-in; off by default)
+    if getpref('nestapp', 'computeQuality', false) && ...
+            isstruct(EEG) && isfield(EEG, 'trials') && EEG.trials > 1
+        fileReport.teps = computeTEPQuality(EEG, EEGraw, fileReport);
+    end
+
+    writeSessionLog(pathName, fileName, stepLog);
+    [summaryText, ~] = exportReport(fileReport, pathName);
+    allSummaries{end+1} = summaryText; %#ok<AGROW>
+    allReports{end+1}   = fileReport;  %#ok<AGROW>
     eeglab redraw
-    pause(1)
     disp('-----------------Data processed!-----------------')
 end
+
+if isvalid(dlg); close(dlg); end
+
+% Store reports on app and update the Reports tab
+for ri = 1:numel(allSummaries)
+    entry.text   = allSummaries{ri};
+    entry.report = allReports{ri};
+    app.allPipelineReports{end+1} = entry;
 end
+app.updateReportsTab();
+if getpref('nestapp', 'showReport', true) && ~isempty(allSummaries)
+    app.TabGroup.SelectedTab = app.ReportsTab;
+end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Local helpers
+
+function writeSessionLog(pathName, fileName, stepLog)
+% WRITESESSIONLOG  Write a plain-text processing log alongside the data file.
+%   Saved as <fileName_noext>_nestapp_log.txt in pathName.
+    [~, baseName] = fileparts(fileName);
+    logPath = fullfile(pathName, [baseName, '_nestapp_log.txt']);
+    fid = fopen(logPath, 'w');
+    if fid == -1; return; end  % silently skip if path is not writable
+
+    fprintf(fid, '=== nestapp session log ===\n');
+    fprintf(fid, 'File:      %s\n', fileName);
+    fprintf(fid, 'Processed: %s\n', datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
+    fprintf(fid, 'MATLAB:    %s\n', version);
+    fprintf(fid, '\n%-4s  %-35s  %7s  %9s  %9s  %s\n', ...
+        '#', 'Step', 'Time(s)', 'Ch before', 'Ch after', 'Note');
+    fprintf(fid, '%s\n', repmat('-', 1, 80));
+
+    for k = 1:numel(stepLog)
+        s = stepLog(k);
+        note = s.error;
+        if s.epochBefore ~= s.epochAfter && isempty(s.error)
+            note = sprintf('epochs %d → %d', s.epochBefore, s.epochAfter);
+        end
+        fprintf(fid, '%-4d  %-35s  %7.2f  %9d  %9d  %s\n', ...
+            k, s.step, s.duration_s, s.chanBefore, s.chanAfter, note);
+    end
+
+    fprintf(fid, '\nTotal steps: %d\n', numel(stepLog));
+    errSteps = sum(~cellfun(@isempty, {stepLog.error}));
+    if errSteps > 0
+        fprintf(fid, 'Steps with errors: %d\n', errSteps);
+    end
+    fclose(fid);
+end
+
+
+function act2D = computeICAActivation(EEG)
+% COMPUTEICAACTIVATION  Return 2-D ICA activations (nComp x nSamples).
+%   Computes activations on demand if EEG.icaact is empty.
+if ~isempty(EEG.icaact)
+    act2D = reshape(EEG.icaact, size(EEG.icaact,1), []);
+else
+    data2D = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
+    act2D  = (EEG.icaweights * EEG.icasphere) * data2D;
+end
+end
+
