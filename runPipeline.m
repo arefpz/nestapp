@@ -1,3 +1,9 @@
+function runPipeline(app)
+% RUNPIPELINE  Execute the selected cleaning pipeline on all chosen files.
+%   runPipeline(app) runs each step in app.SelectedListBox against every
+%   file in app.file. Called from nestapp.RunAnalysisButtonPushed.
+%   app is a handle object; all UI state is read and written through it.
+%
 % Copyright (C) 2023  Aref Pariz, University of Ottawa & The Royal
 % Institute for Mental Health, Ottawa, Ontario, Canada.
 % apariz@uottawa.ca
@@ -15,10 +21,10 @@
 % You should have received a copy of the GNU General Public License along
 % with this program. If not, see <https://www.gnu.org/licenses/>.
 %
-% STEPS TO PEFORM ON EEG DATA
+% STEPS TO PERFORM ON EEG DATA
 %
 % This file contains the commands and functions already available in eeglab
-% package. This program is being called by the app "nestapp".
+% package. This function is called by the app "nestapp".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% INITIALIZATION
@@ -38,7 +44,26 @@ else
         inputvals = cell(1,2*size(x,1));
         for j = 1:size(x,1)
             inputvals{2*j-1} = x{j,1};
-            inputvals{2*j} = x{j,2};
+            v = x{j,2};
+            if ischar(v) || isstring(v)
+                sv = string(v);
+                if isscalar(sv)
+                    % Scalar string: check for placeholder or numeric restoration.
+                    if strlength(sv) > 0 && startsWith(sv, '(')
+                        % Display placeholder — treat as empty for EEGLAB.
+                        v = '[]';
+                    else
+                        % Restore mat2str strings back to numeric
+                        % (e.g. '[1 6]' -> [1 6], '250' -> 250).
+                        num = str2num(char(sv)); %#ok<ST2NM>
+                        if ~isempty(num)
+                            v = num;
+                        end
+                    end
+                end
+                % Non-scalar string arrays (e.g. ["TP9" "TP10"]) pass through unchanged.
+            end
+            inputvals{2*j} = v;
         end
         app.steps2run{i} = [];
         app.steps2run{i} = inputvals;
@@ -201,28 +226,6 @@ for nfile = 1:app.NSelecFiles
                         pop_eegplot(EEG, varin{1,2}(1),varin{1,2}(2),varin{1,2}(3));
                     end
                     uiconfirm(app.UIFigure,'Press OK when done viewing the EEG plot.','Visualize EEG','Options',{'OK'},'DefaultOption',1);
-                case 'Remove high-std Channels'
-                    %% Remove high std channels.
-
-                    % Here based on the standard deviation of signal for each channel, we can
-                    % remove the high std channels. However in future steps, we will use
-                    % different function to remove the channels.
-                    period = EEG.pnts/10+1:2*EEG.pnts/10+1;
-                    SD=zeros(1,EEG.nbchan);
-                    for ii=1:EEG.nbchan
-                        SD(ii) = std(EEG.data(ii,period));
-                    end
-                    bad_SD_threshold=varin{1,2};
-                    bad_channels_SD=find(SD>bad_SD_threshold);
-                    remove_channels = cell(1,numel(bad_channels_SD));
-
-                    for ii=1:numel(bad_channels_SD)
-                        remove_channels{ii}=EEG.chanlocs(1,bad_channels_SD(ii)).labels;
-                    end
-                    disp(['Channels ',remove_channels,' are removed!'])
-                    EEG = pop_select( EEG,'nochannel',remove_channels);
-                    EEG = eeg_checkset( EEG );
-
                 case 'Remove un-needed Channels'
                     %% Remove un-needed channels
 
@@ -321,7 +324,7 @@ for nfile = 1:app.NSelecFiles
                     % ERP, it is recomended to do not remove it, since it may affect the
                     % results.
                     vars = convertContainedStringsToChars(varin);
-                    ind = find(strcmp(vars,'[]'));
+                    ind = find(strcmp(vars,'[]'), 1);
                     if ~isempty(ind)
                         timerange=vars{1,2}; % Default [] -> all
                         if ~strcmp(timerange,'[]')
@@ -701,8 +704,13 @@ for nfile = 1:app.NSelecFiles
 
                 case 'Remove Bad Trials'
                     %% Remove bad Trials
-                    EEG = pop_jointprob(EEG,1,1:size(EEG.data,1) ,5,5,0,0);
-                    pop_rejmenu(EEG,1);
+                    vars = convertContainedStringsToChars(varin);
+                    indLoc = find(strcmpi(vars,'localThresh'));
+                    indGlb = find(strcmpi(vars,'globalThresh'));
+                    localThresh  = str2double(vars{indLoc+1});
+                    globalThresh = str2double(vars{indGlb+1});
+                    EEG = pop_jointprob(EEG, 1, 1:size(EEG.data,1), localThresh, globalThresh, 0, 0);
+                    pop_rejmenu(EEG, 1);
                     uiconfirm(app.UIFigure,'Highlight bad trials in the rejection menu, then press OK to continue.','Remove Bad Trials','Options',{'OK'},'DefaultOption',1);
                     EEG.BadTr = unique([find(EEG.reject.rejjp==1) find(EEG.reject.rejmanual==1)]);
                     EEG = pop_rejepoch( EEG, EEG.BadTr ,0);
@@ -786,4 +794,5 @@ for nfile = 1:app.NSelecFiles
     eeglab redraw
     pause(1)
     disp('-----------------Data processed!-----------------')
+end
 end

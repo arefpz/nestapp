@@ -1,3 +1,6 @@
+% WARNING: Do not open nestapp_designer.mlapp and save — App Designer will
+% regenerate this file and overwrite startupFcn and other hand-edited methods.
+% All edits must be made directly to nestapp.m.
 classdef nestapp < matlab.apps.AppBase
 
     % Properties that correspond to app components
@@ -190,6 +193,26 @@ classdef nestapp < matlab.apps.AppBase
     end
 
     methods (Access = private)
+        function styleParamTable(app)
+        % Grey out UITable rows whose Value is a display placeholder.
+        % Placeholders start with '(' by convention, e.g. '(all channels)'.
+        % Call this after any assignment of UITable.Data to a parameter table.
+            removeStyle(app.UITable);
+            T = app.UITable.Data;
+            if isempty(T) || ~istable(T); return; end
+            grey = uistyle('FontColor', [0.6 0.6 0.6], 'FontAngle', 'italic');
+            for row = 1:height(T)
+                v = T.val{row};
+                % Only scalar strings can be placeholders; skip numerics and arrays.
+                if isscalar(v) && (isstring(v) || ischar(v))
+                    sv = string(v);
+                    if strlength(sv) > 0 && startsWith(sv, '(')
+                        addStyle(app.UITable, grey, 'cell', [row, 2]);
+                    end
+                end
+            end
+        end
+
         function LoadSelecEEGdata(app)
             for nfile = 1:numel(app.SelectedFilesforTEP)
                 EEGaux = pop_loadset(app.SelectedFilesforTEP(nfile),app.PathofSelectedFilesforTEP);
@@ -351,38 +374,48 @@ classdef nestapp < matlab.apps.AppBase
         % Code that executes after component creation
         function startupFcn(app)
             clc
-            defaultValues;
-            commandInfo;
-            for i = 1 : size(app.StepsListBox.Items,2)
-                xname = app.StepsListBox.Items{i};
-                xname(xname==' ')='_';
-                xname(xname=='-')='_';
-                xname(xname=='(')=[];
-                xname(xname==')')=[];
-                fields = fieldnames(eval(xname));
-                var = cell(numel(fields),1);
-                val = cell(numel(fields),1);
+            steps = stepRegistry();
+            app.StepsListBox.Items = {steps.name};
+
+            for i = 1:numel(steps)
+                fields = fieldnames(steps(i).defaults);
+                var = cell(numel(fields), 1);
+                val = cell(numel(fields), 1);
+
+                % Build key→placeholder lookup for this step
+                paramKeys   = {steps(i).params.key};
+                paramPH     = {steps(i).params.placeholder};
+
                 for j = 1:numel(fields)
-                    var{j,1} = string(fields{j});
-                    V = getfield(eval(xname),fields{j});
+                    var{j} = string(fields{j});
+                    V = steps(i).defaults.(fields{j});
                     if ischar(V)
-                        val{j,1} = string(V);
+                        val{j} = string(V);
                     elseif isempty(V)
-                        val{j,1} ="[]";
+                        % Show a human-readable placeholder instead of '[]'.
+                        % Look up param-specific text; fall back to generic.
+                        pIdx = find(strcmp(paramKeys, fields{j}), 1);
+                        if ~isempty(pIdx) && ~isempty(paramPH{pIdx})
+                            val{j} = string(paramPH{pIdx});
+                        else
+                            val{j} = "(not set)";
+                        end
                     elseif iscell(V)
-                        val{j,1} = [string(V)];
+                        val{j} = [string(V)];
                     else
-                        val{j,1} = V;
+                        % Numeric scalar or array. Store as a mat2str string so
+                        % UITable can render it — arrays like [1 6] otherwise
+                        % display as '[]'. The preprocessing loop in runPipeline
+                        % converts these strings back to numeric via str2num.
+                        val{j} = string(mat2str(V));
                     end
                 end
-                t = table(var,val);
-                infoname = ['info_',xname];
-                app.info{i} = eval(infoname);
-                app.DefaultsVal{i} = t;
-
+                app.info{i} = steps(i).info;
+                app.DefaultsVal{i} = table(var, val);
             end
-            app.SelectedListBox.Items(:)=[];
-            app.SelectedListBox.ItemsData(:)=[];
+
+            app.SelectedListBox.Items(:) = [];
+            app.SelectedListBox.ItemsData(:) = [];
             app.UITable.Data = [];
             app.ItemNum = 1;
             app.needchanloc = 1;
@@ -555,7 +588,12 @@ classdef nestapp < matlab.apps.AppBase
         function RunAnalysisButtonPushed(app, event)
             app.RunAnalysisButton.Text = {'Run';'Analysis'};
             app.needchanloc = 1;
-            EEG_TMS_Preprocessing_Commands;
+            try
+                runPipeline(app);
+            catch err
+                uialert(app.UIFigure, err.message, 'Pipeline Error', 'Icon', 'error');
+                return
+            end
             if app.UseCurrentlyCleanedDataCheckBox.Value
                 UseCurrentlyCleanedDataCheckBoxValueChanged(app)
             end
@@ -582,7 +620,9 @@ classdef nestapp < matlab.apps.AppBase
 
         % Cell selection callback: UITable
         function UITableCellSelection(app, event)
+            if isempty(event.Indices); return; end
             app.selectedItem = event.Indices;
+            if app.selectedItem(1) > height(app.UITable.Data); return; end
             x = app.UITable.Data{app.selectedItem(1),app.selectedItem(2)};
             y = x{:};
             app.convert = isnumeric(y);
@@ -599,6 +639,7 @@ classdef nestapp < matlab.apps.AppBase
             ind1 = find(ismember(app.StepsListBox.Items,app.SelectedListBox.Items{ind2}));
             app.ChangedVal{ind2} = app.DefaultsVal{ind1};
             app.UITable.Data = app.DefaultsVal{ind1};
+            styleParamTable(app);
         end
 
         % Value changed function: outofEditField
@@ -636,6 +677,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.UITable.Data = app.ChangedVal{indNum2};
             end
 
+            styleParamTable(app);
             app.TextArea.Value='';
 
         end
