@@ -67,16 +67,21 @@ else
                     end
                 end
                 % Non-scalar string arrays (e.g. ["TP9" "TP10"]) pass through unchanged.
+            elseif iscell(v) && ~isempty(v)
+                % A cell arises when a numeric vector was entered one value per
+                % TextArea line (e.g. "-500" / "-10" instead of "-500 -10").
+                % If every element is a scalar number, collapse to a row vector.
+                nums = cellfun(@(c) str2double(string(c)), v(:));
+                if all(~isnan(nums))
+                    v = nums(:)';
+                end
+                % Non-numeric cells (channel name lists etc.) pass through unchanged.
             end
             inputvals{2*j} = v;
         end
         app.steps2run{i} = [];
         app.steps2run{i} = inputvals;
     end
-    % Below will export the Steps and their name to MATLAB workspace
-    assignin('base','steps2run',app.steps2run);
-    assignin('base','stepsName',app.SelectedListBox.Items);
-
     app.nstep = 1; % The Steps starting point
     chName = []; % No File Selected for Channel Location
     dstep = 2; % DO NOT CHANGE THIS.
@@ -88,6 +93,22 @@ nFiles = app.NSelecFiles;
 nSteps = numel(app.steps2run) / 2;
 allSummaries = {};
 allReports   = {};
+
+% Dependency check: verify required plugins are on the path before touching any files.
+filePaths = cellfun(@(f) fullfile(app.path, f), app.file, 'UniformOutput', false);
+[depsOk, depsMsg] = checkStepDependencies(app.SelectedListBox.Items, filePaths);
+if ~depsOk
+    uialert(app.UIFigure, depsMsg, 'Missing Dependencies', 'Icon', 'error');
+    return
+end
+
+% Pre-flight overwrite check: when EEGLAB dialogs are suppressed the normal
+% "Dataset info" prompt that would warn about overwrites is also gone.
+% Warn once here, before any file is touched, so the user can cancel cleanly.
+if getpref('nestapp', 'suppressEEGLABDialogs', true)
+    warnIfOverwriteFiles(app, nFiles, nSteps);
+    % warnIfOverwriteFiles throws 'nestapp:cancelled' if the user cancels.
+end
 
 dlg = uiprogressdlg(app.UIFigure, ...
     'Title',           'Running Pipeline', ...
@@ -110,13 +131,13 @@ for nfile = 1:nFiles
     stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
                      'epochBefore',{},'epochAfter',{},'error',{});
 
-    % Per-file pipeline report (channels, trials, ICA, TEP metrics).
+    % Per-file pipeline report (channels, trials, ICA).
     fileReport = initPipelineReport(fullfile(pathName, fileName));
     % ICA stats captured before pop_subcomp/pop_tesa_compselect (indices invalid after removal).
     pendingICAStats = struct();
-    % Pre-cleaning epoch snapshot for Axis 2 (artifact reduction).
-    % Populated immediately after the Epoching step, before ICA / artifact rejection.
-    EEGraw = [];
+    % Snapshot of EEG.history length before this file's pipeline runs,
+    % used to identify new commands added during the run for ALLCOM sync.
+    histLenBefore = 0;
 
     % In below loop, all assigned steps will be evaluated.
     for Step=app.nstep:dstep:numel(app.steps2run)
@@ -203,13 +224,6 @@ for nfile = 1:nFiles
                     EEG.filename=fileName;
                     % Set the mode as 'on' to redraw loaded file to eeglab
                     if strcmpi(mode,'on')
-                        postVars = who;
-                        assignin('base','postVars',postVars)
-                        for i = 1:numel(postVars)
-                            if find(ismember(postVars{i}, app.initialVars))
-                                assignin('base',postVars{i},eval(postVars{i}))
-                            end
-                        end
                         % eeglab redraw
                     end
                     [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
@@ -224,11 +238,10 @@ for nfile = 1:nFiles
                     vars([inds, inds+1]) =[];
                     fname='';
                     if strcmp(IFN,'yes')
-                        fname = [app.path,fileName];
-                        fname = fname(1:end-numel(fileFormat)-1);
-                        fname = replace(fname,' ','_');
-                        fname = replace(fname,'-','_');
-                        fname = strcat(fname,'_');
+                        [fdir, fbase, ~] = fileparts(fullfile(app.path, fileName));
+                        fbase = replace(fbase, ' ', '_');
+                        fbase = replace(fbase, '-', '_');
+                        fname = fullfile(fdir, [fbase, '_']);
                     end
                     ind1 = find(strcmp(vars,'savenew'));
                     if ~strcmp(vars{ind1+1},'[]') %|| ~isempty(vars{ind+1})
@@ -246,7 +259,6 @@ for nfile = 1:nFiles
                         vars([ind3, ind3+1])=[];
                     end
                     EEG = eeg_checkset(EEG);
-                    EEG.pipeline=app.steps2run;
                     % CURRENTSET = CURRENTSET + 1;
                     % assignin('base','EEG',EEG)
                     % assignin('base','ALLEEG',ALLEEG)
@@ -285,7 +297,6 @@ for nfile = 1:nFiles
                     vars = convertContainedStringsToChars(varin);
                     inds = find(strcmp(vars,'[]'));
                     vars([inds,inds-1])=[];
-                    assignin('base',"vars",vars)
                     EEG = pop_select( EEG,vars{:});
                     EEG = eeg_checkset( EEG );
                 
@@ -370,27 +381,25 @@ for nfile = 1:nFiles
                     EEG = eeg_checkset( EEG );
                 case 'Remove Baseline'
                     %% Remove Baseline Offset
-
-                    % The DC offset may cause problem in analyzing and cleaning data. So, it's
-                    % better to remove it before other steps. However if we want to study the
-                    % ERP, it is recomended to do not remove it, since it may affect the
-                    % results.
                     vars = convertContainedStringsToChars(varin);
-                    ind = find(strcmp(vars,'[]'), 1);
-                    if ~isempty(ind)
-                        timerange=vars{1,2}; % Default [] -> all
-                        if ~strcmp(timerange,'[]')
-                            timerange = str2double(timerange);
-                            EEG = pop_rmbase( EEG, timerange);
-                        end
-                    else
-                        timerange=vars{1,2}; % Default [] -> all
-                        pointrange=vars{1,4}; % Default [] -> all
-                        chanlist=vars{1,6}; % Default [] -> all
-                        pointrange = str2double(pointrange);
-                        EEG = pop_rmbase( EEG, timerange, pointrange, chanlist);
+                    timerange = vars{2};   % value paired with 'timerange' key
+                    % Resolve placeholder '[]' to an actual empty array, which
+                    % tells pop_rmbase to use the full pre-stimulus period.
+                    if ischar(timerange) && strcmp(timerange, '[]')
+                        timerange = [];
+                    elseif ischar(timerange) || isstring(timerange)
+                        % String that survived conversion (e.g. '-500') — eval it.
+                        timerange = str2num(char(timerange)); %#ok<ST2NM>
                     end
-                    EEG = eeg_checkset( EEG );
+                    % Clamp numeric range to actual epoch boundaries — prevents
+                    % "Bad time range" when the last sample falls at e.g. 999.8 ms
+                    % rather than exactly 1000 ms due to sampling rate.
+                    if isnumeric(timerange) && numel(timerange) == 2
+                        timerange(1) = max(timerange(1), EEG.times(1));
+                        timerange(2) = min(timerange(2), EEG.times(end));
+                    end
+                    EEG = pop_rmbase(EEG, timerange);
+                    EEG = eeg_checkset(EEG);
 
                 case 'De-Trend Epoch'
                     %%  DeTrending Epochs
@@ -460,7 +469,6 @@ for nfile = 1:nFiles
                     % Notch frequency, 60 Hz and its first harmonic, 120 Hz is being filtered
                     % from all channels, 1:63
                     vars = convertContainedStringsToChars(varin);
-                    assignin('base','vars',vars);
                     ind = find(strcmp(vars,'chanlist'));
 
                     if vars{ind+1}(2) > EEG.nbchan
@@ -577,7 +585,8 @@ for nfile = 1:nFiles
                         data2D = reshape(EEG.data(EEG.icachansind,:,:), numel(EEG.icachansind), []);
                         totalVar = sum(var(data2D, 0, 2));
                         if totalVar > 0
-                            pendingICAStats.compVarPct = (var(act2D, 0, 2) / totalVar * 100)';
+                            % Cast to double: EEG.data may be single, making var() single.
+                            pendingICAStats.compVarPct = double((var(act2D, 0, 2) / totalVar * 100)');
                         end
                     end
                     if isfield(EEG,'etc') && isfield(EEG.etc,'ic_classification') && ...
@@ -715,6 +724,12 @@ for nfile = 1:nFiles
                     % on the feedback of blink threhsolds for individual components
                     % in the command window.
                     vars = convertContainedStringsToChars(varin);
+                    % 'comps' was removed in TESA 1.1.1; strip it from any
+                    % pipelines saved with the old default.
+                    compsIdx = find(strcmpi(vars, 'comps'), 1);
+                    if ~isempty(compsIdx)
+                        vars([compsIdx, compsIdx+1]) = [];
+                    end
                     ind1 = find(strcmpi(vars,'plotTimeX'));
                     TP = vars{ind1+1};
                     if TP(1) ~= EEG.times(1) && TP(2) ~= EEG.times(end)
@@ -857,8 +872,7 @@ for nfile = 1:nFiles
                     vars = convertContainedStringsToChars(varin);
                     inds = find(strcmp(vars,'[]'));
                     vars([inds,inds-1]) = [];
-                    tepoutput = pop_tesa_peakoutput( EEG, vars{:} );
-                    assignin('base','tep_output',tepoutput)
+                    pop_tesa_peakoutput( EEG, vars{:} );
 
             end
 
@@ -876,6 +890,11 @@ for nfile = 1:nFiles
                 % Channel counts
                 if strcmp(stepName, 'Load Data')
                     fileReport.channels.original = EEG.nbchan;
+                    % Snapshot history length after load so the ALLCOM sync
+                    % below only pushes commands added by this pipeline run.
+                    if isfield(EEG, 'history')
+                        histLenBefore = numel(EEG.history);
+                    end
                 end
                 fileReport.channels.final = EEG.nbchan;
                 if nChanAfter < nChanBefore
@@ -892,10 +911,9 @@ for nfile = 1:nFiles
                         (nChanAfter - nChanBefore);
                 end
 
-                % Trial/epoch counts + snapshot for TEP quality Axis 2
+                % Trial/epoch counts
                 if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
                     fileReport.trials.original = size(EEG.data, 3);
-                    EEGraw = EEG;  % pre-cleaning reference (before ICA / artifact rejection)
                 end
                 if size(EEG.data, 3) > 1
                     fileReport.trials.final = nEpochAfter;
@@ -977,7 +995,8 @@ for nfile = 1:nFiles
 
                     hasVars = isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass);
                     if hasVars && nRejTESA > 0
-                        rejPct         = cl.compVars(rejIdx);
+                        % Cast to double: TESA compVars may be single when EEG.data is single.
+                        rejPct         = double(cl.compVars(rejIdx));
                         rnd.varRemoved = sum(rejPct);
                         rnd.varMin     = min(rejPct);
                         rnd.varMax     = max(rejPct);
@@ -1053,15 +1072,6 @@ for nfile = 1:nFiles
                     stepIdx, stepName, err.message), ...
                 'Step Failed','Options',{'Continue','Abort'},'DefaultOption','Continue','CancelOption','Abort');
             if strcmp(toContinue,'Abort')
-                postVars = who;
-                assignin('base','postVars',postVars)
-                for i = 1:numel(postVars)
-                    if find(ismember(postVars{i}, app.initialVars))
-                        assignin('base',postVars{i},eval(postVars{i}))
-                    end
-                end
-                assignin('base','lastVarin',varin);
-                assignin('base','lastStepInd',Step);
                 writeSessionLog(pathName, fileName, stepLog);
                 if isvalid(dlg); close(dlg); end
                 return
@@ -1069,29 +1079,60 @@ for nfile = 1:nFiles
         end
     end
 
-    % Compute five-axis TEP quality vector (opt-in; off by default)
-    if getpref('nestapp', 'computeQuality', false) && ...
-            isstruct(EEG) && isfield(EEG, 'trials') && EEG.trials > 1
-        fileReport.teps = computeTEPQuality(EEG, EEGraw, fileReport);
+    % Write pipeline provenance to EEG.history so it is visible when the
+    % researcher types `EEG` in the MATLAB command window and is preserved
+    % inside the saved .set file.
+    if isstruct(EEG) && isfield(EEG, 'history')
+        EEG.history = [EEG.history, newline, ...
+            buildHistoryEntry(app.steps2run, app.pipelineName)];
+        assignin('base', 'EEG', EEG);
+
+        % Sync new history lines to ALLCOM so that eegh works from the
+        % MATLAB command window without requiring the EEGLAB GUI.
+        % Only lines added during this pipeline run are pushed (the
+        % pre-existing .set history is excluded via histLenBefore).
+        newHist = EEG.history(histLenBefore + 1 : end);
+        newLines = strtrim(strsplit(newHist, newline));
+        newLines = newLines(~cellfun('isempty', newLines));
+        global ALLCOM; %#ok<TLEV>
+        if ~iscell(ALLCOM); ALLCOM = {}; end
+        for li = 1:numel(newLines)
+            ALLCOM = [{newLines{li}}, ALLCOM{:}]; %#ok<CCAT1>
+        end
     end
 
     writeSessionLog(pathName, fileName, stepLog);
     [summaryText, ~] = exportReport(fileReport, pathName);
     allSummaries{end+1} = summaryText; %#ok<AGROW>
     allReports{end+1}   = fileReport;  %#ok<AGROW>
-    eeglab redraw
+    % Only update the EEGLAB window if the user has opted in; the redraw
+    % is the source of both the EEGLAB window appearing and the
+    % "Dataset info - pop_newset()" dialog that fires after each file.
+    if ~getpref('nestapp', 'hideEEGLABWindow', true)
+        eeglab redraw
+    end
     disp('-----------------Data processed!-----------------')
 end
 
 if isvalid(dlg); close(dlg); end
 
-% Store reports on app and update the Reports tab
+% Store reports on app and update the Reports tab.
+% For multi-file runs, prepend a session summary entry above the individual
+% file entries so the researcher sees the cross-file overview first.
+if numel(allReports) > 1
+    summEntry.text      = summarizeReports(allReports);
+    summEntry.report    = [];   % no single-file report for this entry
+    summEntry.isSummary = true;
+    app.allPipelineReports{end+1} = summEntry;
+end
 for ri = 1:numel(allSummaries)
-    entry.text   = allSummaries{ri};
-    entry.report = allReports{ri};
+    entry.text      = allSummaries{ri};
+    entry.report    = allReports{ri};
+    entry.isSummary = false;
     app.allPipelineReports{end+1} = entry;
 end
-app.updateReportsTab();
+% Reports tab is refreshed by nestapp.RunAnalysisButtonPushed after this
+% function returns — not called here to avoid a circular dependency.
 if getpref('nestapp', 'showReport', true) && ~isempty(allSummaries)
     app.TabGroup.SelectedTab = app.ReportsTab;
 end
@@ -1099,6 +1140,123 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Local helpers
+
+function warnIfOverwriteFiles(app, nFiles, nSteps)
+% WARNIFOVERWRITEFILES  Before running, check whether Save New Set would
+%   overwrite existing .set files and warn the user.
+%
+%   When EEGLAB dialogs are suppressed the normal mid-run "Dataset info"
+%   prompt is gone, so we surface overwrites here — once, cleanly, before
+%   any file is touched. Throws 'nestapp:cancelled' if the user cancels.
+
+% Find the Save New Set step in steps2run
+saveIdx = [];
+for si = 1:nSteps
+    name = app.steps2run{2*si - 1};
+    if iscell(name); name = name{1}; end
+    if strcmp(name, 'Save New Set')
+        saveIdx = si;
+        break
+    end
+end
+if isempty(saveIdx); return; end   % no Save New Set → nothing to check
+
+% Extract savenew suffix and includeFileName flag from the step params
+params  = app.steps2run{2 * saveIdx};
+savenew = '';
+ifn     = 'yes';
+for pi = 1:2:numel(params)-1
+    switch lower(string(params{pi}))
+        case 'savenew'
+            v = params{pi+1};
+            if ischar(v) || isstring(v)
+                sv = strtrim(char(v));
+                if ~strcmp(sv,'[]') && ~isempty(sv)
+                    savenew = sv;
+                end
+            end
+        case 'includefilename'
+            ifn = char(params{pi+1});
+    end
+end
+if isempty(savenew); return; end   % no output filename configured
+
+% Check each input file for a pre-existing output file
+existing = {};
+for fi = 1:nFiles
+    fn = app.file{fi};
+    [~, base, ext] = fileparts(fn);
+    ext = ext(2:end);   % strip dot
+    % Mirror the fname construction in the Save New Set case of runPipeline
+    if strcmpi(ifn, 'yes')
+        stem = replace(replace([app.path, fn(1:end-numel(ext)-1)], ' ', '_'), '-', '_');
+        outName = [stem, '_', savenew, '.set'];
+    else
+        outName = fullfile(app.path, [savenew, '.set']);
+    end
+    if exist(outName, 'file')
+        [~, dispName] = fileparts(outName);
+        existing{end+1} = [dispName, '.set']; %#ok<AGROW>
+    end
+end
+if isempty(existing); return; end
+
+% Warn — uiconfirm blocks until the user responds
+msg = sprintf(['%d output file(s) already exist and will be overwritten:\n\n' ...
+    '%s\n\nContinue?'], numel(existing), strjoin(existing, '\n'));
+answer = uiconfirm(app.UIFigure, msg, 'Output Files Exist', ...
+    'Options', {'Continue', 'Cancel'}, ...
+    'DefaultOption', 2, 'CancelOption', 2, ...
+    'Icon', 'warning');
+if strcmp(answer, 'Cancel')
+    error('nestapp:cancelled', 'Run cancelled by user.');
+end
+end
+
+function entry = buildHistoryEntry(steps2run, pipelineName)
+% BUILDHISTORYENTRY  Build a human-readable provenance string for EEG.history.
+%   steps2run is the flat cell array {name1, params1, name2, params2, ...}
+%   produced by runPipeline's initialisation block.
+%
+%   The resulting string follows EEGLAB's convention of comment-prefixed
+%   lines so it is readable when the user types EEG in the command window.
+
+timestamp = string(datetime('now'), 'yyyy-MM-dd HH:mm:ss');
+if isempty(pipelineName)
+    pipelineName = '(unsaved)';
+end
+
+lines = { ...
+    sprintf('%% --- nestapp pipeline  [%s] ---', timestamp), ...
+    sprintf('%% Pipeline: %s', pipelineName), ...
+    '%  Steps:' ...
+};
+
+nSteps = numel(steps2run) / 2;
+for si = 1:nSteps
+    sName  = steps2run{2*si - 1}{1};
+    params = steps2run{2*si};
+    if isempty(params)
+        paramStr = '';
+    else
+        pairs = cell(1, numel(params)/2);
+        for pi = 1:numel(params)/2
+            key = params{2*pi - 1};
+            val = params{2*pi};
+            if isnumeric(val)
+                valStr = mat2str(val);
+            else
+                valStr = char(val);
+            end
+            pairs{pi} = sprintf('%s=%s', key, valStr);
+        end
+        paramStr = ['  [', strjoin(pairs, ', '), ']'];
+    end
+    lines{end+1} = sprintf('%%  %2d. %s%s', si, sName, paramStr); %#ok<AGROW>
+end
+
+entry = strjoin(lines, newline);
+end
 
 function writeSessionLog(pathName, fileName, stepLog)
 % WRITESESSIONLOG  Write a plain-text processing log alongside the data file.

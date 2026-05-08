@@ -144,6 +144,12 @@ classdef nestapp < matlab.apps.AppBase
         ReportsTextArea                 matlab.ui.control.TextArea
         ExportReportsCSVButton          matlab.ui.control.Button
         CopyMethodsButton               matlab.ui.control.Button
+        % Analysis tab — static elements not auto-resized by MATLAB
+        AnalysisSelPanel                matlab.ui.container.Panel
+        AnalysisCompWindowsLabel        matlab.ui.control.Label
+        AnalysisWorkspaceLabel          matlab.ui.control.Label
+        AnalysisBatchLabel              matlab.ui.control.Label
+        AnalysisBatchDescLabel          matlab.ui.control.Label
     end
 
     properties (Access = private)
@@ -185,8 +191,8 @@ classdef nestapp < matlab.apps.AppBase
         SelectedFilesforTEP % Selected files to plot the TEP
         Common_Labels % Commong electrod name among files
         ROIelecsLabels % Selected electrodes as Region of Interest
-        TEPCreated = 0; % If the TEP plot bottomn has been pressed once
-        EEG_SelectedTEPFiles_Loaded = 0;
+        TEPCreated = false; % true once the TEP plot has been rendered at least once
+        EEG_SelectedTEPFiles_Loaded = false;
         EEGofAllSelectedFiles = [];
         DefaulTEPxLim = [-50 300]; % Default xLim for time in TEP
         EEGtime
@@ -201,9 +207,89 @@ classdef nestapp < matlab.apps.AppBase
         tepComponentDefs = struct([]) % component window definitions used by tepPeakFinder
         allPipelineReports = {}    % cell array of report entry structs from current session
         loadedReports      = {}    % cell array of report entry structs loaded from disk
+
+        % Tab Analysis
+        AnalysisTab
+        ExtractPeaksCSVButton
+        AnalysisStatusLabel
+        AnalysisSelectionLabel
     end
 
     methods (Access = private)
+        % ── Pipeline state mutation methods ───────────────────────────────
+        % All four parallel arrays (Items, ItemsData, ChangedVal, stepParamKeys)
+        % must stay in sync. These methods are the ONLY permitted way to add,
+        % remove, move, or clear steps — callbacks delegate here.
+
+        function appendStep(app, stepName)
+        % APPENDSTEP  Append stepName to the pipeline using its default params.
+            regIdx = find(strcmp(app.StepsListBox.Items, stepName), 1);
+            if isempty(regIdx); return; end
+            n = numel(app.SelectedListBox.Items);
+            % Treat a single empty-string sentinel as an empty list
+            if n == 1 && isempty(app.SelectedListBox.Items{1})
+                n = 0;
+                app.SelectedListBox.Items(:)    = [];
+                app.SelectedListBox.ItemsData(:) = [];
+                app.ChangedVal      = {};
+                app.stepParamKeys   = {};
+            end
+            pos = n + 1;
+            app.SelectedListBox.Items{pos}     = stepName;
+            app.SelectedListBox.ItemsData{pos} = ['Item' num2str(pos)];
+            app.ChangedVal{pos}                = app.DefaultsVal{regIdx};
+            app.stepParamKeys{pos}             = app.defaultParamKeys{regIdx};
+            app.pipelineDirty = true;
+            updateStatusBar(app);
+        end
+
+        function removeStep(app, idx)
+        % REMOVESTEP  Remove the step at index idx and renumber ItemsData.
+            app.SelectedListBox.Items(idx)     = [];
+            app.SelectedListBox.ItemsData(idx) = [];
+            app.ChangedVal(idx)                = [];
+            app.stepParamKeys(idx)             = [];
+            for i = idx : numel(app.SelectedListBox.ItemsData)
+                app.SelectedListBox.ItemsData{i} = ['Item' num2str(i)];
+            end
+            app.pipelineDirty = true;
+            updateStatusBar(app);
+        end
+
+        function moveStep(app, idx, direction)
+        % MOVESTEP  Swap step at idx with its neighbour in the given direction
+        %   (+1 = move down, -1 = move up). No-op at boundaries.
+            n   = numel(app.SelectedListBox.Items);
+            idx2 = idx + direction;
+            if idx2 < 1 || idx2 > n; return; end
+            % Swap all four arrays at positions idx and idx2
+            [app.SelectedListBox.Items{idx},  app.SelectedListBox.Items{idx2}] = ...
+                deal(app.SelectedListBox.Items{idx2},  app.SelectedListBox.Items{idx});
+            [app.ChangedVal{idx},   app.ChangedVal{idx2}]   = deal(app.ChangedVal{idx2},   app.ChangedVal{idx});
+            [app.stepParamKeys{idx}, app.stepParamKeys{idx2}] = deal(app.stepParamKeys{idx2}, app.stepParamKeys{idx});
+            % ItemsData stays in positional order — just renumber both slots
+            app.SelectedListBox.ItemsData{idx}  = ['Item' num2str(idx)];
+            app.SelectedListBox.ItemsData{idx2} = ['Item' num2str(idx2)];
+            app.SelectedListBox.Value = app.SelectedListBox.ItemsData{idx2};
+            app.pipelineDirty = true;
+            updateStatusBar(app);
+        end
+
+        function clearSteps(app)
+        % CLEARSTEPS  Remove all pipeline steps and reset state.
+            app.SelectedListBox.Items(:)     = [];
+            app.SelectedListBox.ItemsData(:) = [];
+            app.UITable.Data    = [];
+            app.ChangedVal      = {};
+            app.stepParamKeys   = {};
+            app.ItemNum         = 0;
+            app.nstep           = 1;
+            app.needchanloc     = 1;
+            app.pipelineDirty   = true;
+            updateStatusBar(app);
+        end
+        % ─────────────────────────────────────────────────────────────────
+
         function updateStatusBar(app)
         % UPDATESTATUSBAR  Refresh the status bar text from current app state.
         %   Called after any change to the pipeline list, data selection,
@@ -284,8 +370,6 @@ classdef nestapp < matlab.apps.AppBase
                 else
                     app.NSelecFiles = numel(app.file);
                 end
-                assignin('base', 'files', app.file);
-                assignin('base', 'paths', app.path);
                 app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
                 pushRecent(app, 'recentFiles', app.path);
@@ -302,27 +386,62 @@ classdef nestapp < matlab.apps.AppBase
                 return
             end
             [pFolder, ~, ~] = fileparts(pPath);
-            % Temporarily set the file so LoadPipelineButtonPushed can read it.
-            % We call the loader directly rather than through the button to avoid
-            % opening the file dialog again.
             try
-                pipeline = load(pPath, '-mat');
-                app.SelectedListBox.Items     = pipeline.PLItems;
-                app.SelectedListBox.ItemsData = pipeline.PLItemsData;
-                app.ChangedVal                = pipeline.VarIns;
-                app.UITable.Data              = [];
-                if isfield(pipeline, 'ParamKeys')
-                    app.stepParamKeys = pipeline.ParamKeys;
-                else
-                    % Trigger the old-format upgrade path
-                    LoadPipelineButtonPushed(app, []);
-                    return
-                end
+                loadPipelineData(app, pPath);
                 setpref('nestapp', 'lastPipelineFolder', pFolder);
                 pushRecent(app, 'recentPipelines', pPath);
                 buildRecentPipelinesMenu(app);
             catch err
                 uialert(app.UIFigure, err.message, 'Load Error', 'Icon', 'error');
+            end
+        end
+
+        function loadPipelineData(app, fullPath)
+        % LOADPIPELINEDATA  Load pipeline state from a .mat into the app.
+        %   Handles both current-format files (ParamKeys saved) and
+        %   old-format files (raw keys in VarIns{k}.var), upgrading the
+        %   latter to friendly names automatically.
+            pipeline = load(fullPath, '-mat');
+            app.SelectedListBox.Items     = pipeline.PLItems;
+            app.SelectedListBox.ItemsData = pipeline.PLItemsData;
+            app.ChangedVal                = pipeline.VarIns;
+            app.UITable.Data              = [];
+            if isfield(pipeline, 'ParamKeys')
+                app.stepParamKeys = pipeline.ParamKeys;
+            else
+                reg = stepRegistry();
+                app.stepParamKeys = cell(numel(pipeline.PLItems), 1);
+                for k = 1:numel(pipeline.PLItems)
+                    stepName = pipeline.PLItems{k};
+                    regIdx   = find(strcmp({reg.name}, stepName), 1);
+                    T        = app.ChangedVal{k};
+                    nRows    = height(T);
+                    rawKeys  = cell(nRows, 1);
+                    for row = 1:nRows
+                        rawKey = char(T.var{row});
+                        rawKeys{row} = rawKey;
+                        if ~isempty(regIdx)
+                            pIdx = find(strcmp({reg(regIdx).params.key}, rawKey), 1);
+                            if ~isempty(pIdx)
+                                p = reg(regIdx).params(pIdx);
+                                if isempty(p.unit)
+                                    T.var{row} = string(p.friendlyName);
+                                else
+                                    T.var{row} = string([p.friendlyName, ' (', p.unit, ')']);
+                                end
+                                if isscalar(T.val{row}) && strcmp(string(T.val{row}), '[]')
+                                    if ~isempty(p.placeholder)
+                                        T.val{row} = string(p.placeholder);
+                                    else
+                                        T.val{row} = "(not set)";
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    app.stepParamKeys{k} = rawKeys;
+                    app.ChangedVal{k}    = T;
+                end
             end
         end
 
@@ -360,70 +479,65 @@ classdef nestapp < matlab.apps.AppBase
         %   and behavioural options. Changes are written to getpref/setpref
         %   under the 'nestapp' group and applied immediately on Save.
             dlg = uifigure('Name', 'nestapp Preferences', ...
-                'Position', [200 200 420 415], ...
+                'Position', [200 200 420 375], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
 
             % --- EEGLAB section ---
             uilabel(dlg, 'Text', 'EEGLAB', 'FontWeight', 'bold', ...
-                'Position', [15 375 200 20]);
+                'Position', [15 335 200 20]);
             uilabel(dlg, 'Text', 'Path:', ...
-                'Position', [15 350 35 22], 'HorizontalAlignment', 'right');
+                'Position', [15 310 35 22], 'HorizontalAlignment', 'right');
             fEeglab = uieditfield(dlg, 'text', ...
-                'Position', [55 350 275 22], 'Editable', 'on', ...
+                'Position', [55 310 275 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','eeglabPath',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 350 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 310 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseEeglab());
 
             % --- Default Locations section ---
             uilabel(dlg, 'Text', 'Default Locations', 'FontWeight', 'bold', ...
-                'Position', [15 320 200 20]);
+                'Position', [15 280 200 20]);
             uilabel(dlg, 'Text', 'Data folder:', ...
-                'Position', [15 295 65 22], 'HorizontalAlignment', 'right');
+                'Position', [15 255 65 22], 'HorizontalAlignment', 'right');
             fData = uieditfield(dlg, 'text', ...
-                'Position', [85 295 245 22], 'Editable', 'on', ...
+                'Position', [85 255 245 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastDataFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 295 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 255 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fData));
             uilabel(dlg, 'Text', 'Pipeline folder:', ...
-                'Position', [15 267 80 22], 'HorizontalAlignment', 'right');
+                'Position', [15 227 80 22], 'HorizontalAlignment', 'right');
             fPipeline = uieditfield(dlg, 'text', ...
-                'Position', [100 267 230 22], 'Editable', 'on', ...
+                'Position', [100 227 230 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastPipelineFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 267 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 227 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fPipeline));
             uilabel(dlg, 'Text', 'Reports folder:', ...
-                'Position', [15 239 80 22], 'HorizontalAlignment', 'right');
+                'Position', [15 199 80 22], 'HorizontalAlignment', 'right');
             fReports = uieditfield(dlg, 'text', ...
-                'Position', [100 239 230 22], 'Editable', 'on', ...
+                'Position', [100 199 230 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','reportFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 239 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 199 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fReports));
 
             % --- Behaviour section ---
             uilabel(dlg, 'Text', 'Behaviour', 'FontWeight', 'bold', ...
-                'Position', [15 208 200 20]);
+                'Position', [15 168 200 20]);
             cbReport = uicheckbox(dlg, 'Text', 'Switch to Reports tab after each run', ...
-                'Position', [15 184 300 22], ...
+                'Position', [15 144 300 22], ...
                 'Value', getpref('nestapp','showReport',true));
             cbConfirm = uicheckbox(dlg, 'Text', 'Confirm before clearing pipeline', ...
-                'Position', [15 160 300 22], ...
+                'Position', [15 120 300 22], ...
                 'Value', getpref('nestapp','confirmClear',true));
             cbOverwrite = uicheckbox(dlg, 'Text', 'Overwrite existing report files (no timestamp)', ...
-                'Position', [15 136 320 22], ...
+                'Position', [15 96 320 22], ...
                 'Value', getpref('nestapp','overwriteReports',false));
-
-            % --- Experimental Features section ---
-            uilabel(dlg, 'Text', 'Experimental Features', 'FontWeight', 'bold', ...
-                'Position', [15 104 200 20]);
-            cbQuality = uicheckbox(dlg, ...
-                'Text', 'Compute TEP quality metrics after each run', ...
-                'Position', [15 80 300 22], ...
-                'Value', getpref('nestapp','computeQuality',false));
-            uilabel(dlg, ...
-                'Text', ['Results are approximate and under active development. ' ...
-                         'See documentation for interpretation.'], ...
-                'FontColor', [0.5 0.5 0.5], 'FontSize', 10, ...
-                'WordWrap', 'on', 'Position', [15 52 390 26]);
+            cbSuppressDialogs = uicheckbox(dlg, ...
+                'Text', 'Suppress EEGLAB processing dialogs (warn about overwrites before run)', ...
+                'Position', [15 72 390 22], ...
+                'Value', getpref('nestapp','suppressEEGLABDialogs',true));
+            cbHideEEGLAB = uicheckbox(dlg, ...
+                'Text', 'Hide EEGLAB window during processing', ...
+                'Position', [15 48 300 22], ...
+                'Value', getpref('nestapp','hideEEGLABWindow',true));
 
             % --- Buttons ---
             uibutton(dlg, 'Text', 'Cancel', 'Position', [220 15 85 28], ...
@@ -457,10 +571,11 @@ classdef nestapp < matlab.apps.AppBase
                 setpref('nestapp', 'lastDataFolder',      strtrim(fData.Value));
                 setpref('nestapp', 'lastPipelineFolder',  strtrim(fPipeline.Value));
                 setpref('nestapp', 'reportFolder',        strtrim(fReports.Value));
-                setpref('nestapp', 'showReport',          cbReport.Value);
-                setpref('nestapp', 'confirmClear',        cbConfirm.Value);
-                setpref('nestapp', 'overwriteReports',    cbOverwrite.Value);
-                setpref('nestapp', 'computeQuality',      cbQuality.Value);
+                setpref('nestapp', 'showReport',             cbReport.Value);
+                setpref('nestapp', 'confirmClear',           cbConfirm.Value);
+                setpref('nestapp', 'overwriteReports',       cbOverwrite.Value);
+                setpref('nestapp', 'suppressEEGLABDialogs',  cbSuppressDialogs.Value);
+                setpref('nestapp', 'hideEEGLABWindow',       cbHideEEGLAB.Value);
                 close(dlg);
             end
         end
@@ -484,13 +599,23 @@ classdef nestapp < matlab.apps.AppBase
             labels = cell(1, n);
             for i = 1:n
                 e = allEntries{i};
-                [~, baseName] = fileparts(e.report.inputFile);
-                try
-                    dateLabel = datestr(e.report.processedAt, 'yyyy-mm-dd HH:MM'); %#ok<DATST>
-                catch
-                    dateLabel = '?';
+                if isfield(e, 'isSummary') && e.isSummary
+                    % Extract file count from the summary header line
+                    tok = regexp(e.text, 'PIPELINE SUMMARY\s+\((\d+) files\)', 'tokens', 'once');
+                    if ~isempty(tok)
+                        labels{i} = sprintf('Session Summary (%s files)', tok{1});
+                    else
+                        labels{i} = 'Session Summary';
+                    end
+                else
+                    [~, baseName] = fileparts(e.report.inputFile);
+                    try
+                        dateLabel = string(e.report.processedAt, 'yyyy-MM-dd HH:mm');
+                    catch
+                        dateLabel = '?';
+                    end
+                    labels{i} = sprintf('%s (%s)', baseName, dateLabel);
                 end
-                labels{i} = sprintf('%s (%s)', baseName, dateLabel);
             end
 
             % Preserve selection index across refresh if still valid
@@ -614,40 +739,27 @@ classdef nestapp < matlab.apps.AppBase
             end
 
             % Header
-            fprintf(fid, ['File,Processed,Channels (orig),Channels (final),' ...
-                'Trials (orig),Trials (final),ICA removed,' ...
-                'Retention,Artifact reduction,Background,' ...
-                'Reproducibility,AEP likeness\n']);
+            fprintf(fid, 'File,Processed,Channels (orig),Channels (final),Trials (orig),Trials (final),ICA removed\n');
 
             for i = 1:numel(allEntries)
-                r = allEntries{i}.report;
+                e = allEntries{i};
+                if isfield(e, 'isSummary') && e.isSummary; continue; end
+                r = e.report;
                 [~, baseName] = fileparts(r.inputFile);
                 try
-                    dStr = datestr(r.processedAt, 'yyyy-mm-dd HH:MM:SS'); %#ok<DATST>
+                    dStr = string(r.processedAt, 'yyyy-MM-dd HH:mm:ss');
                 catch
                     dStr = '?';
                 end
-                safeVal = @(axField) safeAxisVal(r.teps, axField);
 
-                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d,%s,%s,%s,%s,%s\n', ...
+                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d\n', ...
                     baseName, dStr, ...
                     r.channels.original, r.channels.final, ...
                     r.trials.original, r.trials.final, ...
-                    r.ica.nRejected, ...
-                    safeVal('retention'), safeVal('artifactReduction'), ...
-                    safeVal('bgRestoration'), safeVal('reproducibility'), ...
-                    safeVal('aepLikeness'));
+                    r.ica.nRejected);
             end
             fclose(fid);
             app.ReportsStatusLabel.Text = sprintf('CSV saved: %s', fname);
-
-            function s = safeAxisVal(teps, axField)
-                if isstruct(teps) && isfield(teps, axField) && ~isnan(teps.(axField).value)
-                    s = sprintf('%.3f', teps.(axField).value);
-                else
-                    s = '';
-                end
-            end
         end
 
         function CopyMethodsButtonPushed(app, ~)
@@ -656,6 +768,12 @@ classdef nestapp < matlab.apps.AppBase
             if isempty(idx); return; end
             allEntries = [app.allPipelineReports, app.loadedReports];
             if ~isnumeric(idx) || idx < 1 || idx > numel(allEntries); return; end
+            if isfield(allEntries{idx}, 'isSummary') && allEntries{idx}.isSummary
+                uialert(app.UIFigure, ...
+                    'Select an individual file report to copy a methods paragraph.', ...
+                    'Session Summary');
+                return
+            end
             r = allEntries{idx}.report;
 
             parts = {};
@@ -779,50 +897,41 @@ classdef nestapp < matlab.apps.AppBase
             % right (x:651-867 file selection). Bottom strip (y:0-165) holds controls.
             % TEP window slider lives above UIAxes; topoplot controls sit right of UIAxes2.
 
-            % Left action column — bottom strip (x:5-145)
-            app.PLOTTEPButton.Position                = p([5 130 140 30]);
-            app.ShowComponentsButton.Position         = p([5 104 140 23]);
-            app.EditComponentWindowsButton.Position   = p([5 78 140 23]);
-            app.ExportTEPFigureButton.Position        = p([5 52 140 23]);
-            app.PlotEEGdataButton.Position            = p([5 26 108 23]);
+            % Left action column — bottom-aligned with ReLoad button (y=7)
+            % TOPOPLOT joins this group as the lowest button
+            app.PLOTTEPButton.Position                = p([5 88 140 30]);
+            app.ShowComponentsButton.Position         = p([5 61 140 23]);
+            app.ExportTEPFigureButton.Position        = p([5 34 140 23]);
+            app.TOPOPLOTButton.Position               = p([5 7 140 23]);
 
             % Center-left controls — bottom strip (x:152-340)
-            app.PlottingModeButtonGroup.Position  = p([152 88 150 67]);
+            % PlottingModeButtonGroup sits above the single-row topoplot controls
+            app.PlottingModeButtonGroup.Position  = p([152 36 150 67]);
             app.NewFigureButton.Position          = p([11 21 83 22]);
             app.AddtocurrentFigureButton.Position = p([11 -1 135 22]);
-            app.EEGDatasetDropDownLabel.Position  = p([152 58 75 22]);
-            app.EEGDatasetDropDown.Position       = p([230 58 100 22]);
+            % Topoplot time and window on one line — 3-digit fields
+            app.TopoplottimeSpinnerLabel.Position = p([152 10 35 22]);
+            app.TopoplottimeSpinner.Position      = p([189 10 52 22]);
+            app.WindowsizeforTopoplotLabel.Position = p([245 10 35 22]);
+            app.WindowsizefortimeaveragedTopoplotEditField.Position = p([282 10 52 22]);
 
             % Center column — TEP window slider above the TEP plot
-            app.TEPWindowSliderLabel.Position     = p([669 420 85 16]);
-            app.TEPWindowSlider.Position          = p([669 388 183 3]);
-            app.UIAxes.Position                   = p([340 319 308 186]);
-            app.TEPComponentTable.Position        = p([340 215 308 104]);
-            app.TEPComponentTable.ColumnWidth     = num2cell(round([80, 100, 128] * sX));
-
-            % Center column — topoplot with controls to its right
-            app.UIAxes2.Position                  = p([340 65 200 148]);
-            app.TOPOPLOTButton.Position           = p([543 167 104 44]);
-            app.TopoplottimeSpinnerLabel.Position = p([543 145 103 20]);
-            app.TopoplottimeSpinner.Position      = p([543 120 103 22]);
-            app.WindowsizeforTopoplotLabel.Position = p([543 90 103 26]);
-            app.WindowsizefortimeaveragedTopoplotEditField.Position = p([543 65 70 22]);
-            app.Slider.Position                   = p([340 48 200 3]);
+            % TEP plot (60%) and topoplot (40%) of 448px available — slider in gap
+            app.UIAxes.Position                   = p([340 230 308 270]);
+            app.TEPWindowSliderLabel.Position     = p([380 204 130 16]);
+            app.TEPWindowSlider.Position          = p([380 193 268 3]);
+            app.UIAxes2.Position                  = p([340 7 308 179]);
 
             % Head image (electrode map) — unchanged
             app.Image2.Position                   = p([-1 165 350 336]);
 
-            % Right column — top: export/output; bottom: data selection (prototype layout)
-            app.ExportTEPDataButton.Position      = p([669 468 183 23]);
-            app.TEPvarNameEditFieldLabel.Position = p([669 438 80 22]);
-            app.TEPvarNameEditField.Position      = p([754 438 98 22]);
-            app.UseCurrentlyCleanedDataCheckBox.Position = p([671 325 180 22]);
-            app.SelectDatatoVisulaizeTEPsPanel.Position  = p([651 230 208 90]);
+            % Right column — data selection
+            app.SelectDatatoVisulaizeTEPsPanel.Position  = p([651 406 208 90]);
             app.FolderEditField_2Label.Position   = p([1 41 40 22]);
             app.FolderEditField_2.Position        = p([49 41 145 22]);
             app.SelectDataButton_2.Position       = p([13 10 183 23]);
-            app.FilesListBoxLabel.Position        = p([740 220 30 22]);
-            app.FilesListBox.Position             = p([669 71 183 149]);
+            app.FilesListBoxLabel.Position        = p([740 382 30 22]);
+            app.FilesListBox.Position             = p([669 71 183 306]);
             app.SelectAllCheckBox.Position        = p([670 46 71 22]);
             app.DontfindcommonelectrodesCheckBox.Position = p([670 28 180 22]);
             app.ReLoadAvailableElectrodesButton.Position  = p([686 7 153 23]);
@@ -898,6 +1007,22 @@ classdef nestapp < matlab.apps.AppBase
             app.PO1Button.Position   = p([133 212 25 23]);
             app.PO6Button.Position   = p([243 215 25 23]);
 
+            %% Analysis Tab
+            app.AnalysisSelPanel.Position          = p([10 430 847 55]);
+            app.AnalysisSelectionLabel.Position    = p([10 5 820 32]);
+            app.AnalysisCompWindowsLabel.Position  = p([10 407 300 18]);
+            app.TEPComponentTable.Position         = p([10 225 360 178]);
+            app.TEPComponentTable.ColumnWidth      = {'auto', 'auto', 'auto'};
+            app.EditComponentWindowsButton.Position = p([10 196 220 25]);
+            app.AnalysisWorkspaceLabel.Position    = p([450 407 380 18]);
+            app.ExportTEPDataButton.Position       = p([450 374 220 28]);
+            app.TEPvarNameEditFieldLabel.Position  = p([450 348 60 22]);
+            app.TEPvarNameEditField.Position       = p([515 348 155 22]);
+            app.AnalysisBatchLabel.Position        = p([450 313 380 18]);
+            app.AnalysisBatchDescLabel.Position    = p([450 291 380 18]);
+            app.ExtractPeaksCSVButton.Position     = p([450 254 220 32]);
+            app.AnalysisStatusLabel.Position       = p([10 15 847 22]);
+
             %% Reports Tab
             app.ReportsListBoxLabel.Position    = p([5 472 205 22]);
             app.ReportsListBoxLabel.FontSize     = fs(16);
@@ -944,14 +1069,14 @@ classdef nestapp < matlab.apps.AppBase
                 eeglab('nogui');
             end
             for nfile = 1:numel(app.SelectedFilesforTEP)
-                EEGaux = pop_loadset(app.SelectedFilesforTEP(nfile),app.PathofSelectedFilesforTEP);
+                EEGaux = pop_loadset('filename', app.SelectedFilesforTEP{nfile}, 'filepath', app.PathofSelectedFilesforTEP);
                 app.EEGofAllSelectedFiles{nfile} = EEGaux;
                 app.EEGtime = EEGaux.times;
             end
-            app.EEG_SelectedTEPFiles_Loaded = 1;
+            app.EEG_SelectedTEPFiles_Loaded = true;
         end
 
-        function app = LoadLabels(app)
+        function LoadLabels(app)
             all_labels = cell(1,numel(app.SelectedFilesforTEP));
             if ~app.EEG_SelectedTEPFiles_Loaded
                 LoadSelecEEGdata(app)
@@ -973,8 +1098,11 @@ classdef nestapp < matlab.apps.AppBase
             % Uncommon labels = total - common
             uncommon_labels.Items = intersect(app.elecList,setdiff(total_labels, app.Common_Labels.Items));
             for nn = 1:length(uncommon_labels.Items)
-                app.([upper(uncommon_labels.Items{nn}),'Button']).Enable = 'off';
-                app.([upper(uncommon_labels.Items{nn}),'Button']).Value = 0;
+                propName = [upper(uncommon_labels.Items{nn}), 'Button'];
+                if isprop(app, propName)
+                    app.(propName).Enable = 'off';
+                    app.(propName).Value  = 0;
+                end
             end
             
         end
@@ -1012,13 +1140,13 @@ classdef nestapp < matlab.apps.AppBase
                 TEP_ROI(nfile,:) = mean(mean(EEGaux.data(ROIind,:,:), 3, 'omitmissing'), 1, 'omitmissing');
             end
 
-            swin   = 5;
+            SMOOTH_WIN_PTS = 5;       % 5-point moving average (~5 ms at 1 kHz)
             app.TEP2Export = TEP_ROI;
             grandMean = mean(TEP_ROI, 1, 'omitmissing');
             TEP_ROISD = std(TEP_ROI, 1, 1) / sqrt(nFiles);
-            Colr  = rand(1,3);
-            meanx = smoothdata(grandMean,   'movmean', swin);
-            sdx   = smoothdata(TEP_ROISD,  'movmean', swin);
+            co    = app.UIAxes.ColorOrder;
+            meanx = smoothdata(grandMean,  'movmean', SMOOTH_WIN_PTS);
+            sdx   = smoothdata(TEP_ROISD, 'movmean', SMOOTH_WIN_PTS);
             xf = [app.EEGtime(1) app.EEGtime  app.EEGtime(end) app.EEGtime(end:-1:1)];
             yf = [meanx(1)-sdx(1)/2 meanx+sdx/2 meanx(end)-sdx(end)/2 meanx(end:-1:1)-sdx(end:-1:1)/2];
 
@@ -1031,16 +1159,32 @@ classdef nestapp < matlab.apps.AppBase
 
             if app.NewFigureButton.Value
                 cla(app.UIAxes, 'reset');
+                Colr = co(1, :);
                 hold(app.UIAxes, 'on');
-                fill(app.UIAxes, xf, yf, Colr(1,:), 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
-                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr(1,:), 'LineWidth', 2, 'DisplayName', dispName);
+                fill(app.UIAxes, xf, yf, Colr, 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr, 'LineWidth', 2, 'DisplayName', dispName);
                 hold(app.UIAxes, 'off');
                 xlim(app.UIAxes, app.DefaulTEPxLim);
             elseif app.AddtocurrentFigureButton.Value
+                % Only count main TEP lines (HandleVisibility='on') to determine next color.
+                mainLines = findobj(app.UIAxes, 'Type', 'Line', 'HandleVisibility', 'on');
+                if isempty(mainLines)
+                    usedColors = zeros(0, 3);
+                else
+                    usedColors = reshape([mainLines.Color], 3, [])';
+                end
+                Colr = co(1, :);
+                for k = 1:size(co, 1)
+                    candidate = co(k, :);
+                    if ~any(all(abs(usedColors - candidate) < 1e-6, 2))
+                        Colr = candidate;
+                        break;
+                    end
+                end
                 prevYLim = ylim(app.UIAxes);
                 hold(app.UIAxes, 'on');
-                fill(app.UIAxes, xf, yf, Colr(1,:), 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
-                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr(1,:), 'LineWidth', 2, 'DisplayName', dispName);
+                fill(app.UIAxes, xf, yf, Colr, 'FaceAlpha', 0.5, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                plot(app.UIAxes, app.EEGtime, meanx, 'Color', Colr, 'LineWidth', 2, 'DisplayName', dispName);
                 xlim(app.UIAxes, app.DefaulTEPxLim);
                 % Expand y-axis to accommodate new data; never shrink existing range
                 newYLim = ylim(app.UIAxes);
@@ -1050,23 +1194,35 @@ classdef nestapp < matlab.apps.AppBase
             legend(app.UIAxes, 'show', 'Location', 'best');
 
             % Component detection on grand mean (runs regardless of toggle to cache peaks)
-            app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime, app.tepComponentDefs);
-            if app.ShowComponentsButton.Value
-                overlayTEPComponents(app);
+            try
+                app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime, app.tepComponentDefs);
+                if app.ShowComponentsButton.Value
+                    overlayTEPComponents(app);
+                end
+                populateTEPComponentTable(app);
+            catch ME
+                if strcmp(ME.identifier, 'tepPeakFinder:noTESA')
+                    uialert(app.UIFigure, ...
+                        ['TESA not found. Add TESA to the MATLAB path to enable ' ...
+                         'component detection (Show Components / Extract Peaks).'], ...
+                        'TESA Required');
+                    app.ShowComponentsButton.Value = false;
+                else
+                    rethrow(ME);
+                end
             end
-            populateTEPComponentTable(app);
         end
         
         function EEG_topoplot(app)
             cla(app.UIAxes2)
             BIGEEG = [];
-            IntRad = 0.55;
-            avgType = 'movmean';
-            swin = 5;
+            TOPOPLOT_INTRAD = 0.55;   % EEGLAB default interpolation radius
+            SMOOTH_METHOD   = 'movmean';
+            SMOOTH_WIN_PTS  = 5;      % 5-point moving average (~5 ms at 1 kHz)
             if ~app.EEG_SelectedTEPFiles_Loaded
                 LoadSelecEEGdata(app)
             end
-            app = LoadLabels(app);
+            LoadLabels(app);
             BIGEEG = zeros(numel(app.Common_Labels.Items), length(app.EEGtime),numel(app.EEGofAllSelectedFiles));
             for nfile = 1:numel(app.EEGofAllSelectedFiles)
                 EEGaux = app.EEGofAllSelectedFiles{1,nfile};
@@ -1076,7 +1232,7 @@ classdef nestapp < matlab.apps.AppBase
                 
             end
             ChansLocs(~commonElectrodsInd) = [];
-            yp = smoothdata(mean(BIGEEG,3,"omitmissing")',avgType,swin)'; % Smooth the EEGdata along subjects
+            yp = smoothdata(mean(BIGEEG,3,"omitmissing")',SMOOTH_METHOD,SMOOTH_WIN_PTS)'; % Smooth the EEGdata along subjects
             timepoint = app.TopoplottimeSpinner.Value;
             Topo_ind = [round(timepoint-app.WindowsizefortimeaveragedTopoplotEditField.Value/2),...
                 round(timepoint+app.WindowsizefortimeaveragedTopoplotEditField.Value/2)];
@@ -1093,7 +1249,7 @@ classdef nestapp < matlab.apps.AppBase
             % Plot into cloned axes
             axes(newAx);  % set as current
             topoplot(mean(Topo,2),ChansLocs,'electrodes','off',...
-                'numcontour',5,'intsquare','on','style','map','conv', 'on', 'intrad',IntRad);axis auto
+                'numcontour',5,'intsquare','on','style','map','conv', 'on', 'intrad',TOPOPLOT_INTRAD);axis auto
             colormap(app.UIAxes2,'hsv')
             % Copy contents back to app UIAxes
             cla(app.UIAxes2);
@@ -1279,13 +1435,13 @@ classdef nestapp < matlab.apps.AppBase
             % ListBoxInteraction has no NumClicks property in R2025b.
             t = datetime('now');
             if seconds(t - app.lastStepClick) < 0.5
-                AddButtonPushed(app, []);
+                appendStep(app, app.StepsListBox.Value);
             end
             app.lastStepClick = t;
         end
 
         % Value changed function: StepsListBox
-        function StepsListBoxValueChanged(app, event)
+        function StepsListBoxValueChanged(app, ~)
             value = app.StepsListBox.Value;
             ind = find(ismember(app.StepsListBox.Items,value));
             app.InfoTextArea.Value = string(app.info{ind});
@@ -1293,175 +1449,66 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: AddButton
-        function AddButtonPushed(app, event)
-            if isempty(app.SelectedListBox.Items) || isempty(app.SelectedListBox.Items{1})
-                ind = find(ismember(app.StepsListBox.Items,app.StepsListBox.Value));
-                app.SelectedListBox.Items{1} = app.StepsListBox.Value;
-                app.SelectedListBox.ItemsData{1} = ['item',num2str(1)];
-                app.ChangedVal{1}       = app.DefaultsVal{ind};
-                app.stepParamKeys{1}    = app.defaultParamKeys{ind};
-            % elseif isempty(app.SelectedListBox.Items{1})
-            %     ind = find(ismember(app.StepsListBox.Items,app.StepsListBox.Value));
-            %     app.SelectedListBox.Items{1} = app.StepsListBox.Value;
-            %     app.SelectedListBox.ItemsData{1} = ['item',num2str(1)];
-            %     app.ChangedVal{1}=app.DefaultsVal{ind};
-            else
-                ind = find(ismember(app.StepsListBox.Items,app.StepsListBox.Value));
-                app.ItemNum = numel(app.SelectedListBox.Items);
-                app.SelectedListBox.Items{app.ItemNum+1} = app.StepsListBox.Value;
-                app.SelectedListBox.ItemsData{app.ItemNum+1} = ['item',num2str(app.ItemNum+1)];
-                app.ChangedVal{app.ItemNum+1}    = app.DefaultsVal{ind};
-                app.stepParamKeys{app.ItemNum+1} = app.defaultParamKeys{ind};
-            end
-            app.pipelineDirty = true;
-            updateStatusBar(app);
+        function AddButtonPushed(app, ~)
+            stepName = app.StepsListBox.Value;
+            appendStep(app, stepName);
         end
 
         % Button pushed function: MoveUpButton
-        function MoveUpButtonPushed(app, event)
-            value = app.SelectedListBox.Value;
-            ind1 = find(ismember(app.SelectedListBox.ItemsData,value));
-            if ind1 ~= 1
-                A = app.SelectedListBox.Items{ind1-1};
-                B = app.SelectedListBox.Items{ind1};
-                app.SelectedListBox.Items{ind1-1} = B;
-                app.SelectedListBox.Items{ind1} = A;
-
-                app.SelectedListBox.ItemsData{ind1-1} = strcat('Item',num2str(ind1-1));
-                app.SelectedListBox.ItemsData{ind1} = strcat('Item',num2str(ind1));
-                C = app.ChangedVal{ind1-1};
-                D = app.ChangedVal{ind1};
-                app.ChangedVal{ind1-1} = D;
-                app.ChangedVal{ind1}   = C;
-                Ck = app.stepParamKeys{ind1-1};
-                Dk = app.stepParamKeys{ind1};
-                app.stepParamKeys{ind1-1} = Dk;
-                app.stepParamKeys{ind1}   = Ck;
-            end
-            app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1-1};
-            app.pipelineDirty = true;
-            updateStatusBar(app);
+        function MoveUpButtonPushed(app, ~)
+            ind = find(ismember(app.SelectedListBox.ItemsData, app.SelectedListBox.Value));
+            moveStep(app, ind, -1);
         end
 
         % Button pushed function: SavePipelineButton
-        function SavePipelineButtonPushed(app, event) %#ok<INUSD>
-            PLItems = app.SelectedListBox.Items;     %#ok<NASGU>
-            PLItemsData = app.SelectedListBox.ItemsData; %#ok<NASGU>
-            VarIns = app.ChangedVal;                 %#ok<NASGU>
-            ParamKeys = app.stepParamKeys;           %#ok<NASGU>
+        function SavePipelineButtonPushed(app, ~)
             startFolder = getpref('nestapp', 'lastPipelineFolder', '');
-            uisave({'PLItems','PLItemsData','VarIns','ParamKeys'}, ...
-                fullfile(startFolder, '*.mat'));
-            % uisave does not return the chosen path; dirty flag and name update
-            % deferred until Save Pipeline moves to a proper uiputfile dialog.
+            [fName, fPath] = uiputfile('*.mat', 'Save Pipeline', ...
+                fullfile(startFolder, 'pipeline.mat'));
+            if isequal(fName, 0); return; end   % user cancelled
+            PLItems     = app.SelectedListBox.Items;
+            PLItemsData = app.SelectedListBox.ItemsData;
+            VarIns      = app.ChangedVal;
+            ParamKeys   = app.stepParamKeys;
+            save(fullfile(fPath, fName), 'PLItems', 'PLItemsData', 'VarIns', 'ParamKeys');
+            setpref('nestapp', 'lastPipelineFolder', fPath);
+            pushRecent(app, 'recentPipelines', fullfile(fPath, fName));
+            [~, baseName, ~] = fileparts(fName);
+            app.pipelineName  = baseName;
+            app.pipelineDirty = false;
+            updateStatusBar(app);
         end
 
         % Button pushed function: RemoveButton
-        function RemoveButtonPushed(app, event)
-            ind = find(ismember(app.SelectedListBox.ItemsData,app.SelectedListBox.Value));
-            app.SelectedListBox.Items(ind) = [];
-            app.SelectedListBox.ItemsData(ind) = [];
-            app.ChangedVal(ind)    = [];
-            app.stepParamKeys(ind) = [];
-            for i = ind : length(app.SelectedListBox.ItemsData)
-                app.SelectedListBox.ItemsData{i} = ['Item',num2str(i)];
-            end
-            app.pipelineDirty = true;
-            updateStatusBar(app);
+        function RemoveButtonPushed(app, ~)
+            ind = find(ismember(app.SelectedListBox.ItemsData, app.SelectedListBox.Value));
+            removeStep(app, ind);
         end
 
         % Button pushed function: MoveDownButton
-        function MoveDownButtonPushed(app, event)
-            value = app.SelectedListBox.Value;
-            ind1 = find(ismember(app.SelectedListBox.ItemsData,value));
-            if ind1 ~= numel(app.SelectedListBox.Items)
-                A = app.SelectedListBox.Items{ind1+1};
-                B = app.SelectedListBox.Items{ind1};
-                app.SelectedListBox.Items{ind1+1} = B;
-                app.SelectedListBox.Items{ind1} = A;
-
-                app.SelectedListBox.ItemsData{ind1+1} = strcat('Item',num2str(ind1+1));
-                app.SelectedListBox.ItemsData{ind1} = strcat('Item',num2str(ind1));
-                C = app.ChangedVal{ind1+1};
-                D = app.ChangedVal{ind1};
-                app.ChangedVal{ind1+1} = D;
-                app.ChangedVal{ind1}   = C;
-                Ck = app.stepParamKeys{ind1+1};
-                Dk = app.stepParamKeys{ind1};
-                app.stepParamKeys{ind1+1} = Dk;
-                app.stepParamKeys{ind1}   = Ck;
-            end
-            app.SelectedListBox.Value=app.SelectedListBox.ItemsData{ind1+1};
-            app.pipelineDirty = true;
-            updateStatusBar(app);
+        function MoveDownButtonPushed(app, ~)
+            ind = find(ismember(app.SelectedListBox.ItemsData, app.SelectedListBox.Value));
+            moveStep(app, ind, +1);
         end
 
         % Button pushed function: LoadPipelineButton
-        function LoadPipelineButtonPushed(app, event)
+        function LoadPipelineButtonPushed(app, ~)
             startFolder = getpref('nestapp', 'lastPipelineFolder', '');
-            [pName,pPath] = uigetfile('*.mat', 'Load Pipeline', startFolder);
-            pipeline = load([pPath,pName],'-mat');
-            app.SelectedListBox.Items    = pipeline.PLItems;
-            app.SelectedListBox.ItemsData= pipeline.PLItemsData;
-            app.ChangedVal               = pipeline.VarIns;
-            app.UITable.Data             = [];
-
-            % Restore or rebuild stepParamKeys.
-            % New-format files have ParamKeys saved directly.
-            % Old-format files have raw EEGLAB keys in VarIns{k}.var — upgrade them
-            % to friendly names while extracting the raw keys into stepParamKeys.
-            if isfield(pipeline, 'ParamKeys')
-                app.stepParamKeys = pipeline.ParamKeys;
-            else
-                reg = stepRegistry();
-                app.stepParamKeys = cell(numel(pipeline.PLItems), 1);
-                for k = 1:numel(pipeline.PLItems)
-                    stepName = pipeline.PLItems{k};
-                    regIdx   = find(strcmp({reg.name}, stepName), 1);
-                    T        = app.ChangedVal{k};
-                    nRows    = height(T);
-                    rawKeys  = cell(nRows, 1);
-                    for row = 1:nRows
-                        rawKey = char(T.var{row});
-                        rawKeys{row} = rawKey;
-                        if ~isempty(regIdx)
-                            pIdx = find(strcmp({reg(regIdx).params.key}, rawKey), 1);
-                            if ~isempty(pIdx)
-                                p = reg(regIdx).params(pIdx);
-                                % Upgrade label: raw key → friendly name (unit)
-                                if isempty(p.unit)
-                                    T.var{row} = string(p.friendlyName);
-                                else
-                                    T.var{row} = string([p.friendlyName, ' (', p.unit, ')']);
-                                end
-                                % Upgrade value: '[]' → descriptive placeholder
-                                if isscalar(T.val{row}) && strcmp(string(T.val{row}), '[]')
-                                    if ~isempty(p.placeholder)
-                                        T.val{row} = string(p.placeholder);
-                                    else
-                                        T.val{row} = "(not set)";
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    app.stepParamKeys{k} = rawKeys;
-                    app.ChangedVal{k}    = T;
-                end
-            end
-            if ~isequal(pPath, 0)
-                setpref('nestapp', 'lastPipelineFolder', pPath);
-                pushRecent(app, 'recentPipelines', fullfile(pPath, pName));
-                buildRecentPipelinesMenu(app);
-                [~, nm, ~] = fileparts(pName);
-                app.pipelineName  = nm;
-                app.pipelineDirty = false;
-                updateStatusBar(app);
-            end
+            [pName, pPath] = uigetfile('*.mat', 'Load Pipeline', startFolder);
+            if isequal(pName, 0); return; end
+            fullPath = fullfile(pPath, pName);
+            loadPipelineData(app, fullPath);
+            setpref('nestapp', 'lastPipelineFolder', pPath);
+            pushRecent(app, 'recentPipelines', fullPath);
+            buildRecentPipelinesMenu(app);
+            [~, nm, ~] = fileparts(pName);
+            app.pipelineName  = nm;
+            app.pipelineDirty = false;
+            updateStatusBar(app);
         end
 
         % Button pushed function: SelectDataButton
-        function SelectDataButtonPushed(app, event)
+        function SelectDataButtonPushed(app, ~)
             try
                 startFolder = getpref('nestapp', 'lastDataFolder', '');
                 [app.file,app.path] = uigetfile( ...
@@ -1479,9 +1526,6 @@ classdef nestapp < matlab.apps.AppBase
                     app.NSelecFiles = 1;
                     app.file = {app.file};
                 end
-
-                assignin('base','files',app.file)
-                assignin('base','paths',app.path)
 
                 app.SelectedFilesListBox.Items = app.file;
                 setpref('nestapp', 'lastDataFolder', app.path);
@@ -1507,26 +1551,39 @@ classdef nestapp < matlab.apps.AppBase
                 if strcmp(answer, 'Cancel'); return; end
             end
             clc
-            app.SelectedListBox.Items(:)  = [];
-            app.SelectedListBox.ItemsData(:) = [];
-            app.UITable.Data    = [];
-            app.ChangedVal      = {};
-            app.stepParamKeys   = {};
-            app.ItemNum         = 0;
-            app.nstep           = 1;
-            app.needchanloc     = 1;
+            clearSteps(app);
         end
 
         % Menu selected function: Load Template...
         function LoadTemplateMenuSelected(app, ~)
         % LOADTEMPLATEMENUSELECTED  Show a template picker and load the chosen template.
-        %   Clears the current pipeline (without confirmation) and populates
-        %   the step list from the template, applying any parameter overrides.
-            templates = pipelineTemplates();
-            if isempty(templates); return; end
+        %   Reads template .mat files from src/templates/ — the same format
+        %   as user-saved pipelines.  No override logic runs at runtime.
+            srcDir      = fileparts(which('nestapp'));
+            templateDir = fullfile(srcDir, 'templates');
+            files = dir(fullfile(templateDir, '*.mat'));
+            if isempty(files)
+                uialert(app.UIFigure, ...
+                    'No template files found in src/templates/.  Run buildTemplates() to generate them.', ...
+                    'Templates');
+                return
+            end
 
-            % Build a small modal picker
-            names = {templates.name};
+            % Read templateName from each file for the picker list.
+            n     = numel(files);
+            names = cell(n, 1);
+            paths = cell(n, 1);
+            for i = 1:n
+                paths{i} = fullfile(files(i).folder, files(i).name);
+                try
+                    tmp      = load(paths{i}, 'templateName');
+                    names{i} = tmp.templateName;
+                catch
+                    [~, names{i}] = fileparts(files(i).name);
+                end
+            end
+
+            % Modal picker
             dlg = uifigure('Name', 'Load Template', ...
                 'Position', [300 300 320 200], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
@@ -1545,92 +1602,59 @@ classdef nestapp < matlab.apps.AppBase
                 idx = find(strcmp(names, lb.Value), 1);
                 close(dlg);
                 if isempty(idx); return; end
-                t = templates(idx);
-
-                % Clear pipeline without confirmation
-                app.SelectedListBox.Items(:)  = [];
-                app.SelectedListBox.ItemsData(:) = [];
-                app.UITable.Data    = [];
-                app.ChangedVal      = {};
-                app.stepParamKeys   = {};
-                app.ItemNum         = 0;
-                app.nstep           = 1;
-                app.needchanloc     = 1;
+                clearSteps(app);
                 clc
-
-                % Add each step and apply overrides
-                for si = 1:numel(t.steps)
-                    stepLabel = t.steps{si};
-                    regIdx = find(strcmp(app.StepsListBox.Items, stepLabel), 1);
-                    if isempty(regIdx)
-                        warning('nestapp:template', ...
-                            'Template step "%s" not found in registry — skipped.', stepLabel);
-                        continue
-                    end
-                    % Add the step using the same logic as AddButtonPushed
-                    n = numel(app.SelectedListBox.Items);
-                    if n == 0 || (n == 1 && isempty(app.SelectedListBox.Items{1}))
-                        pos = 1;
-                    else
-                        pos = n + 1;
-                    end
-                    app.SelectedListBox.Items{pos}    = stepLabel;
-                    app.SelectedListBox.ItemsData{pos} = ['item' num2str(pos)];
-                    app.ChangedVal{pos}    = app.DefaultsVal{regIdx};
-                    app.stepParamKeys{pos} = app.defaultParamKeys{regIdx};
-
-                    % Apply parameter overrides for this step
-                    if si <= numel(t.overrides) && ~isempty(fieldnames(t.overrides{si}))
-                        ov = t.overrides{si};
-                        ovFields = fieldnames(ov);
-                        keys = app.stepParamKeys{pos};
-                        T    = app.ChangedVal{pos};
-                        for fi = 1:numel(ovFields)
-                            rawKey = ovFields{fi};
-                            row = find(strcmp(keys, rawKey), 1);
-                            if isempty(row); continue; end
-                            v = ov.(rawKey);
-                            if isnumeric(v)
-                                % Store as mat2str string, consistent with
-                                % how DefaultsVal is built in startupFcn.
-                                T.val{row} = string(mat2str(v));
-                            else
-                                T.val{row} = string(v);
-                            end
-                        end
-                        app.ChangedVal{pos} = T;
-                    end
-                end
-
-                app.pipelineName  = t.name;
+                loadPipelineData(app, paths{idx});
+                app.pipelineName  = names{idx};
                 app.pipelineDirty = true;
                 updateStatusBar(app);
-                % Show the first step's params if any steps were added
-                if ~isempty(app.SelectedListBox.Items) && ~isempty(app.SelectedListBox.Items{1})
+                if ~isempty(app.SelectedListBox.Items)
                     app.SelectedListBox.Value = app.SelectedListBox.ItemsData{1};
-                    app.UITable.Data = app.ChangedVal{1};
+                    app.UITable.Data          = app.ChangedVal{1};
                     styleParamTable(app);
                 end
             end
         end
 
         % Button pushed function: RunAnalysisButton
-        function RunAnalysisButtonPushed(app, event)
+        function RunAnalysisButtonPushed(app, ~)
             app.RunAnalysisButton.Text = {'Run';'Analysis'};
             app.needchanloc = 1;
+            % Silently initialise EEGLAB if its plugins aren't on the path yet.
+            % eeglab('nogui') adds every installed plugin subdirectory to the path;
+            % without it, the first pipeline run in a fresh MATLAB session fails
+            % with a "missing plugin" error.
+            global PLUGINLIST %#ok<TLEV>
+            if isempty(PLUGINLIST)
+                try
+                    evalc('eeglab nogui');
+                catch ME
+                    uialert(app.UIFigure, ...
+                        ['EEGLAB could not be initialised: ' ME.message newline ...
+                         'Verify the EEGLAB path in Preferences.'], ...
+                        'EEGLAB Init Failed', 'Icon', 'error');
+                    return
+                end
+            end
             try
                 runPipeline(app);
             catch err
+                if strcmp(err.identifier, 'nestapp:cancelled')
+                    return  % user-initiated cancel — no error dialog
+                end
                 uialert(app.UIFigure, err.message, 'Pipeline Error', 'Icon', 'error');
                 return
             end
+            % Update Reports tab after pipeline completes — done here rather
+            % than inside runPipeline to avoid a circular dependency.
+            updateReportsTab(app);
             if app.UseCurrentlyCleanedDataCheckBox.Value
                 UseCurrentlyCleanedDataCheckBoxValueChanged(app)
             end
         end
 
         % Value changed function: TextArea
-        function TextAreaValueChanged(app, event)
+        function TextAreaValueChanged(app, ~)
             value = app.TextArea.Value;
             value(strcmp(value,''))=[];
             if app.convert
@@ -1664,7 +1688,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: DefaultValueButton
-        function DefaultValueButtonPushed(app, event)
+        function DefaultValueButtonPushed(app, ~)
             ind2 = find(ismember(app.SelectedListBox.ItemsData,app.SelectedListBox.Value));
             ind1 = find(ismember(app.StepsListBox.Items,app.SelectedListBox.Items{ind2}));
             app.ChangedVal{ind2}    = app.DefaultsVal{ind1};
@@ -1678,6 +1702,7 @@ classdef nestapp < matlab.apps.AppBase
         % Size changed function: UIFigure
         function UIFigureSizeChanged(app, ~)
             if isempty(app.originalSize); return; end
+            drawnow limitrate  % throttle: skip redraws that arrive faster than screen refresh
             newSize = app.UIFigure.Position(3:4);
             minW = 650; minH = 420;
             if newSize(1) < minW || newSize(2) < minH
@@ -1691,10 +1716,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Cell edit callback: UITable
-        function UITableCellEdit(app, event)
-            indices = event.Indices; %#ok<NASGU>
-            newData = event.NewData; %#ok<NASGU>
-
+        function UITableCellEdit(app, ~)
             value = app.SelectedListBox.Value;
             indNum2 = find(ismember(app.SelectedListBox.ItemsData,value));
             app.ChangedVal{indNum2} = app.UITable.Data;
@@ -1703,7 +1725,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Value changed function: SelectedListBox
-        function SelectedListBoxValueChanged(app, event)
+        function SelectedListBoxValueChanged(app, ~)
             value = app.SelectedListBox.Value;
             indNum2 = find(ismember(app.SelectedListBox.ItemsData,value));
             ItemName = app.SelectedListBox.Items{indNum2};
@@ -1720,27 +1742,24 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: PLOTTEPButton
-        function PLOTTEPButtonPushed(app, event)
+        function PLOTTEPButtonPushed(app, ~)
             if ~CheckifanyFileSelected(app)
                 warning('Please select at least a file to plot the TEP!');
             else
-                app = LoadLabels(app);
+                LoadLabels(app);
                 findTEPelecs(app);
                 plotTEP(app)
-                app.Slider.Limits = [app.EEGtime(1) app.EEGtime(end)];
                 app.TEPWindowSlider.Limits = [app.EEGtime(1) app.EEGtime(end)];
-                app.TEPCreated = 1;
+                app.TEPCreated = true;
                 app.TEPWindowSlider.Value = app.DefaulTEPxLim;
-                
-                app.ExportTEPDataButton.Enable = 'on';
-                app.TEPvarNameEditField.Enable = 'on';
+                app.ExportTEPDataButton.Enable    = 'on';
+                app.TEPvarNameEditFieldLabel.Enable = 'on';
+                app.TEPvarNameEditField.Enable    = 'on';
             end
-            
-            % app.Slider.Value = 
         end
 
         % Value changed function: UseCurrentlyCleanedDataCheckBox
-        function UseCurrentlyCleanedDataCheckBoxValueChanged(app, event)
+        function UseCurrentlyCleanedDataCheckBoxValueChanged(app, ~)
             value = app.UseCurrentlyCleanedDataCheckBox.Value;
             if value
                 if ~isempty(app.path) && ~isempty(app.cleanedName)
@@ -1767,7 +1786,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Value changed function: FolderEditField_2
-        function FolderEditField_2ValueChanged(app, event)
+        function FolderEditField_2ValueChanged(app, ~)
             if ~isempty(app.cleanedName) && ~isempty(app.path)
                 app.FolderEditField_2.Value = app.path;
             else
@@ -1776,15 +1795,8 @@ classdef nestapp < matlab.apps.AppBase
 
         end
 
-        % Value changing function: Slider
-        function SliderValueChanging(app, event)
-            changingValue = event.Value;
-            app.TopoplottimeSpinner.Value = round(changingValue);
-
-        end
-
         % Button pushed function: SelectDataButton_2
-        function SelectDataButton_2Pushed(app, event)
+        function SelectDataButton_2Pushed(app, ~)
             try
                 [app.TEPfiles,app.PathofSelectedFilesforTEP] = uigetfile( ...
                     {'*.set',...
@@ -1797,6 +1809,10 @@ classdef nestapp < matlab.apps.AppBase
                     app.NSelecFiles = 1;
                     app.TEPfiles = {app.TEPfiles};
                 end
+
+                % Invalidate EEG cache — new files mean stale loaded data must be discarded.
+                app.EEG_SelectedTEPFiles_Loaded = false;
+                app.EEGofAllSelectedFiles = {};
 
                 % app.FileEditField_2.Value = app.TEPfiles{1};
                 app.FolderEditField_2.Value = app.PathofSelectedFilesforTEP;
@@ -1821,7 +1837,7 @@ classdef nestapp < matlab.apps.AppBase
 
         % Value changed function: FilesListBox
         function FilesListBoxValueChanged(app, event)
-            app.EEG_SelectedTEPFiles_Loaded = 0;
+            app.EEG_SelectedTEPFiles_Loaded = false;
             app.EEGofAllSelectedFiles = []; % Every time the new file is checked clear the all loaded EEG data
             if ~isempty(event.Value) || event.Value ~= 0
                 % fname = event.Value;
@@ -1833,14 +1849,14 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: TOPOPLOTButton
-        function TOPOPLOTButtonPushed(app, event)
+        function TOPOPLOTButtonPushed(app, ~)
             if CheckifanyFileSelected(app)
                 EEG_topoplot(app)
             end
         end
 
         % Value changed function: SelectAllCheckBox
-        function SelectAllCheckBoxValueChanged(app, event)
+        function SelectAllCheckBoxValueChanged(app, ~)
             value = app.SelectAllCheckBox.Value;
             if value
                 app.SelectedFilesforTEP = app.TEPfiles;
@@ -1853,7 +1869,7 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Value changed function: DontfindcommonelectrodesCheckBox
-        function DontfindcommonelectrodesCheckBoxValueChanged(app, event)
+        function DontfindcommonelectrodesCheckBoxValueChanged(app, ~)
             value = app.DontfindcommonelectrodesCheckBox.Value;
             if ~value
                 app.ReLoadAvailableElectrodesButton.Enable = 1;
@@ -1863,15 +1879,15 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: ReLoadAvailableElectrodesButton
-        function ReLoadAvailableElectrodesButtonPushed(app, event)
+        function ReLoadAvailableElectrodesButtonPushed(app, ~)
             if CheckifanyFileSelected(app)
-                app = LoadLabels(app);
+                LoadLabels(app);
             end
 
         end
 
         % Button pushed function: ExportTEPFigureButton
-        function ExportTEPFigureButtonPushed(app, event)
+        function ExportTEPFigureButtonPushed(app, ~)
             if ~app.TEPCreated
                 uialert(app.UIFigure, 'Please plot a TEP first.', 'No figure');
                 return
@@ -1900,13 +1916,11 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Value changed function: EEGDatasetDropDown
-        function EEGDatasetDropDownValueChanged(app, event)
-            value = app.EEGDatasetDropDown.Value;
-            
+        function EEGDatasetDropDownValueChanged(~, ~)
         end
 
         % Button pushed function: PlotEEGdataButton
-        function PlotEEGdataButtonPushed(app, event)
+        function PlotEEGdataButtonPushed(app, ~)
             subInd = strcmpi(app.SelectedFilesforTEP, app.EEGDatasetDropDown.Value);
             if CheckifanyFileSelected(app)
                 if ~app.EEG_SelectedTEPFiles_Loaded
@@ -1919,14 +1933,12 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         % Button pushed function: ExportTEPDataButton
-        function ExportTEPDataButtonPushed(app, event)
+        function ExportTEPDataButtonPushed(app, ~)
             assignin('base', app.TEPvarNameEditField.Value, app.TEP2Export)
         end
 
         % Value changed function: TEPvarNameEditField
-        function TEPvarNameEditFieldValueChanged(app, event)
-            value = app.TEPvarNameEditField.Value;
-
+        function TEPvarNameEditFieldValueChanged(~, ~)
         end
 
         % Value changed function: ShowComponentsButton
@@ -2014,14 +2026,110 @@ classdef nestapp < matlab.apps.AppBase
 
         function defs = defaultTEPComponentDefs(~)
         % DEFAULTTEPCOMPONENTDEFS  Return canonical TEP component window definitions.
-        %   Windows follow Rogasch et al. 2013 (Clin Neurophysiol) and
-        %   Farzan et al. 2016 (Ann NY Acad Sci).
+        %   Windows follow Beck et al. 2024 (Hum Brain Mapp, 45:e70048).
             defs = struct( ...
                 'name',       {'N15',  'P30',  'N45',  'P60',  'N100', 'P180'}, ...
                 'polarity',   {'neg',  'pos',  'neg',  'pos',  'neg',  'pos'}, ...
                 'nomLatency', {15,     30,     45,     60,     100,    180}, ...
-                'winStart',   {5,      22,     38,     50,     80,     140}, ...
-                'winEnd',     {28,     50,     65,     90,     140,    260});
+                'winStart',   {10,     20,     40,     50,     70,     150}, ...
+                'winEnd',     {20,     40,     55,     70,     150,    240});
+        end
+
+        % ── Analysis Tab callbacks ────────────────────────────────────────
+
+        % Button pushed function: ExtractPeaksCSVButton
+        function ExtractPeaksCSVButtonPushed(app, ~)
+        % Extract peaks across all selected files and save as CSV.
+            findTEPelecs(app);   % refresh ROI from current electrode button state
+            if isempty(app.ROIelecsLabels)
+                uialert(app.UIFigure, ...
+                    'No ROI electrodes selected. Choose electrodes on the Visualizing tab.', ...
+                    'Extract Peaks');
+                return
+            end
+            if isempty(app.SelectedFilesforTEP)
+                uialert(app.UIFigure, ...
+                    'No files selected. Select .set files on the Visualizing tab.', ...
+                    'Extract Peaks');
+                return
+            end
+            if isempty(which('tesa_peakanalysis'))
+                uialert(app.UIFigure, ...
+                    'TESA toolbox not found on path. Cannot run peak extraction.', ...
+                    'Extract Peaks');
+                return
+            end
+
+            [fname, fpath] = uiputfile('*.csv', 'Save TEP Peaks CSV', 'tep_peaks.csv');
+            if isequal(fname, 0); return; end
+            csvPath = fullfile(fpath, fname);
+
+            filePaths = cellfun(@(f) fullfile(app.PathofSelectedFilesforTEP, f), ...
+                app.SelectedFilesforTEP, 'UniformOutput', false);
+
+            d = uiprogressdlg(app.UIFigure, ...
+                'Title',          'Extracting TEP Peaks', ...
+                'Message',        'Starting...', ...
+                'Cancelable',     'off', ...
+                'ShowPercentage', 'on');
+
+            try
+                [results, warnings] = batchTEPExtract(filePaths, app.ROIelecsLabels, ...
+                    'compDefs',    app.tepComponentDefs, ...
+                    'csvPath',     csvPath, ...
+                    'progressFcn', @(i,n) updateExtractionProgress(d, i, n, filePaths));
+            catch ME
+                if isvalid(d); close(d); end
+                uialert(app.UIFigure, ME.message, 'Extraction Error');
+                return
+            end
+            if isvalid(d); close(d); end
+
+            nRows = height(results);
+            if isempty(warnings)
+                app.AnalysisStatusLabel.Text = sprintf('Extracted %d rows → %s', nRows, fname);
+            else
+                app.AnalysisStatusLabel.Text = sprintf( ...
+                    'Extracted %d rows → %s  (%d warning(s))', nRows, fname, numel(warnings));
+                uialert(app.UIFigure, strjoin(warnings, newline), 'Extraction Warnings');
+            end
+
+            function updateExtractionProgress(dlg, iFile, nFiles, fps)
+                [~, nm] = fileparts(fps{iFile});
+                dlg.Value   = (iFile - 1) / nFiles;
+                dlg.Message = sprintf('File %d / %d  —  %s', iFile, nFiles, nm);
+                drawnow limitrate
+            end
+        end
+
+        % Selection changed function: TabGroup
+        function TabGroupSelectionChanged(app, event)
+        % Refresh the Analysis tab selection summary whenever it becomes active.
+            if event.NewValue == app.AnalysisTab
+                updateAnalysisSelectionSummary(app);
+            end
+        end
+
+        function updateAnalysisSelectionSummary(app)
+        % Update the read-only summary label on the Analysis tab.
+            findTEPelecs(app);   % refresh ROI from current electrode button state
+            nFiles = numel(app.SelectedFilesforTEP);
+            nROI   = numel(app.ROIelecsLabels);
+            if nFiles == 0 && nROI == 0
+                app.AnalysisSelectionLabel.Text = ...
+                    'Select files and ROI electrodes on the Visualizing tab.';
+                return
+            end
+            fileStr = sprintf('%d file(s) selected', nFiles);
+            if nROI == 0
+                roiStr = 'No ROI electrodes selected';
+            elseif nROI <= 6
+                roiStr = sprintf('ROI: %s', strjoin(app.ROIelecsLabels, ', '));
+            else
+                roiStr = sprintf('ROI: %s … (%d electrodes total)', ...
+                    strjoin(app.ROIelecsLabels(1:6), ', '), nROI);
+            end
+            app.AnalysisSelectionLabel.Text = sprintf('%s          %s', fileStr, roiStr);
         end
 
     end
@@ -2064,6 +2172,10 @@ classdef nestapp < matlab.apps.AppBase
             uimenu(mSettings, 'Text', 'Preferences...', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @openPreferencesMenu, true));
 
+            mTools = uimenu(app.UIFigure, 'Text', 'Tools');
+            uimenu(mTools, 'Text', 'Browse Raw EEG...', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @PlotEEGdataButtonPushed, true));
+
             mHelp = uimenu(app.UIFigure, 'Text', 'Help');
             uimenu(mHelp, 'Text', 'About nestapp', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
@@ -2080,6 +2192,7 @@ classdef nestapp < matlab.apps.AppBase
             app.TabGroup = uitabgroup(app.UIFigure);
             app.TabGroup.AutoResizeChildren = 'off';
             app.TabGroup.Position = [1 20 867 529];
+            app.TabGroup.SelectionChangedFcn = createCallbackFcn(app, @TabGroupSelectionChanged, true);
 
             % Create CleaningTab
             app.CleaningTab = uitab(app.TabGroup);
@@ -2247,7 +2360,7 @@ classdef nestapp < matlab.apps.AppBase
             xlabel(app.UIAxes, 'Time')
             ylabel(app.UIAxes, 'TEP')
             app.UIAxes.TickDir = 'both';
-            app.UIAxes.Position = [340 319 308 186];
+            app.UIAxes.Position = [340 230 308 270];
 
             % Create UIAxes2
             app.UIAxes2 = uiaxes(app.VisualizingTab);
@@ -2257,33 +2370,19 @@ classdef nestapp < matlab.apps.AppBase
             app.UIAxes2.YAxisLocation = 'origin';
             app.UIAxes2.YTick = [];
             app.UIAxes2.ZTick = [];
-            app.UIAxes2.Position = [340 65 200 148];
-
-            % Create TEPComponentTable
-            app.TEPComponentTable = uitable(app.VisualizingTab);
-            app.TEPComponentTable.ColumnName = {'Component', 'Latency (ms)', 'Amplitude (µV)'};
-            app.TEPComponentTable.ColumnWidth = {80, 100, 128};
-            app.TEPComponentTable.RowName = {};
-            app.TEPComponentTable.Enable = 'on';
-            app.TEPComponentTable.Position = [340 215 308 104];
+            app.UIAxes2.Position = [340 7 308 179];
 
             % Create ShowComponentsButton
             app.ShowComponentsButton = uibutton(app.VisualizingTab, 'state');
             app.ShowComponentsButton.ValueChangedFcn = createCallbackFcn(app, @ShowComponentsButtonValueChanged, true);
             app.ShowComponentsButton.Text = 'Show Components';
-            app.ShowComponentsButton.Position = [5 104 140 23];
-
-            % Create EditComponentWindowsButton
-            app.EditComponentWindowsButton = uibutton(app.VisualizingTab, 'push');
-            app.EditComponentWindowsButton.ButtonPushedFcn = createCallbackFcn(app, @EditComponentWindowsButtonPushed, true);
-            app.EditComponentWindowsButton.Text = 'Edit Windows...';
-            app.EditComponentWindowsButton.Position = [5 78 140 23];
+            app.ShowComponentsButton.Position = [5 61 140 23];
 
             % Create PLOTTEPButton
             app.PLOTTEPButton = uibutton(app.VisualizingTab, 'push');
             app.PLOTTEPButton.ButtonPushedFcn = createCallbackFcn(app, @PLOTTEPButtonPushed, true);
             app.PLOTTEPButton.Enable = 'off';
-            app.PLOTTEPButton.Position = [5 130 140 30];
+            app.PLOTTEPButton.Position = [5 88 140 30];
             app.PLOTTEPButton.Text = 'PLOT TEP';
 
             % Create SelectDatatoVisulaizeTEPsPanel
@@ -2291,7 +2390,7 @@ classdef nestapp < matlab.apps.AppBase
             app.SelectDatatoVisulaizeTEPsPanel.AutoResizeChildren = 'off';
             app.SelectDatatoVisulaizeTEPsPanel.BorderType = 'none';
             app.SelectDatatoVisulaizeTEPsPanel.Title = 'Select Data to Visualize TEPs';
-            app.SelectDatatoVisulaizeTEPsPanel.Position = [651 230 208 90];
+            app.SelectDatatoVisulaizeTEPsPanel.Position = [651 406 208 90];
 
             % Create FolderEditField_2Label
             app.FolderEditField_2Label = uilabel(app.SelectDatatoVisulaizeTEPsPanel);
@@ -2317,11 +2416,12 @@ classdef nestapp < matlab.apps.AppBase
             app.UseCurrentlyCleanedDataCheckBox.Text = 'Use Currently Cleaned Data';
             app.UseCurrentlyCleanedDataCheckBox.FontWeight = 'bold';
             app.UseCurrentlyCleanedDataCheckBox.Position = [671 325 180 22];
+            app.UseCurrentlyCleanedDataCheckBox.Visible = 'off';
 
             % Create FilesListBoxLabel
             app.FilesListBoxLabel = uilabel(app.VisualizingTab);
             app.FilesListBoxLabel.HorizontalAlignment = 'right';
-            app.FilesListBoxLabel.Position = [740 220 30 22];
+            app.FilesListBoxLabel.Position = [740 382 30 22];
             app.FilesListBoxLabel.Text = 'Files';
 
             % Create FilesListBox
@@ -2329,7 +2429,7 @@ classdef nestapp < matlab.apps.AppBase
             app.FilesListBox.Items = {};
             app.FilesListBox.Multiselect = 'on';
             app.FilesListBox.ValueChangedFcn = createCallbackFcn(app, @FilesListBoxValueChanged, true);
-            app.FilesListBox.Position = [669 71 183 149];
+            app.FilesListBox.Position = [669 71 183 306];
             app.FilesListBox.Value = {};
 
             % Create Image2
@@ -2337,35 +2437,29 @@ classdef nestapp < matlab.apps.AppBase
             app.Image2.Position = [-1 165 350 336];
             app.Image2.ImageSource = fullfile(pathToMLAPP, 'Head.png');
 
-            % Create Slider
-            app.Slider = uislider(app.VisualizingTab);
-            app.Slider.ValueChangingFcn = createCallbackFcn(app, @SliderValueChanging, true);
-            app.Slider.Position = [340 48 200 3];
-            app.Slider.Value = 60;
-
             % Create WindowsizeforTopoplotLabel
             app.WindowsizeforTopoplotLabel = uilabel(app.VisualizingTab);
             app.WindowsizeforTopoplotLabel.HorizontalAlignment = 'center';
-            app.WindowsizeforTopoplotLabel.Position = [543 90 103 26];
-            app.WindowsizeforTopoplotLabel.Text = {'Window size for'; ' time averaged'; ' Topoplot'};
+            app.WindowsizeforTopoplotLabel.Position = [245 10 35 22];
+            app.WindowsizeforTopoplotLabel.Text = 'Win';
 
             % Create WindowsizefortimeaveragedTopoplotEditField
             app.WindowsizefortimeaveragedTopoplotEditField = uieditfield(app.VisualizingTab, 'numeric');
             app.WindowsizefortimeaveragedTopoplotEditField.ValueDisplayFormat = '%.0f';
-            app.WindowsizefortimeaveragedTopoplotEditField.Position = [543 65 70 22];
+            app.WindowsizefortimeaveragedTopoplotEditField.Position = [282 10 52 22];
 
             % Create TOPOPLOTButton
             app.TOPOPLOTButton = uibutton(app.VisualizingTab, 'push');
             app.TOPOPLOTButton.ButtonPushedFcn = createCallbackFcn(app, @TOPOPLOTButtonPushed, true);
             app.TOPOPLOTButton.Enable = 'off';
-            app.TOPOPLOTButton.Position = [543 167 104 44];
+            app.TOPOPLOTButton.Position = [5 7 140 23];
             app.TOPOPLOTButton.Text = 'TOPOPLOT';
 
             % Create ExportTEPFigureButton
             app.ExportTEPFigureButton = uibutton(app.VisualizingTab, 'push');
             app.ExportTEPFigureButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPFigureButtonPushed, true);
             app.ExportTEPFigureButton.Enable = 'off';
-            app.ExportTEPFigureButton.Position = [5 52 140 23];
+            app.ExportTEPFigureButton.Position = [5 34 140 23];
             app.ExportTEPFigureButton.Text = 'Export TEP Figure';
 
             % Create PlottingModeButtonGroup
@@ -2373,7 +2467,7 @@ classdef nestapp < matlab.apps.AppBase
             app.PlottingModeButtonGroup.AutoResizeChildren = 'off';
             app.PlottingModeButtonGroup.BorderType = 'none';
             app.PlottingModeButtonGroup.Title = 'Plotting Mode';
-            app.PlottingModeButtonGroup.Position = [152 88 150 67];
+            app.PlottingModeButtonGroup.Position = [152 36 150 67];
 
             % Create NewFigureButton
             app.NewFigureButton = uiradiobutton(app.PlottingModeButtonGroup);
@@ -3039,70 +3133,126 @@ classdef nestapp < matlab.apps.AppBase
             % Create TEPWindowSliderLabel
             app.TEPWindowSliderLabel = uilabel(app.VisualizingTab);
             app.TEPWindowSliderLabel.HorizontalAlignment = 'right';
-            app.TEPWindowSliderLabel.Position = [669 420 85 16];
+            app.TEPWindowSliderLabel.Position = [380 204 130 16];
             app.TEPWindowSliderLabel.Text = 'TEP Window';
 
             % Create TEPWindowSlider
             app.TEPWindowSlider = uislider(app.VisualizingTab, 'range');
             app.TEPWindowSlider.Limits = [-100 300];
             app.TEPWindowSlider.ValueChangingFcn = createCallbackFcn(app, @TEPWindowSliderValueChanging, true);
-            app.TEPWindowSlider.Position = [669 388 183 3];
+            app.TEPWindowSlider.Position = [380 193 268 3];
             app.TEPWindowSlider.Value = [-50 300];
 
             % Create TopoplottimeSpinnerLabel
             app.TopoplottimeSpinnerLabel = uilabel(app.VisualizingTab);
             app.TopoplottimeSpinnerLabel.HorizontalAlignment = 'right';
-            app.TopoplottimeSpinnerLabel.Position = [543 145 103 20];
-            app.TopoplottimeSpinnerLabel.Text = 'Topoplot time';
+            app.TopoplottimeSpinnerLabel.Position = [152 10 35 22];
+            app.TopoplottimeSpinnerLabel.Text = 'Time';
 
             % Create TopoplottimeSpinner
             app.TopoplottimeSpinner = uispinner(app.VisualizingTab);
             app.TopoplottimeSpinner.RoundFractionalValues = 'on';
             app.TopoplottimeSpinner.ValueDisplayFormat = '%.0f';
             app.TopoplottimeSpinner.ValueChangedFcn = createCallbackFcn(app, @TopoplottimeSpinnerValueChanged, true);
-            app.TopoplottimeSpinner.Position = [543 120 103 22];
+            app.TopoplottimeSpinner.Position = [189 10 52 22];
             app.TopoplottimeSpinner.Value = 60;
 
-            % Create EEGDatasetDropDownLabel
+            % Create AnalysisTab
+            app.AnalysisTab = uitab(app.TabGroup);
+            app.AnalysisTab.AutoResizeChildren = 'off';
+            app.AnalysisTab.Title = 'Analysis';
+
+            % Analysis tab — current selection summary panel (near top)
+            app.AnalysisSelPanel = uipanel(app.AnalysisTab, 'Title', 'Current Selection', ...
+                'AutoResizeChildren', 'off', ...
+                'Position', [10 430 847 55]);
+            app.AnalysisSelectionLabel = uilabel(app.AnalysisSelPanel, ...
+                'Position', [10 5 820 32], ...
+                'Text', 'Select files and ROI electrodes on the Visualizing tab.', ...
+                'WordWrap', 'on', 'FontSize', 11);
+
+            % Analysis tab — LEFT column: component windows
+            app.AnalysisCompWindowsLabel = uilabel(app.AnalysisTab, 'Position', [10 407 300 18], ...
+                'Text', 'COMPONENT WINDOWS', 'FontWeight', 'bold', 'FontSize', 10);
+
+            % TEPComponentTable — taller to show all 6 components without scrolling
+            app.TEPComponentTable = uitable(app.AnalysisTab);
+            app.TEPComponentTable.ColumnName  = {'Component', 'Latency (ms)', 'Amplitude (µV)'};
+            app.TEPComponentTable.ColumnWidth = {'auto', 'auto', 'auto'};
+            app.TEPComponentTable.RowName     = {};
+            app.TEPComponentTable.Enable      = 'on';
+            app.TEPComponentTable.Position    = [10 225 360 178];
+
+            app.EditComponentWindowsButton = uibutton(app.AnalysisTab, 'push');
+            app.EditComponentWindowsButton.ButtonPushedFcn = createCallbackFcn(app, @EditComponentWindowsButtonPushed, true);
+            app.EditComponentWindowsButton.Text     = 'Edit Component Windows...';
+            app.EditComponentWindowsButton.Position = [10 196 220 25];
+
+            % Analysis tab — RIGHT column: workspace export + batch extraction grouped
+            app.AnalysisWorkspaceLabel = uilabel(app.AnalysisTab, 'Position', [450 407 380 18], ...
+                'Text', 'WORKSPACE EXPORT', 'FontWeight', 'bold', 'FontSize', 10);
+
+            app.ExportTEPDataButton = uibutton(app.AnalysisTab, 'push');
+            app.ExportTEPDataButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPDataButtonPushed, true);
+            app.ExportTEPDataButton.Enable   = 'off';
+            app.ExportTEPDataButton.Text     = 'Export TEP to Workspace';
+            app.ExportTEPDataButton.Position = [450 374 220 28];
+
+            app.TEPvarNameEditFieldLabel = uilabel(app.AnalysisTab);
+            app.TEPvarNameEditFieldLabel.HorizontalAlignment = 'right';
+            app.TEPvarNameEditFieldLabel.Enable   = 'off';
+            app.TEPvarNameEditFieldLabel.Position = [450 348 60 22];
+            app.TEPvarNameEditFieldLabel.Text     = 'Variable:';
+
+            app.TEPvarNameEditField = uieditfield(app.AnalysisTab, 'text');
+            app.TEPvarNameEditField.ValueChangedFcn = createCallbackFcn(app, @TEPvarNameEditFieldValueChanged, true);
+            app.TEPvarNameEditField.Enable   = 'off';
+            app.TEPvarNameEditField.Position = [515 348 155 22];
+            app.TEPvarNameEditField.Value    = 'TEPdata';
+
+            app.AnalysisBatchLabel = uilabel(app.AnalysisTab, 'Position', [450 313 380 18], ...
+                'Text', 'BATCH EXTRACTION', 'FontWeight', 'bold', 'FontSize', 10);
+            app.AnalysisBatchDescLabel = uilabel(app.AnalysisTab, 'Position', [450 291 380 18], ...
+                'Text', ['Extract peak latency and amplitude from each file. ' ...
+                    'Results saved as CSV for import into R/SPSS/Excel.'], ...
+                'WordWrap', 'on', 'FontSize', 9, 'FontColor', [0.4 0.4 0.4]);
+
+            app.ExtractPeaksCSVButton = uibutton(app.AnalysisTab, 'push');
+            app.ExtractPeaksCSVButton.ButtonPushedFcn = createCallbackFcn(app, @ExtractPeaksCSVButtonPushed, true);
+            app.ExtractPeaksCSVButton.Text    = 'Extract Peaks  →  CSV';
+            app.ExtractPeaksCSVButton.Position = [450 254 220 32];
+            app.ExtractPeaksCSVButton.Tooltip = ...
+                'Run peak detection across all selected files and save results as a CSV table';
+
+            app.AnalysisStatusLabel = uilabel(app.AnalysisTab);
+            app.AnalysisStatusLabel.Position   = [10 15 847 22];
+            app.AnalysisStatusLabel.Text       = 'Ready.';
+            app.AnalysisStatusLabel.FontSize   = 10;
+            app.AnalysisStatusLabel.FontColor  = [0.4 0.4 0.4];
+
+            % Create EEGDatasetDropDownLabel (kept for PlotEEGdataButtonPushed callback)
             app.EEGDatasetDropDownLabel = uilabel(app.VisualizingTab);
             app.EEGDatasetDropDownLabel.HorizontalAlignment = 'right';
             app.EEGDatasetDropDownLabel.Position = [152 58 75 22];
             app.EEGDatasetDropDownLabel.Text = 'EEG Dataset';
+            app.EEGDatasetDropDownLabel.Visible = 'off';
 
-            % Create EEGDatasetDropDown
+            % Create EEGDatasetDropDown (kept for PlotEEGdataButtonPushed; hidden)
             app.EEGDatasetDropDown = uidropdown(app.VisualizingTab);
             app.EEGDatasetDropDown.Items = {'Select a file'};
             app.EEGDatasetDropDown.ValueChangedFcn = createCallbackFcn(app, @EEGDatasetDropDownValueChanged, true);
             app.EEGDatasetDropDown.Enable = 'off';
             app.EEGDatasetDropDown.Position = [230 58 100 22];
             app.EEGDatasetDropDown.Value = 'Select a file';
+            app.EEGDatasetDropDown.Visible = 'off';
 
-            % Create PlotEEGdataButton
+            % Create PlotEEGdataButton (hidden; triggered via Tools menu)
             app.PlotEEGdataButton = uibutton(app.VisualizingTab, 'push');
             app.PlotEEGdataButton.ButtonPushedFcn = createCallbackFcn(app, @PlotEEGdataButtonPushed, true);
-            app.PlotEEGdataButton.Enable = 'off';
+            app.PlotEEGdataButton.Enable  = 'off';
+            app.PlotEEGdataButton.Visible = 'off';
             app.PlotEEGdataButton.Position = [5 26 108 23];
             app.PlotEEGdataButton.Text = 'Plot EEG data';
-
-            % Create ExportTEPDataButton — right column, below files listbox
-            app.ExportTEPDataButton = uibutton(app.VisualizingTab, 'push');
-            app.ExportTEPDataButton.ButtonPushedFcn = createCallbackFcn(app, @ExportTEPDataButtonPushed, true);
-            app.ExportTEPDataButton.Enable = 'off';
-            app.ExportTEPDataButton.Position = [669 468 183 23];
-            app.ExportTEPDataButton.Text = 'Export TEP Data';
-
-            % Create TEPvarNameEditFieldLabel — right column, below Export TEP Data
-            app.TEPvarNameEditFieldLabel = uilabel(app.VisualizingTab);
-            app.TEPvarNameEditFieldLabel.HorizontalAlignment = 'right';
-            app.TEPvarNameEditFieldLabel.Enable = 'off';
-            app.TEPvarNameEditFieldLabel.Position = [669 438 80 22];
-            app.TEPvarNameEditFieldLabel.Text = 'TEP var Name';
-
-            % Create TEPvarNameEditField
-            app.TEPvarNameEditField = uieditfield(app.VisualizingTab, 'text');
-            app.TEPvarNameEditField.ValueChangedFcn = createCallbackFcn(app, @TEPvarNameEditFieldValueChanged, true);
-            app.TEPvarNameEditField.Enable = 'off';
-            app.TEPvarNameEditField.Position = [754 438 98 22];
 
             % Create ReportsTab
             app.ReportsTab = uitab(app.TabGroup);

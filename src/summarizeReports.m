@@ -91,43 +91,10 @@ if any(hasICA)
     lines{end+1} = '';
 end
 
-%% TEP Quality
-AXES = { ...
-    'retention',         'Retention'; ...
-    'artifactReduction', 'Artifact reduction'; ...
-    'bgRestoration',     'Background'; ...
-    'reproducibility',   'Reproducibility'; ...
-    'aepLikeness',       'AEP-likeness [EXP]' };
-
-hasQ = cellfun(@(r) isstruct(r.teps) && isfield(r.teps,'version'), reports);
-if any(hasQ)
-    qReports = reports(hasQ);
-    lines{end+1} = sprintf('TEP QUALITY  (%d of %d files)', sum(hasQ), N);
-    for ai = 1:size(AXES, 1)
-        axField = AXES{ai, 1};
-        axLabel = AXES{ai, 2};
-        vals = cellfun(@(r) getAxisValue(r.teps, axField), qReports);
-        vals = vals(~isnan(vals));
-        if ~isempty(vals)
-            lines{end+1} = sprintf('  %-24s  %s', axLabel, fmtStat(vals));
-        end
-    end
-    lines{end+1} = '';
-end
-
 summaryText = strjoin(lines, newline);
 end
 
 %% ---- helpers ---------------------------------------------------------------
-
-function v = getAxisValue(teps, axField)
-% Safely extract axis value; returns NaN if axis is absent or skipped.
-if isfield(teps, axField)
-    v = teps.(axField).value;
-else
-    v = NaN;
-end
-end
 
 function s = fmtStat(v)
 % Format a numeric vector as "mean ± SD" or just the value when all equal.

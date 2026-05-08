@@ -28,7 +28,7 @@ end
 lines = {};
 lines{end+1} = '=== Pipeline Report ===';
 lines{end+1} = sprintf('File:      %s', report.inputFile);
-lines{end+1} = sprintf('Processed: %s', datestr(report.processedAt, 'yyyy-mm-dd HH:MM:SS'));
+lines{end+1} = sprintf('Processed: %s', string(report.processedAt, 'yyyy-MM-dd HH:mm:ss'));
 lines{end+1} = '';
 
 % Channels
@@ -68,7 +68,12 @@ lines{end+1} = 'ICA';
 if report.ica.nComponents > 0
     nComp = report.ica.nComponents;
     nRej  = report.ica.nRejected;
-    nKept = report.ica.nKept;
+    % nKept added in M3; fall back for reports saved before that field existed.
+    if isfield(report.ica, 'nKept')
+        nKept = report.ica.nKept;
+    else
+        nKept = nComp - nRej;
+    end
     lines{end+1} = sprintf('  Identified: %d components', nComp);
     if nRej > 0
         hasVar   = ~isnan(report.ica.varRemoved);
@@ -140,21 +145,6 @@ else
     lines{end+1} = '  ICA not run';
 end
 lines{end+1} = '';
-
-% TEP quality vector
-if isstruct(report.teps) && isfield(report.teps, 'version')
-    q = report.teps;
-    lines{end+1} = sprintf('TEP QUALITY  [metric %s]', q.version);
-    if ~isempty(q.baselineWarning)
-        lines{end+1} = sprintf('  WARNING: %s', q.baselineWarning);
-    end
-    lines = appendAxis(lines, q.retention,         'Retention',          '');
-    lines = appendAxis(lines, q.artifactReduction,  'Artifact reduction', '');
-    lines = appendAxis(lines, q.bgRestoration,      'Background',         '');
-    lines = appendAxis(lines, q.reproducibility,    'Reproducibility',    '');
-    lines = appendAxis(lines, q.aepLikeness,        'AEP-likeness',       '[EXPERIMENTAL]');
-    lines{end+1} = '';
-end
 
 % Steps run
 lines{end+1} = 'STEPS RUN';
@@ -278,7 +268,7 @@ end
 if getpref('nestapp', 'overwriteReports', false)
     matFileName = sprintf('%s_report.mat', baseName);
 else
-    timestamp   = datestr(report.processedAt, 'yyyymmdd_HHMMSS');
+    timestamp   = string(report.processedAt, 'yyyyMMdd_HHmmss');
     matFileName = sprintf('%s_report_%s.mat', baseName, timestamp);
 end
 matPath = fullfile(outputDir, matFileName);
@@ -288,27 +278,5 @@ try
     save(matPath, 'pipelineReport');
 catch
     matPath = '';
-end
-end
-
-%% ---- helpers ---------------------------------------------------------------
-
-function lines = appendAxis(lines, ax, label, tag)
-% Format one quality axis as a single report line.
-if isempty(tag)
-    prefix = sprintf('  %-22s', label);
-else
-    prefix = sprintf('  %-22s', [label ' ' tag]);
-end
-if isnan(ax.value)
-    lines{end+1} = sprintf('%s  —  (%s)', prefix, ax.status);
-    if ~isempty(ax.status_detail)
-        lines{end+1} = sprintf('    %s', ax.status_detail);
-    end
-else
-    lines{end+1} = sprintf('%s  %.2f  %s', prefix, ax.value, ax.interpretation);
-    if ~strcmp(ax.status, 'ok') && ~isempty(ax.status_detail)
-        lines{end+1} = sprintf('    [%s] %s', upper(ax.status), ax.status_detail);
-    end
 end
 end
