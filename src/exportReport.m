@@ -29,6 +29,15 @@ lines = {};
 lines{end+1} = '=== Pipeline Report ===';
 lines{end+1} = sprintf('File:      %s', report.inputFile);
 lines{end+1} = sprintf('Processed: %s', string(report.processedAt, 'yyyy-MM-dd HH:mm:ss'));
+
+% Quality reports - single folder path (all PNGs share a parent).
+if isfield(report, 'quality') && isfield(report.quality, 'figures') ...
+        && ~isempty(report.quality.figures)
+    qcFolder = fileparts(report.quality.figures{1});
+    lines{end+1} = sprintf('QC images: %s  (%d files)', ...
+        qcFolder, numel(report.quality.figures));
+end
+
 lines{end+1} = '';
 
 % Channels
@@ -123,16 +132,6 @@ else
     lines{end+1} = '  ICA not run';
 end
 lines{end+1} = '';
-
-% Quality reports - paths to any QC PNGs rendered during this run.
-if isfield(report, 'quality') && isfield(report.quality, 'figures') ...
-        && ~isempty(report.quality.figures)
-    lines{end+1} = 'QUALITY REPORTS';
-    for k = 1:numel(report.quality.figures)
-        lines{end+1} = sprintf('  %s', report.quality.figures{k}); %#ok<AGROW>
-    end
-    lines{end+1} = '';
-end
 
 % Steps run
 lines{end+1} = 'STEPS RUN';
