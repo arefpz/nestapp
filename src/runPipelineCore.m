@@ -119,6 +119,7 @@ dlgCleanup = onCleanup(@() closeDlg(dlg));
 
 reports   = cell(nFiles, 1);
 cancelled = false;
+failed    = struct('fi', {}, 'name', {}, 'step', {}, 'stepName', {}, 'message', {});
 
 if useParallel
     % DataQueue carries per-step progress, log messages, and file-done
@@ -176,9 +177,11 @@ if useParallel
         if strcmp(finalStates{fi}, 'finished')
             [reports{fi}, ~] = fetchOutputs(futures(fi));
         elseif strcmp(finalStates{fi}, 'failed') && ~cancelled
-            % Only log genuine pre-cancel failures; cancel-induced failures are expected.
-            [~, fname] = fileparts(filePaths{fi});
-            nestLog('PAR', 'Future %d (%s) failed: %s', fi, fname, futures(fi).Error.message);
+            % Only record genuine pre-cancel failures; cancel-induced ones are expected.
+            [~, fname, fext] = fileparts(filePaths{fi});
+            rec = parseFailure(fi, [fname fext], futures(fi).Error.message);
+            failed(end+1) = rec; %#ok<AGROW>
+            logFileFailure('PAR', rec);
         end
     end
 
@@ -206,10 +209,10 @@ else
             if strcmp(err.identifier, 'nestapp:cancelled')
                 cancelled = true; break;
             end
-            [~, fname] = fileparts(filePaths{fi});
-            uialert(opts.uiFigure, ...
-                sprintf('File %d (%s) failed:\n%s', fi, fname, err.message), ...
-                'File Error', 'Icon', 'warning');
+            [~, fname, fext] = fileparts(filePaths{fi});
+            rec = parseFailure(fi, [fname fext], err.message);
+            failed(end+1) = rec; %#ok<AGROW>
+            logFileFailure('SERIAL', rec);
             continue
         end
 
@@ -226,6 +229,18 @@ else
 end
 
 closeDlg(dlg);
+
+% Post-run failure recovery: if some (but not all) files failed, give the
+% user a chance to abandon the whole run before reports are generated.
+if ~cancelled && ~isempty(failed)
+    nSuccess = sum(~cellfun(@isempty, reports));
+    if nSuccess > 0
+        decision = promptFailureRecovery(opts.uiFigure, failed, nFiles);
+        if strcmp(decision, 'Abandon Run')
+            cancelled = true;
+        end
+    end
+end
 
 % Collect summaries for all successfully processed files.
 summaries = cell(nFiles, 1);
@@ -377,7 +392,7 @@ ud   = dlg.fig.UserData;
 barW = dlg.overallLabel.Position(3);
 
 if msg.si == 0
-    % Sentinel: file is fully done on the worker.
+    % Sentinel: file is fully done on the worker (success or failure).
     slot = ud.slotMap(msg.fi);
     if slot == 0; return; end   % guard against duplicate sentinels
     ud.nDone              = ud.nDone + 1;
@@ -385,9 +400,15 @@ if msg.si == 0
     ud.slotMap(msg.fi)    = 0;
     dlg.fig.UserData = ud;
     nDone = ud.nDone;
-    dlg.fills(slot).BackgroundColor = [0.16 0.67 0.47];
+    isFailed = isfield(msg, 'failed') && msg.failed;
+    if isFailed
+        dlg.fills(slot).BackgroundColor = [0.85 0.27 0.27];   % red
+        dlg.labels(slot).Text = sprintf('File %d \x2014 FAILED', msg.fi);
+    else
+        dlg.fills(slot).BackgroundColor = [0.16 0.67 0.47];   % green
+        dlg.labels(slot).Text = sprintf('File %d \x2014 Done', msg.fi);
+    end
     dlg.fills(slot).Position(3)     = barW;
-    dlg.labels(slot).Text = sprintf('File %d \x2014 Done', msg.fi);
     dlg.overallFill.Position(3) = round(barW * nDone / nFiles);
     dlg.overallLabel.Text       = sprintf('%d / %d files complete', nDone, nFiles);
 else
@@ -444,6 +465,70 @@ if isequal(chName, 0)
     error('nestapp:cancelled', 'Channel location file selection cancelled.');
 end
 chFile = fullfile(chPath, chName);
+end
+
+function rec = parseFailure(fi, name, msg)
+% Parse a processOneFile error message into a structured failure record.
+% Messages from nestapp:stepFailed look like:
+%   "Step 21 (Remove ICA Components (TESA)) failed: <root cause>"
+% Greedy capture on the step name because it can itself contain parens.
+rec = struct('fi', fi, 'name', name, 'step', '', 'stepName', '', 'message', msg);
+tok = regexp(msg, '^Step (\d+) \((.+)\) failed:\s*(.*)$', 'tokens', 'once', 'dotall');
+if ~isempty(tok)
+    rec.step     = tok{1};
+    rec.stepName = tok{2};
+    rec.message  = tok{3};
+end
+end
+
+function logFileFailure(label, rec)
+% Loud, basename-tagged failure line on stderr so it shows red in the
+% MATLAB command window and is easy to spot among the per-step logs.
+if isempty(rec.step)
+    fprintf(2, '[%s] *** FILE %d %s FAILED: %s\n', ...
+        label, rec.fi, rec.name, oneline(rec.message));
+else
+    fprintf(2, '[%s] *** FILE %d %s FAILED at step %s (%s)\n      %s\n', ...
+        label, rec.fi, rec.name, rec.step, rec.stepName, oneline(rec.message));
+end
+end
+
+function s = oneline(msg)
+s = regexprep(msg, '\s*[\r\n]+\s*', ' | ');
+end
+
+function decision = promptFailureRecovery(uiFig, failed, nFiles)
+% Post-run dialog: list failed files and let the user decide whether to
+% accept the partial results or abandon the whole run.
+nFailed = numel(failed);
+nOk     = nFiles - nFailed;
+MAX_SHOW = 10;
+nShow   = min(nFailed, MAX_SHOW);
+lines   = cell(1, nShow);
+for k = 1:nShow
+    f = failed(k);
+    if isempty(f.step)
+        lines{k} = sprintf('  %s -- %s', f.name, oneline(f.message));
+    else
+        lines{k} = sprintf('  %s -- step %s (%s)', f.name, f.step, f.stepName);
+    end
+end
+listText = strjoin(lines, newline);
+if nFailed > MAX_SHOW
+    listText = [listText, sprintf('\n  ... and %d more', nFailed - MAX_SHOW)];
+end
+msg = sprintf(['%d of %d files failed:\n\n%s\n\n' ...
+    'Continue with %d successful files, or abandon the whole run?'], ...
+    nFailed, nFiles, listText, nOk);
+if isempty(uiFig) || ~isvalid(uiFig)
+    fprintf(2, '\n%s\n[No UI figure - continuing with successful files]\n\n', msg);
+    decision = 'Continue';
+    return
+end
+decision = uiconfirm(uiFig, msg, 'Some Files Failed', ...
+    'Options', {'Continue', 'Abandon Run'}, ...
+    'DefaultOption', 1, 'CancelOption', 2, ...
+    'Icon', 'warning');
 end
 
 function steps = findInteractiveSteps(spec, opts)

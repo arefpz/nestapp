@@ -43,7 +43,7 @@ global EEG ALLEEG CURRENTSET ALLCOM %#ok<GVMIS>
 pathName = [pathDir, filesep];
 fileName = [fileBase, fileExt];
 
-wLabel   = sprintf('FILE-%d', opts.fileIndex);
+wLabel   = sprintf('FILE-%d %s', opts.fileIndex, fileBase);
 fileTic  = tic;
 
 % Limit each worker to its fair share of BLAS threads to prevent
@@ -829,8 +829,24 @@ for si = 1:nSteps
 
         if ~shouldContinue
             writeSessionLog(pathName, fileName, stepLog);
-            error('nestapp:cancelled', 'Run aborted at step %d (%s): %s', ...
-                si, stepName, err.message);
+            if ~isempty(opts.onStepError)
+                % Serial mode: user chose Abort on the step prompt - cancel whole run.
+                error('nestapp:cancelled', 'Run aborted at step %d (%s): %s', ...
+                    si, stepName, err.message);
+            else
+                % Parallel mode (no prompt): mark this file failed with
+                % structured step info so runPipelineCore can summarize.
+                % Release the dialog slot first - the success sentinel at the
+                % bottom of this function is unreachable from here, and without
+                % a release later files' progress messages get dropped.
+                if ~isempty(opts.progressQueue)
+                    send(opts.progressQueue, struct( ...
+                        'fi', opts.fileIndex, 'si', 0, ...
+                        'nSteps', nSteps, 'stepName', 'Failed', 'failed', true));
+                end
+                error('nestapp:stepFailed', 'Step %d (%s) failed: %s', ...
+                    si, stepName, err.message);
+            end
         end
     end
 end % step loop
