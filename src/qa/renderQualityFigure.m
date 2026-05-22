@@ -84,7 +84,7 @@ end
 try
     [SM, summary] = computeAttributeMatrix(EEG, attrOpts);
 catch err
-    text(0.5, 0.5, sprintf('Attribute matrix unavailable\n%s', err.message), ...
+    text(0.5, 0.5, sprintf('Channel x Trial Quality Map unavailable\n%s', err.message), ...
         'HorizontalAlignment', 'center', 'Units', 'normalized');
     axis off
     return
@@ -92,10 +92,11 @@ end
 imagesc(SM);
 colormap(gca, 'parula');
 cb = colorbar;
-cb.Label.String = 'log attribute';
+cb.Label.String = 'Noise score (log; brighter = noisier)';
 xlabel('Trial');
 ylabel('Channel');
-title(sprintf('Attribute matrix (%s)', opts.attribute), 'Interpreter', 'none');
+title('Channel x Trial Quality Map');
+subtitle(attributeDisplayName(opts.attribute));
 
 % Mark flagged channels with text on the y-axis.
 nbchan = summary.nbchan;
@@ -225,6 +226,21 @@ end
 end
 
 % -- misc ------------------------------------------------------------------
+
+function name = attributeDisplayName(mode)
+% Plain-English label for the attribute mode, shown as the heatmap
+% subtitle so users do not have to recognize the internal token.
+switch mode
+    case 'minmax'
+        name = 'Peak-to-peak amplitude (full epoch)';
+    case 'minmax_no_tms'
+        name = 'Peak-to-peak amplitude (TMS pulse window excluded)';
+    case 'highfreq'
+        name = 'High-frequency activity (muscle / movement)';
+    otherwise
+        name = mode;   % unknown mode - fall back to the raw token
+end
+end
 
 function c = classColor(cls)
 switch cls
