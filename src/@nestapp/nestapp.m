@@ -1344,8 +1344,11 @@ classdef nestapp < matlab.apps.AppBase
         % LOADTEMPLATEMENUSELECTED  Show a template picker and load the chosen template.
         %   Reads template .mat files from src/templates/ - the same format
         %   as user-saved pipelines.  No override logic runs at runtime.
-            srcDir      = fileparts(which('nestapp'));
-            templateDir = fullfile(srcDir, 'templates');
+            % which('nestapp') points at the class folder
+            % (src/@nestapp/nestapp.m); templates live one directory up
+            % under src/templates/.
+            classDir    = fileparts(which('nestapp'));
+            templateDir = fullfile(fileparts(classDir), 'templates');
             files = dir(fullfile(templateDir, '*.mat'));
             if isempty(files)
                 uialert(app.UIFigure, ...
