@@ -124,6 +124,16 @@ else
 end
 lines{end+1} = '';
 
+% Quality reports - paths to any QC PNGs rendered during this run.
+if isfield(report, 'quality') && isfield(report.quality, 'figures') ...
+        && ~isempty(report.quality.figures)
+    lines{end+1} = 'QUALITY REPORTS';
+    for k = 1:numel(report.quality.figures)
+        lines{end+1} = sprintf('  %s', report.quality.figures{k}); %#ok<AGROW>
+    end
+    lines{end+1} = '';
+end
+
 % Steps run
 lines{end+1} = 'STEPS RUN';
 for k = 1:numel(report.steps)

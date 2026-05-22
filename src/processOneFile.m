@@ -33,6 +33,8 @@ if ~isfield(opts, 'fileIndex'),      opts.fileIndex      = 0; end
 if ~isfield(opts, 'uiFigure'),       opts.uiFigure       = []; end
 if ~isfield(opts, 'logQueue'),       opts.logQueue       = []; end
 if ~isfield(opts, 'nWorkers'),      opts.nWorkers       = 1;  end
+if ~isfield(opts, 'qcBatchDir'),        opts.qcBatchDir        = ''; end
+if ~isfield(opts, 'qcCheckpointNames'), opts.qcCheckpointNames = {}; end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -804,6 +806,33 @@ for si = 1:nSteps
             'epochBefore', nEpochBefore, ...
             'epochAfter',  nEpochAfter, ...
             'error',       ''); %#ok<AGROW>
+
+        % Auto Quality Report: after any successful checkpoint step, render
+        % a per-(file, step) QC PNG. Wrapped in try/catch so a rendering
+        % bug never aborts the actual data run.
+        if ~isempty(opts.qcBatchDir) && any(strcmp(stepName, opts.qcCheckpointNames))
+            pngName = sprintf('%02d_%s.png', si, sanitizeForPath(stepName));
+            outPath = fullfile(opts.qcBatchDir, fileBase, pngName);
+            try
+                qcOpts = struct( ...
+                    'title',     fileBase, ...
+                    'stepLabel', sprintf('Step %d / %s', si, stepName), ...
+                    'attribute', 'minmax_no_tms', ...
+                    'size',      [1600 1200]);
+                qcOpts.panels = struct('attribMatrix',true,'icaGrid',true, ...
+                                       'butterfly',true,'psd',true);
+                renderQualityFigure(EEG, outPath, qcOpts);
+                if ~isfield(fileReport, 'quality') ...
+                        || ~isfield(fileReport.quality, 'figures')
+                    fileReport.quality = struct('figures', {{}});
+                end
+                fileReport.quality.figures{end+1} = outPath;
+                sendWorkerLog(opts.logQueue, wLabel, 'QC %s', outPath);
+            catch qcErr
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'QC render FAILED (continuing): %s', qcErr.message);
+            end
+        end
 
     catch err
         elapsed = toc(t0);

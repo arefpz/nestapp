@@ -42,6 +42,19 @@ if getpref('nestapp', 'suppressEEGLABDialogs', true)
     warnIfOverwriteFiles(spec, filePaths, opts);
 end
 
+% Auto Quality Report: read pref once on the client, allocate one
+% timestamped batch folder shared by all workers. Off by default.
+qcBatchDir        = '';
+qcCheckpointNames = {};
+if getpref('nestapp', 'autoQualityReport', false)
+    qcCheckpointNames = qualityCheckpoints();
+    commonRoot        = commonResultsRoot(filePaths);
+    ts                = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
+    qcBatchDir        = fullfile(commonRoot, ['qc_', ts]);
+    if ~exist(qcBatchDir, 'dir'), mkdir(qcBatchDir); end
+    nestLog('QC', 'Auto Quality Report enabled. Batch folder: %s', qcBatchDir);
+end
+
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
 useParallel = false;
 if opts.parallel
@@ -137,6 +150,8 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
+    wOpts.qcBatchDir        = qcBatchDir;
+    wOpts.qcCheckpointNames = qcCheckpointNames;
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -202,6 +217,8 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
+        fOpts.qcBatchDir        = qcBatchDir;
+        fOpts.qcCheckpointNames = qcCheckpointNames;
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -229,6 +246,10 @@ else
 end
 
 closeDlg(dlg);
+
+if ~isempty(qcBatchDir)
+    nestLog('QC', 'Quality reports saved to: %s', qcBatchDir);
+end
 
 % Post-run failure recovery: if some (but not all) files failed, give the
 % user a chance to abandon the whole run before reports are generated.
@@ -450,6 +471,17 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Shared helpers
+
+function root = commonResultsRoot(filePaths)
+% Common parent folder of all selected files. Falls back to the first
+% file's parent if there is no single common parent.
+parents = cellfun(@(p) fileparts(p), filePaths, 'UniformOutput', false);
+if numel(unique(parents)) == 1
+    root = parents{1};
+else
+    root = fileparts(filePaths{1});
+end
+end
 
 function parallelSkipMsg(statusBar, msg)
 fprintf('[nestapp] %s\n', msg);

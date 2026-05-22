@@ -6,5 +6,5 @@
 %   nestapp.m is the authoritative source — do not open nestapp_designer.mlapp.
 
 root = fileparts(mfilename('fullpath'));
-addpath(fullfile(root, 'src'));
+addpath(genpath(fullfile(root, 'src')));
 nestapp;

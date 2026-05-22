@@ -17,6 +17,8 @@
 !src/templates/*.mat
 !src/@nestapp/
 !src/@nestapp/*.m
+!src/qa/
+!src/qa/*.m
 
 # Tests (develop branch only)
 !tests/

@@ -54,4 +54,8 @@ ICA_CATEGORIES = {'Brain','Muscle','Eye','Heart','Line Noise','Ch Noise','Other'
 report.ica.categories.names    = ICA_CATEGORIES;
 report.ica.categories.nRemoved = zeros(1, 7);
 report.ica.categories.varShare = zeros(1, 7);
+
+% Quality screening: populated when autoQualityReport is on. The figures
+% cell accumulates paths to PNGs rendered after each checkpoint step.
+report.quality.figures = {};
 end
