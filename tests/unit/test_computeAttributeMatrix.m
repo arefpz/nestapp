@@ -87,5 +87,55 @@ classdef test_computeAttributeMatrix < matlab.unittest.TestCase
             tc.verifySize(SM, [8 1]);
             tc.verifyEqual(summary.nTrials, 1);
         end
+
+        function tmsWindow_is_respected(tc)
+            % Synthetic EEG with a large transient at t = 30..45 ms.
+            % With tmsWindow=[0 25] the transient is INCLUDED in scoring
+            % (score is high). With tmsWindow=[0 50] the transient is
+            % EXCLUDED (score is much lower). Proves the parameter is
+            % being applied to the scoring window.
+            srate = 1000;
+            nPnts = 500;
+            EEG.data   = 0.1 * randn(4, nPnts, 10);
+            EEG.times  = (0:nPnts-1) / srate * 1000 - 100;  % -100..+399 ms
+            EEG.srate  = srate;
+            EEG.nbchan = 4;
+            EEG.trials = 10;
+            EEG.pnts   = nPnts;
+
+            % Inject a 30..45 ms transient on every trial, channel 1.
+            mask = EEG.times >= 30 & EEG.times <= 45;
+            EEG.data(1, mask, :) = 50;   % 50 uV bump
+
+            sumNarrow = computeAttributeMatrix(EEG, struct('tmsWindow', [0 25]));
+            sumWide   = computeAttributeMatrix(EEG, struct('tmsWindow', [0 50]));
+
+            % Channel 1's median should be higher when the bump is in-window.
+            tc.verifyGreaterThan(median(sumNarrow(1,:), 'omitnan'), ...
+                                 median(sumWide(1,:),   'omitnan'), ...
+                'Narrow tmsWindow should leave the 30-45 ms transient in the scoring window');
+        end
+
+        function default_tmsWindow_is_25(tc)
+            % Same setup as above but verifies the default behaves like
+            % the narrow case (i.e., default is now [0 25], not [0 50]).
+            srate = 1000;
+            nPnts = 500;
+            EEG.data   = 0.1 * randn(4, nPnts, 10);
+            EEG.times  = (0:nPnts-1) / srate * 1000 - 100;
+            EEG.srate  = srate;
+            EEG.nbchan = 4;
+            EEG.trials = 10;
+            EEG.pnts   = nPnts;
+            mask = EEG.times >= 30 & EEG.times <= 45;
+            EEG.data(1, mask, :) = 50;
+
+            sumDefault = computeAttributeMatrix(EEG);                       % default
+            sumWide    = computeAttributeMatrix(EEG, struct('tmsWindow', [0 50]));
+
+            tc.verifyGreaterThan(median(sumDefault(1,:), 'omitnan'), ...
+                                 median(sumWide(1,:),    'omitnan'), ...
+                'Default tmsWindow should be the narrower [0 25] ms');
+        end
     end
 end

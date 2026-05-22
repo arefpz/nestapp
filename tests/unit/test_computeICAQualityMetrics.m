@@ -47,13 +47,20 @@ classdef test_computeICAQualityMetrics < matlab.unittest.TestCase
         end
 
         function spike_topography_classified_as_electrode(tc)
+            % Seed rng so the synthetic noise doesn't accidentally produce
+            % a high-frequency activation that triggers EMG before
+            % Electrode (precedence: EMG > Electrode in the classifier).
+            rng(42);
             EEG = test_computeICAQualityMetrics.makeEEGWithICA(32, 4, 2000, 1000);
             % Make component 2 a "fried electrode": one channel huge,
             % others tiny -> high topo kurtosis.
             EEG.icawinv(:, 2) = 0.01 * randn(32, 1);
             EEG.icawinv(10, 2) = 50;
-            % Keep the activation tame so EMG doesn't dominate.
-            EEG.data(:, :) = randn(32, 2000) * 0.5;
+            % Keep the activation tame and low-frequency so EMG ratio
+            % stays below 1.1.
+            t = (0:1999) / 1000;
+            EEG.data = repmat(0.5 * sin(2*pi*2*t), 32, 1) ...
+                     + 0.05 * randn(32, 2000);
             metrics = computeICAQualityMetrics(EEG);
             tc.verifyGreaterThan(metrics(2).kurtosisTopo, 15);
             tc.verifyEqual(metrics(2).classification, 'Electrode');

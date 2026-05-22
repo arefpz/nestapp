@@ -42,17 +42,36 @@ if getpref('nestapp', 'suppressEEGLABDialogs', true)
     warnIfOverwriteFiles(spec, filePaths, opts);
 end
 
-% Auto Quality Report: read pref once on the client, allocate one
+% Auto Quality Report: read prefs once on the client, allocate one
 % timestamped batch folder shared by all workers. Off by default.
 qcBatchDir        = '';
 qcCheckpointNames = {};
+qcAttribute       = 'minmax_no_tms';
+qcTmsWindow       = [0 25];
 if getpref('nestapp', 'autoQualityReport', false)
     qcCheckpointNames = qualityCheckpoints();
-    commonRoot        = commonResultsRoot(filePaths);
-    ts                = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-    qcBatchDir        = fullfile(commonRoot, ['qc_', ts]);
+
+    qcAttribute = getpref('nestapp', 'qualityAttribute', 'minmax_no_tms');
+    if ~any(strcmp(qcAttribute, {'minmax', 'minmax_no_tms', 'highfreq'}))
+        nestLog('QC', ['Invalid qualityAttribute pref "%s"; ' ...
+            'falling back to minmax_no_tms'], qcAttribute);
+        qcAttribute = 'minmax_no_tms';
+    end
+
+    qcTmsWindow = getpref('nestapp', 'qualityTmsWindow', [0 25]);
+    if ~(isnumeric(qcTmsWindow) && numel(qcTmsWindow) == 2 ...
+            && qcTmsWindow(2) > qcTmsWindow(1))
+        nestLog('QC', 'Invalid qualityTmsWindow pref; falling back to [0 25] ms');
+        qcTmsWindow = [0 25];
+    end
+
+    commonRoot = commonResultsRoot(filePaths);
+    ts         = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
+    qcBatchDir = fullfile(commonRoot, ['qc_', ts]);
     if ~exist(qcBatchDir, 'dir'), mkdir(qcBatchDir); end
-    nestLog('QC', 'Auto Quality Report enabled. Batch folder: %s', qcBatchDir);
+    nestLog('QC', ['Auto Quality Report enabled (attribute=%s, ' ...
+        'tmsWindow=[%g %g] ms). Batch folder: %s'], ...
+        qcAttribute, qcTmsWindow(1), qcTmsWindow(2), qcBatchDir);
 end
 
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
@@ -152,6 +171,8 @@ if useParallel
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
     wOpts.qcBatchDir        = qcBatchDir;
     wOpts.qcCheckpointNames = qcCheckpointNames;
+    wOpts.qcAttribute       = qcAttribute;
+    wOpts.qcTmsWindow       = qcTmsWindow;
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -219,6 +240,8 @@ else
         fOpts.fileIndex      = fi;
         fOpts.qcBatchDir        = qcBatchDir;
         fOpts.qcCheckpointNames = qcCheckpointNames;
+        fOpts.qcAttribute       = qcAttribute;
+        fOpts.qcTmsWindow       = qcTmsWindow;
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);

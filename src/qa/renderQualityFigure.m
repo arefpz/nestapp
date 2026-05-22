@@ -12,6 +12,9 @@ function figPath = renderQualityFigure(EEG, outPath, opts)
 %   opts.title                 string for the suptitle (e.g. file basename)
 %   opts.stepLabel             e.g. "Step 14 / Remove ICA Components (TESA)"
 %   opts.attribute             forwarded to computeAttributeMatrix
+%   opts.tmsWindow             [tStart tEnd] in ms, forwarded to
+%                              computeAttributeMatrix (default unset -
+%                              uses computeAttributeMatrix's default)
 %
 %   Failure isolation: the caller (processOneFile) wraps this in try/catch
 %   so a rendering bug never aborts the pipeline. Internally the function
@@ -74,8 +77,12 @@ end
 % -- panel helpers ---------------------------------------------------------
 
 function drawAttributeMatrix(EEG, opts)
+attrOpts = struct('attribute', opts.attribute);
+if isfield(opts, 'tmsWindow') && ~isempty(opts.tmsWindow)
+    attrOpts.tmsWindow = opts.tmsWindow;
+end
 try
-    [SM, summary] = computeAttributeMatrix(EEG, struct('attribute', opts.attribute));
+    [SM, summary] = computeAttributeMatrix(EEG, attrOpts);
 catch err
     text(0.5, 0.5, sprintf('Attribute matrix unavailable\n%s', err.message), ...
         'HorizontalAlignment', 'center', 'Units', 'normalized');

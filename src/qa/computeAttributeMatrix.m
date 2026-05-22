@@ -7,7 +7,7 @@ function [SM, summary] = computeAttributeMatrix(EEG, opts)
 %   opts.attribute  : 'minmax' | 'minmax_no_tms' | 'highfreq'
 %                       (default 'minmax_no_tms')
 %   opts.tmsWindow  : [tStart tEnd] in ms, excluded in the no-TMS mode
-%                       (default [0 50])
+%                       (default [0 25])
 %   opts.freqBand   : [fmin fmax] Hz bandpass before scoring
 %                       (default [1 80])
 %
@@ -30,7 +30,7 @@ function [SM, summary] = computeAttributeMatrix(EEG, opts)
 
 if nargin < 2 || ~isstruct(opts), opts = struct(); end
 if ~isfield(opts, 'attribute'),  opts.attribute = 'minmax_no_tms'; end
-if ~isfield(opts, 'tmsWindow'),  opts.tmsWindow = [0 50];          end
+if ~isfield(opts, 'tmsWindow'),  opts.tmsWindow = [0 25];          end
 if ~isfield(opts, 'freqBand'),   opts.freqBand  = [1 80];          end
 
 validAttrs = {'minmax', 'minmax_no_tms', 'highfreq'};
