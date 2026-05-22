@@ -132,15 +132,18 @@ nComp = numel(metrics);
 nCol  = ceil(sqrt(nComp));
 nRow  = ceil(nComp / nCol);
 
+nKept = sum([metrics.kept]);
+nRej  = nComp - nKept;
+src   = metrics(1).source;
+
 if ~hasChanlocs
-    txt = sprintf('ICA topos unavailable (no chanlocs / no topoplot)\n%d components\nEMG: %d  Electrode: %d  EOG: %d', ...
-        nComp, ...
-        sum(strcmp({metrics.classification}, 'EMG')), ...
-        sum(strcmp({metrics.classification}, 'Electrode')), ...
-        sum(strcmp({metrics.classification}, 'EOG')));
+    summary = classificationCounts(metrics);
+    txt = sprintf(['ICA topos unavailable (no chanlocs / no topoplot)\n' ...
+        '%d components (%d kept / %d rejected) - classified by %s\n%s'], ...
+        nComp, nKept, nRej, src, summary);
     text(0.5, 0.5, txt, 'HorizontalAlignment', 'center', 'Units', 'normalized');
     axis off
-    title('ICA components');
+    title(sprintf('ICA components (%s)', src));
     return
 end
 
@@ -149,7 +152,7 @@ parentAx = gca;
 parentPos = parentAx.Position;
 delete(parentAx);
 ax0 = axes('Position', parentPos);
-title(ax0, 'ICA components (border: red=EMG, orange=Elec, yellow=EOG)');
+title(ax0, sprintf('ICA components (%s)  -  border colored by class; gray = kept', src));
 axis(ax0, 'off');
 
 innerWidth  = parentPos(3) / nCol;
@@ -167,7 +170,7 @@ for k = 1:nComp
         text(0.5, 0.5, '?', 'HorizontalAlignment','center','Units','normalized','Parent',ax);
         axis(ax,'off');
     end
-    borderColor = classColor(metrics(k).classification);
+    borderColor = classColor(metrics(k).classification, metrics(k).kept);
     set(ax, 'XColor', borderColor, 'YColor', borderColor, ...
             'LineWidth', 2, 'Box', 'on', 'XTick', [], 'YTick', []);
     title(ax, sprintf('%d %s', k, metrics(k).classification), 'FontSize', 8);
@@ -242,13 +245,48 @@ switch mode
 end
 end
 
-function c = classColor(cls)
-switch cls
-    case 'EMG',       c = [0.85 0.20 0.20];
-    case 'Electrode', c = [0.95 0.50 0.10];
-    case 'EOG',       c = [0.90 0.80 0.10];
-    otherwise,        c = [0.70 0.70 0.70];
+function c = classColor(cls, kept)
+% Border color per component classification. Source-agnostic - merges
+% TESA, ICLabel, and Heuristic category names into a small palette so
+% the visualization reads the same regardless of which classifier ran.
+%   kept = true  -> always gray, regardless of label (Brain / Keep / OK).
+%   kept = false -> color by artifact family:
+%                     muscle/EMG          -> red
+%                     electrode noise     -> orange
+%                     eye / blink / EOG   -> yellow
+%                     other / unknown     -> magenta
+GRAY    = [0.70 0.70 0.70];
+RED     = [0.85 0.20 0.20];
+ORANGE  = [0.95 0.50 0.10];
+YELLOW  = [0.90 0.80 0.10];
+MAGENTA = [0.80 0.30 0.80];
+
+if nargin >= 2 && kept
+    c = GRAY;
+    return
 end
+
+switch cls
+    case {'EMG', 'Muscle', 'TMS Muscle'},                       c = RED;
+    case {'Electrode', 'Elec Noise', 'Channel Noise',  ...
+          'Line Noise'},                                        c = ORANGE;
+    case {'EOG', 'Blink', 'Eye', 'Eye Move'},                   c = YELLOW;
+    case {'Heart', 'Sensory', 'Reject', 'Other'},               c = MAGENTA;
+    case {'OK', 'Keep', 'Brain'},                               c = GRAY;
+    otherwise,                                                  c = MAGENTA;
+end
+end
+
+function s = classificationCounts(metrics)
+% Group classifications by label and produce "Label: N" lines.
+labels = {metrics.classification};
+[u, ~, ic] = unique(labels);
+counts = accumarray(ic, 1);
+parts  = cell(1, numel(u));
+for k = 1:numel(u)
+    parts{k} = sprintf('%s: %d', u{k}, counts(k));
+end
+s = strjoin(parts, ', ');
 end
 
 function s = plural(n)
@@ -264,13 +302,13 @@ nTrials = getOr(EEG, 'trials', max(size(EEG.data,3),1));
 srate   = getOr(EEG, 'srate', NaN);
 parts{end+1} = sprintf('nbchan=%d trials=%d srate=%g Hz', nbchan, nTrials, srate);
 
-% Append ICA classification counts when available.
+% Append ICA kept/rejected counts when available - source aware.
 metrics = computeICAQualityMetrics(EEG);
 if ~isempty(metrics)
-    nEMG  = sum(strcmp({metrics.classification}, 'EMG'));
-    nElec = sum(strcmp({metrics.classification}, 'Electrode'));
-    nEOG  = sum(strcmp({metrics.classification}, 'EOG'));
-    parts{end+1} = sprintf('ICA: %d EMG / %d Elec / %d EOG', nEMG, nElec, nEOG);
+    nKept = sum([metrics.kept]);
+    nRej  = numel(metrics) - nKept;
+    parts{end+1} = sprintf('ICA (%s): %d kept / %d rejected', ...
+        metrics(1).source, nKept, nRej);
 end
 s = strjoin(parts, '  |  ');
 end
