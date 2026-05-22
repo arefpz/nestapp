@@ -16,5 +16,6 @@ names = { ...
     'Remove ICA Components (TESA)', ...     % each round (TESA recipes call twice)
     'Remove Flagged ICA Components', ...
     'Interpolate Channels', ...             % near-final
-    'Re-Reference'};                         % final-ish
+    'Re-Reference', ...                      % final-ish
+    'Quality Gate'};                         % capture EEG state at every gate
 end

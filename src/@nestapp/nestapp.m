@@ -629,7 +629,16 @@ classdef nestapp < matlab.apps.AppBase
                     catch
                         dateLabel = '?';
                     end
-                    labels{i} = sprintf('%s (%s)', baseName, dateLabel);
+                    prefix = '';
+                    if isfield(e.report, 'quality') ...
+                            && isfield(e.report.quality, 'worstVerdict')
+                        switch e.report.quality.worstVerdict
+                            case 'Fail',     prefix = '[FAIL] ';
+                            case 'Marginal', prefix = '[MARG] ';
+                            case 'Pass',     prefix = '[PASS] ';
+                        end
+                    end
+                    labels{i} = sprintf('%s%s (%s)', prefix, baseName, dateLabel);
                 end
             end
 
@@ -754,7 +763,9 @@ classdef nestapp < matlab.apps.AppBase
             end
 
             % Header
-            fprintf(fid, 'File,Processed,Channels (orig),Channels (final),Trials (orig),Trials (final),ICA removed\n');
+            fprintf(fid, ['File,Processed,Channels (orig),Channels (final),' ...
+                'Trials (orig),Trials (final),ICA removed,' ...
+                'Quality_Verdict,Quality_Reasons\n']);
 
             for i = 1:numel(allEntries)
                 e = allEntries{i};
@@ -767,11 +778,31 @@ classdef nestapp < matlab.apps.AppBase
                     dStr = '?';
                 end
 
-                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d\n', ...
+                verdict = 'NotChecked';
+                reasons = '';
+                if isfield(r, 'quality')
+                    if isfield(r.quality, 'worstVerdict') ...
+                            && ~isempty(r.quality.worstVerdict)
+                        verdict = r.quality.worstVerdict;
+                    end
+                    if isfield(r.quality, 'gates') && ~isempty(r.quality.gates)
+                        allReasons = {};
+                        for gi = 1:numel(r.quality.gates)
+                            g = r.quality.gates{gi};
+                            if isfield(g, 'reasons') && ~isempty(g.reasons)
+                                allReasons = [allReasons, g.reasons]; %#ok<AGROW>
+                            end
+                        end
+                        reasons = strjoin(allReasons, '; ');
+                        reasons = strrep(reasons, ',', ';'); % keep CSV-safe
+                    end
+                end
+
+                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d,%s,%s\n', ...
                     baseName, dStr, ...
                     r.channels.original, r.channels.final, ...
                     r.trials.original, r.trials.final, ...
-                    r.ica.nRejected);
+                    r.ica.nRejected, verdict, reasons);
             end
             fclose(fid);
             app.ReportsStatusLabel.Text = sprintf('CSV saved: %s', fname);

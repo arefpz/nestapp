@@ -48,6 +48,7 @@ qcBatchDir        = '';
 qcCheckpointNames = {};
 qcAttribute       = 'minmax_no_tms';
 qcTmsWindow       = [0 25];
+qcTmsAutoDetect   = true;
 if getpref('nestapp', 'autoQualityReport', false)
     qcCheckpointNames = qualityCheckpoints();
 
@@ -65,6 +66,8 @@ if getpref('nestapp', 'autoQualityReport', false)
         qcTmsWindow = [0 25];
     end
 
+    qcTmsAutoDetect = logical(getpref('nestapp', 'qualityTmsAutoDetect', true));
+
     commonRoot = commonResultsRoot(filePaths);
     ts         = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
     qcBatchDir = fullfile(commonRoot, ['qc_', ts]);
@@ -72,6 +75,16 @@ if getpref('nestapp', 'autoQualityReport', false)
     nestLog('QC', ['Auto Quality Report enabled (attribute=%s, ' ...
         'tmsWindow=[%g %g] ms). Batch folder: %s'], ...
         qcAttribute, qcTmsWindow(1), qcTmsWindow(2), qcBatchDir);
+end
+
+% Quality Gate skip-on-fail preference. Off by default; when on, any
+% Quality Gate step that emits 'Fail' short-circuits the rest of that
+% file's pipeline (other files keep going). Incompatible with batch
+% mode (batch verdicts are not known until after the run completes);
+% we warn at the post-run step if both are seen together.
+skipOnQualityFail = getpref('nestapp', 'skipOnQualityFail', false);
+if skipOnQualityFail
+    nestLog('QC', 'skipOnQualityFail = true (Quality Gate Fail short-circuits the file)');
 end
 
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
@@ -151,7 +164,8 @@ dlgCleanup = onCleanup(@() closeDlg(dlg));
 
 reports   = cell(nFiles, 1);
 cancelled = false;
-failed    = struct('fi', {}, 'name', {}, 'step', {}, 'stepName', {}, 'message', {});
+failed    = struct('fi', {}, 'name', {}, 'step', {}, 'stepName', {}, ...
+                   'message', {}, 'kind', {});
 
 if useParallel
     % DataQueue carries per-step progress, log messages, and file-done
@@ -169,7 +183,7 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
-    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow);
+    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -235,7 +249,7 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
-        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow);
+        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect);
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -266,6 +280,30 @@ closeDlg(dlg);
 
 if ~isempty(qcBatchDir)
     nestLog('QC', 'Quality reports saved to: %s', qcBatchDir);
+end
+
+% Batch-mode Quality Gate verdicts: resolved across all completed
+% reports using median + N * MAD cutoffs. Pending verdicts inside
+% successful reports become Pass / Marginal / Fail; reports with no
+% batch-mode gates are unaffected.
+if ~cancelled
+    successReports = reports(~cellfun(@isempty, reports));
+    if hasPendingBatchGates(successReports)
+        if skipOnQualityFail
+            nestLog('QC', ['Batch-mode Quality Gates ignore skipOnQualityFail ' ...
+                '(verdicts are not known until after the run completes)']);
+        end
+        successReports = finalizeBatchVerdicts(successReports);
+        % Write resolved reports back into the per-file slots so the
+        % downstream summary / CSV / save sees the final verdicts.
+        slot = 0;
+        for fi = 1:nFiles
+            if ~isempty(reports{fi})
+                slot = slot + 1;
+                reports{fi} = successReports{slot};
+            end
+        end
+    end
 end
 
 % Post-run failure recovery: if some (but not all) files failed, give the
@@ -489,12 +527,29 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Shared helpers
 
-function opts = applyQCOpts(opts, batchDir, checkpoints, attribute, tmsWindow)
-% Assign the four QC opts onto a worker/serial options struct.
+function tf = hasPendingBatchGates(reports)
+% Scan completed reports for any Quality Gate left in 'Pending' state.
+tf = false;
+for k = 1:numel(reports)
+    r = reports{k};
+    if ~isfield(r, 'quality') || ~isfield(r.quality, 'gates'), continue, end
+    for gi = 1:numel(r.quality.gates)
+        if strcmpi(r.quality.gates{gi}.verdict, 'Pending')
+            tf = true; return
+        end
+    end
+end
+end
+
+function opts = applyQCOpts(opts, batchDir, checkpoints, attribute, tmsWindow, ...
+        skipOnQualityFail, tmsAutoDetect)
+% Assign the QC opts onto a worker/serial options struct.
 opts.qcBatchDir        = batchDir;
 opts.qcCheckpointNames = checkpoints;
 opts.qcAttribute       = attribute;
 opts.qcTmsWindow       = tmsWindow;
+opts.skipOnQualityFail = skipOnQualityFail;
+opts.qcTmsAutoDetect   = tmsAutoDetect;
 end
 
 function root = commonResultsRoot(filePaths)
@@ -526,10 +581,33 @@ end
 
 function rec = parseFailure(fi, name, msg)
 % Parse a processOneFile error message into a structured failure record.
-% Messages from nestapp:stepFailed look like:
-%   "Step 21 (Remove ICA Components (TESA)) failed: <root cause>"
+% Two known shapes (both emitted via error() from processOneFile):
+%
+%   nestapp:stepFailed
+%     "Step 21 (Remove ICA Components (TESA)) failed: <root cause>"
+%     -> rec.kind = 'errored'
+%
+%   nestapp:qualityFail
+%     "Step 3 (Quality Gate "post-load") failed: <reason>; <reason>"
+%     -> rec.kind = 'skipped' (the file was healthy enough to load
+%        but failed user-defined quality thresholds; not really an error)
+%
 % Greedy capture on the step name because it can itself contain parens.
-rec = struct('fi', fi, 'name', name, 'step', '', 'stepName', '', 'message', msg);
+rec = struct('fi', fi, 'name', name, 'step', '', 'stepName', '', ...
+    'message', msg, 'kind', 'errored');
+
+% Try the Quality Gate shape first so its quoted-label form does not
+% get mis-parsed by the generic regex below.
+qg = regexp(msg, '^Step (\d+) \(Quality Gate "([^"]+)"\) failed:\s*(.*)$', ...
+    'tokens', 'once', 'dotall');
+if ~isempty(qg)
+    rec.step     = qg{1};
+    rec.stepName = sprintf('Quality Gate "%s"', qg{2});
+    rec.message  = qg{3};
+    rec.kind     = 'skipped';
+    return
+end
+
 tok = regexp(msg, '^Step (\d+) \((.+)\) failed:\s*(.*)$', 'tokens', 'once', 'dotall');
 if ~isempty(tok)
     rec.step     = tok{1};
@@ -555,28 +633,28 @@ s = regexprep(msg, '\s*[\r\n]+\s*', ' | ');
 end
 
 function decision = promptFailureRecovery(uiFig, failed, nFiles)
-% Post-run dialog: list failed files and let the user decide whether to
-% accept the partial results or abandon the whole run.
+% Post-run dialog: list failed files (grouped by kind) and let the user
+% decide whether to accept the partial results or abandon the whole run.
 nFailed = numel(failed);
 nOk     = nFiles - nFailed;
-MAX_SHOW = 10;
-nShow   = min(nFailed, MAX_SHOW);
-lines   = cell(1, nShow);
-for k = 1:nShow
-    f = failed(k);
-    if isempty(f.step)
-        lines{k} = sprintf('  %s -- %s', f.name, oneline(f.message));
-    else
-        lines{k} = sprintf('  %s -- step %s (%s)', f.name, f.step, f.stepName);
-    end
+
+kinds = arrayfun(@(f) failureKind(f), failed, 'UniformOutput', false);
+skipped = failed(strcmp(kinds, 'skipped'));
+errored = failed(~strcmp(kinds, 'skipped'));
+
+sections = {};
+if ~isempty(skipped)
+    sections{end+1} = renderGroup('Skipped at Quality Gate:', skipped);
 end
-listText = strjoin(lines, newline);
-if nFailed > MAX_SHOW
-    listText = [listText, sprintf('\n  ... and %d more', nFailed - MAX_SHOW)];
+if ~isempty(errored)
+    sections{end+1} = renderGroup('Errored:', errored);
 end
+listText = strjoin(sections, [newline newline]);
+
 msg = sprintf(['%d of %d files failed:\n\n%s\n\n' ...
     'Continue with %d successful files, or abandon the whole run?'], ...
     nFailed, nFiles, listText, nOk);
+
 if isempty(uiFig) || ~isvalid(uiFig)
     fprintf(2, '\n%s\n[No UI figure - continuing with successful files]\n\n', msg);
     decision = 'Continue';
@@ -586,6 +664,35 @@ decision = uiconfirm(uiFig, msg, 'Some Files Failed', ...
     'Options', {'Continue', 'Abandon Run'}, ...
     'DefaultOption', 1, 'CancelOption', 2, ...
     'Icon', 'warning');
+end
+
+function k = failureKind(f)
+if isfield(f, 'kind') && ~isempty(f.kind)
+    k = f.kind;
+else
+    k = 'errored';
+end
+end
+
+function txt = renderGroup(header, group)
+MAX_SHOW = 10;
+nShow = min(numel(group), MAX_SHOW);
+lines = cell(1, nShow);
+for k = 1:nShow
+    f = group(k);
+    if isempty(f.step)
+        lines{k} = sprintf('  %s -- %s', f.name, oneline(f.message));
+    elseif strcmp(failureKind(f), 'skipped')
+        lines{k} = sprintf('  %s -- %s: %s', f.name, f.stepName, oneline(f.message));
+    else
+        lines{k} = sprintf('  %s -- step %s (%s)', f.name, f.step, f.stepName);
+    end
+end
+body = strjoin(lines, newline);
+if numel(group) > MAX_SHOW
+    body = [body, sprintf('\n  ... and %d more', numel(group) - MAX_SHOW)];
+end
+txt = [header, newline, body];
 end
 
 function steps = findInteractiveSteps(spec, opts)

@@ -37,6 +37,8 @@ if ~isfield(opts, 'qcBatchDir'),        opts.qcBatchDir        = ''; end
 if ~isfield(opts, 'qcCheckpointNames'), opts.qcCheckpointNames = {}; end
 if ~isfield(opts, 'qcAttribute'),       opts.qcAttribute       = 'minmax_no_tms'; end
 if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];          end
+if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
+if ~isfield(opts, 'skipOnQualityFail'), opts.skipOnQualityFail = false;           end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -664,6 +666,32 @@ for si = 1:nSteps
                 vars = stripEmptyVarin(vars);
                 pop_tesa_peakoutput( EEG, vars{:} );
 
+            case 'Quality Gate'
+                gate = qualityGate(EEG, step.params);
+                gate.stepIndex = si;
+                gate.stepName  = stepName;
+                if ~isfield(fileReport, 'quality') ...
+                        || ~isfield(fileReport.quality, 'gates')
+                    if ~isfield(fileReport, 'quality')
+                        fileReport.quality = struct( ...
+                            'figures', {{}}, 'gates', {{}}, 'worstVerdict', 'Pass');
+                    else
+                        fileReport.quality.gates = {};
+                        fileReport.quality.worstVerdict = 'Pass';
+                    end
+                end
+                fileReport.quality.gates{end+1} = gate;
+                fileReport.quality.worstVerdict = worseVerdict( ...
+                    fileReport.quality.worstVerdict, gate.verdict);
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'Quality Gate "%s" -> %s', gate.label, gate.verdict);
+                if strcmp(gate.verdict, 'Fail') && opts.skipOnQualityFail
+                    writeSessionLog(pathName, fileName, stepLog);
+                    error('nestapp:qualityFail', ...
+                        'Step %d (Quality Gate "%s") failed: %s', ...
+                        si, gate.label, strjoin(gate.reasons, '; '));
+                end
+
         end % switch
 
         %% Post-step metrics and report update
@@ -816,11 +844,16 @@ for si = 1:nSteps
             pngName = sprintf('%02d_%s.png', si, sanitizeForPath(stepName));
             outPath = fullfile(opts.qcBatchDir, fileBase, pngName);
             try
+                if opts.qcTmsAutoDetect
+                    tmsWin = inferTmsWindow(EEG, opts.qcTmsWindow);
+                else
+                    tmsWin = opts.qcTmsWindow;
+                end
                 qcOpts = struct( ...
                     'title',     fileBase, ...
                     'stepLabel', sprintf('Step %d / %s', si, stepName), ...
                     'attribute', opts.qcAttribute, ...
-                    'tmsWindow', opts.qcTmsWindow, ...
+                    'tmsWindow', tmsWin, ...
                     'size',      [1600 1200]);
                 qcOpts.panels = struct('attribMatrix',true,'icaGrid',true, ...
                                        'butterfly',true,'psd',true);
@@ -850,6 +883,20 @@ for si = 1:nSteps
             'epochBefore', nEpochBefore, ...
             'epochAfter',  nEpochBefore, ...
             'error',       err.message); %#ok<AGROW>
+
+        % Quality Gate fails are user-defined skip points, not pipeline
+        % errors. Don't prompt the user (skipping IS the chosen behavior)
+        % and don't re-wrap the identifier; runPipelineCore.parseFailure
+        % needs the original 'nestapp:qualityFail' message shape to tag
+        % the file as 'skipped' rather than 'errored'.
+        if strcmp(err.identifier, 'nestapp:qualityFail')
+            if ~isempty(opts.progressQueue)
+                send(opts.progressQueue, struct( ...
+                    'fi', opts.fileIndex, 'si', 0, ...
+                    'nSteps', nSteps, 'stepName', 'Skipped', 'failed', true));
+            end
+            rethrow(err);
+        end
 
         warning('An error occurred at file %s at step %d: %s', fileName, si, stepName);
 
@@ -919,6 +966,16 @@ end
 function codes = tesaICAClassCodes()
 % TESA compClass integer codes, matched positionally to tesaICACategories().
 codes = [3, 4, 5, 6, 7, 8, 2];
+end
+
+function v = worseVerdict(a, b)
+% Return the worst severity of two verdicts: Fail > Marginal > Pass > NotChecked.
+order = {'NotChecked', 'Pass', 'Marginal', 'Fail', 'Pending'};
+ia = find(strcmp(a, order));
+ib = find(strcmp(b, order));
+if isempty(ia), ia = 0; end
+if isempty(ib), ib = 0; end
+v = order{max(ia, ib)};
 end
 
 function sendWorkerLog(q, label, fmt, varargin)

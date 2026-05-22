@@ -38,7 +38,33 @@ if isfield(report, 'quality') && isfield(report.quality, 'figures') ...
         qcFolder, numel(report.quality.figures));
 end
 
+% Quality Gate verdict - one summary line for the whole file.
+if isfield(report, 'quality') && isfield(report.quality, 'worstVerdict') ...
+        && ~strcmp(report.quality.worstVerdict, 'NotChecked')
+    lines{end+1} = sprintf('Quality:   %s', report.quality.worstVerdict);
+end
+
 lines{end+1} = '';
+
+% Quality Gate details - per-gate verdict and reasons (if any gates ran).
+if isfield(report, 'quality') && isfield(report.quality, 'gates') ...
+        && ~isempty(report.quality.gates)
+    lines{end+1} = 'QUALITY GATES';
+    for gi = 1:numel(report.quality.gates)
+        g = report.quality.gates{gi};
+        stepIx = '';
+        if isfield(g, 'stepIndex') && ~isempty(g.stepIndex)
+            stepIx = sprintf(' (step %d)', g.stepIndex);
+        end
+        lines{end+1} = sprintf('  %s%s: %s', g.label, stepIx, g.verdict); %#ok<AGROW>
+        if isfield(g, 'reasons') && ~isempty(g.reasons)
+            for ri = 1:numel(g.reasons)
+                lines{end+1} = sprintf('    - %s', g.reasons{ri}); %#ok<AGROW>
+            end
+        end
+    end
+    lines{end+1} = '';
+end
 
 % Channels
 lines{end+1} = 'CHANNELS';
