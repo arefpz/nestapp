@@ -116,7 +116,7 @@ KURTOSIS_THRESH  = 15;
 [frontMask, frontMask2] = frontalMasks(EEG);
 hasFrontal = any(frontMask) && any(frontMask2);
 
-icaact = computeICAActivations(EEG);
+icaact = computeICAActivation(EEG);
 
 if isfield(EEG, 'times') && ~isempty(EEG.times) && size(EEG.data, 3) > 0
     tmsMask = EEG.times >= 0 & EEG.times <= 150;
@@ -240,20 +240,6 @@ theta      = px / pi * 180;
 phi        = py / pi * 180;
 front      = ((abs(theta) <= 30) & (abs(phi) <= 30))';
 frontOuter = ((abs(theta) <= 60) & (abs(theta) > 30) & (abs(phi) <= 30))';
-end
-
-function act = computeICAActivations(EEG)
-if isfield(EEG, 'icaact') && ~isempty(EEG.icaact)
-    act = reshape(EEG.icaact, size(EEG.icaact, 1), []);
-    return
-end
-chanInd = 1:EEG.nbchan;
-if isfield(EEG, 'icachansind') && ~isempty(EEG.icachansind)
-    chanInd = EEG.icachansind;
-end
-W = EEG.icaweights * EEG.icasphere;
-dataMat = reshape(EEG.data(chanInd, :, :), numel(chanInd), []);
-act = W * dataMat;
 end
 
 function ratio = emgRatioFromActivation(comp, srate)

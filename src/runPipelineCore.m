@@ -52,7 +52,7 @@ if getpref('nestapp', 'autoQualityReport', false)
     qcCheckpointNames = qualityCheckpoints();
 
     qcAttribute = getpref('nestapp', 'qualityAttribute', 'minmax_no_tms');
-    if ~any(strcmp(qcAttribute, {'minmax', 'minmax_no_tms', 'highfreq'}))
+    if ~any(strcmp(qcAttribute, qualityAttributeModes()))
         nestLog('QC', ['Invalid qualityAttribute pref "%s"; ' ...
             'falling back to minmax_no_tms'], qcAttribute);
         qcAttribute = 'minmax_no_tms';
@@ -169,10 +169,7 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
-    wOpts.qcBatchDir        = qcBatchDir;
-    wOpts.qcCheckpointNames = qcCheckpointNames;
-    wOpts.qcAttribute       = qcAttribute;
-    wOpts.qcTmsWindow       = qcTmsWindow;
+    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -238,10 +235,7 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
-        fOpts.qcBatchDir        = qcBatchDir;
-        fOpts.qcCheckpointNames = qcCheckpointNames;
-        fOpts.qcAttribute       = qcAttribute;
-        fOpts.qcTmsWindow       = qcTmsWindow;
+        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow);
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -494,6 +488,14 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Shared helpers
+
+function opts = applyQCOpts(opts, batchDir, checkpoints, attribute, tmsWindow)
+% Assign the four QC opts onto a worker/serial options struct.
+opts.qcBatchDir        = batchDir;
+opts.qcCheckpointNames = checkpoints;
+opts.qcAttribute       = attribute;
+opts.qcTmsWindow       = tmsWindow;
+end
 
 function root = commonResultsRoot(filePaths)
 % Common parent folder of all selected files. Falls back to the first

@@ -41,6 +41,12 @@ fig = figure('Visible', 'off', 'Color', 'w', ...
     'PaperPositionMode', 'auto');
 cleanup = onCleanup(@() closeFigSafely(fig));
 
+% Compute ICA metrics once and reuse for the topo panel and the
+% suptitle. On the heuristic path this avoids running pwelch per
+% component twice; on TESA / ICLabel paths it avoids the field-copy
+% work too.
+icaMetrics = computeICAQualityMetrics(EEG);
+
 t = tiledlayout(fig, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 % --- Panel 1: channel x trial attribute heatmap ---
@@ -52,7 +58,7 @@ end
 % --- Panel 2: ICA component topo grid (or placeholder) ---
 if opts.panels.icaGrid
     nexttile(t, 2);
-    drawICAGrid(EEG);
+    drawICAGrid(EEG, icaMetrics);
 end
 
 % --- Panel 3: butterfly ---
@@ -67,7 +73,7 @@ if opts.panels.psd
     drawPSD(EEG);
 end
 
-title(t, buildSuperTitle(EEG, opts), 'Interpreter', 'none', ...
+title(t, buildSuperTitle(EEG, opts, icaMetrics), 'Interpreter', 'none', ...
     'FontWeight', 'bold');
 
 exportgraphics(fig, outPath, 'Resolution', 150);
@@ -112,8 +118,7 @@ end
 hold off
 end
 
-function drawICAGrid(EEG)
-metrics = computeICAQualityMetrics(EEG);
+function drawICAGrid(EEG, metrics)
 if isempty(metrics)
     text(0.5, 0.5, 'ICA not yet computed', ...
         'HorizontalAlignment', 'center', 'FontSize', 14, ...
@@ -293,7 +298,7 @@ function s = plural(n)
 if n == 1, s = ''; else, s = 's'; end
 end
 
-function s = buildSuperTitle(EEG, opts)
+function s = buildSuperTitle(EEG, opts, metrics)
 parts = {};
 if ~isempty(opts.stepLabel), parts{end+1} = opts.stepLabel; end
 if ~isempty(opts.title),     parts{end+1} = opts.title;     end
@@ -303,7 +308,6 @@ srate   = getOr(EEG, 'srate', NaN);
 parts{end+1} = sprintf('nbchan=%d trials=%d srate=%g Hz', nbchan, nTrials, srate);
 
 % Append ICA kept/rejected counts when available - source aware.
-metrics = computeICAQualityMetrics(EEG);
 if ~isempty(metrics)
     nKept = sum([metrics.kept]);
     nRej  = numel(metrics) - nKept;

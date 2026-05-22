@@ -33,7 +33,7 @@ if ~isfield(opts, 'attribute'),  opts.attribute = 'minmax_no_tms'; end
 if ~isfield(opts, 'tmsWindow'),  opts.tmsWindow = [0 25];          end
 if ~isfield(opts, 'freqBand'),   opts.freqBand  = [1 80];          end
 
-validAttrs = {'minmax', 'minmax_no_tms', 'highfreq'};
+validAttrs = qualityAttributeModes();
 if ~any(strcmp(opts.attribute, validAttrs))
     error('computeAttributeMatrix:badAttribute', ...
         'Unknown attribute "%s". Valid: %s', opts.attribute, strjoin(validAttrs, ', '));
@@ -120,8 +120,8 @@ end
 summary.perChanMedian  = nan(nbchan, 1);
 summary.perTrialMedian = nan(1, nTrials);
 if any(~skipMask)
-    summary.perChanMedian(~skipMask)  = median(SM(~skipMask, :), 2, 'omitnan');
-    summary.perTrialMedian            = median(SM(~skipMask, :), 1, 'omitnan');
+    summary.perChanMedian(~skipMask) = median(SM(~skipMask, :), 2, 'omitnan');
+    summary.perTrialMedian           = median(SM(~skipMask, :), 1, 'omitnan');
 end
 summary.flatChanMask = flatChanMask;
 summary.satChanMask  = satChanMask;
