@@ -87,6 +87,12 @@ if skipOnQualityFail
     nestLog('QC', 'skipOnQualityFail = true (Quality Gate Fail short-circuits the file)');
 end
 
+% Per-file PDF report auto-export pref (Phase 4).
+autoExportPDF = getpref('nestapp', 'autoExportPDF', false);
+if autoExportPDF
+    nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
+end
+
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
 useParallel = false;
 if opts.parallel
@@ -183,7 +189,7 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
-    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect);
+    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -249,7 +255,7 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
-        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect);
+        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -455,6 +461,22 @@ end
 
 if ~isvalid(dlg.fig); return; end
 
+% Streaming Quality Gate verdict (Phase 4). Repaints the slot label
+% and recolors the bar fill until the next step start message
+% restores the normal step-progress display.
+if isfield(msg, 'gateVerdict') && ~isempty(msg.gateVerdict)
+    udGate = dlg.fig.UserData;
+    slot = udGate.slotMap(msg.fi);
+    if slot > 0
+        dlg.labels(slot).Text = sprintf( ...
+            'File %d \x2014 [%s] %s  (%d/%d)', ...
+            msg.fi, upper(msg.gateVerdict), msg.stepName, ...
+            msg.si, msg.nSteps);
+        dlg.fills(slot).BackgroundColor = verdictFill(msg.gateVerdict);
+    end
+    return
+end
+
 % In serial mode, flush queued UI events so a Cancel click is registered
 % before we read the flag.  Not safe to call drawnow from afterEach handlers.
 if throwOnCancel
@@ -527,6 +549,19 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Shared helpers
 
+function c = verdictFill(verdict)
+% Color the per-slot bar fill briefly while a Quality Gate verdict is
+% on display in the progress dialog. Reset by the next step-start
+% message back to the normal blue.
+switch verdict
+    case 'Pass',     c = [0.20 0.70 0.30];   % green
+    case 'Marginal', c = [0.95 0.80 0.20];   % yellow
+    case 'Fail',     c = [0.85 0.20 0.20];   % red
+    case 'Pending',  c = [0.30 0.45 0.85];   % blue
+    otherwise,       c = [0.70 0.70 0.70];   % gray
+end
+end
+
 function tf = hasPendingBatchGates(reports)
 % Scan completed reports for any Quality Gate left in 'Pending' state.
 tf = false;
@@ -542,7 +577,7 @@ end
 end
 
 function opts = applyQCOpts(opts, batchDir, checkpoints, attribute, tmsWindow, ...
-        skipOnQualityFail, tmsAutoDetect)
+        skipOnQualityFail, tmsAutoDetect, autoExportPDF)
 % Assign the QC opts onto a worker/serial options struct.
 opts.qcBatchDir        = batchDir;
 opts.qcCheckpointNames = checkpoints;
@@ -550,6 +585,7 @@ opts.qcAttribute       = attribute;
 opts.qcTmsWindow       = tmsWindow;
 opts.skipOnQualityFail = skipOnQualityFail;
 opts.qcTmsAutoDetect   = tmsAutoDetect;
+opts.autoExportPDF     = autoExportPDF;
 end
 
 function root = commonResultsRoot(filePaths)

@@ -107,14 +107,26 @@ for k = 1:numel(groupNames)
         verdict = 'Pass';
         reasons = {};
         for fi = 1:numel(enabledFields)
-            f      = enabledFields{fi};
-            cutoff = cutoffs.(f);
-            value  = safeGet(m, f);
+            f         = enabledFields{fi};
+            paramName = enabledParams{fi};
+            cutoff    = cutoffs.(f);
+            value     = safeGet(m, f);
             if isnan(cutoff) || isnan(value), continue, end
+            % Per-metric warn override (Phase 4): if *WarnAt > 0 on the
+            % gate's thresholds, use it as the Marginal cutoff instead
+            % of slack * batchCutoff. The Fail boundary (batch cutoff)
+            % is unchanged.
+            warnAtField = [paramName 'WarnAt'];
+            if isfield(sampleThresholds, warnAtField) ...
+                    && sampleThresholds.(warnAtField) > 0
+                warnCutoff = sampleThresholds.(warnAtField);
+            else
+                warnCutoff = grp.slack * cutoff;
+            end
             if value > cutoff
                 [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
                     sprintf('%s %g > batch cutoff %g', f, value, cutoff));
-            elseif value > grp.slack * cutoff
+            elseif value > warnCutoff
                 [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
                     sprintf('%s %g near batch cutoff %g', f, value, cutoff));
             end

@@ -135,33 +135,40 @@ if p.expectedSrate > 0 && abs(m.srate - p.expectedSrate) > eps
         sprintf('srate %g != expected %g Hz', m.srate, p.expectedSrate));
 end
 
-% Min checks: fail if metric < threshold; marginal if metric < threshold and
-% >= slack * threshold.
+% Min checks: fail if metric below the fail cutoff; marginal if below
+% threshold but above the fail cutoff. Fail cutoff = warnAt if set,
+% else slack * threshold.
 [verdict, reasons] = checkMin(verdict, reasons, m.nTriggers,  p.minTriggers, ...
-    p.marginalSlack, 'triggers');
+    p.marginalSlack, p.minTriggersWarnAt,  'triggers');
 [verdict, reasons] = checkMin(verdict, reasons, m.rankRatio,  p.minRankRatio, ...
-    p.marginalSlack, 'rank/nbchan');
+    p.marginalSlack, p.minRankRatioWarnAt, 'rank/nbchan');
 [verdict, reasons] = checkMin(verdict, reasons, m.nTrials,    p.minTrials, ...
-    p.marginalSlack, 'trials');
+    p.marginalSlack, p.minTrialsWarnAt,    'trials');
 
-% Max checks: fail if metric > threshold; marginal if metric > slack * threshold.
+% Max checks: fail if metric > threshold; marginal if metric above the
+% warn cutoff. Warn cutoff = warnAt if set, else slack * threshold.
 [verdict, reasons] = checkMax(verdict, reasons, m.nFlatChans,     p.maxFlatChans, ...
-    p.marginalSlack, 'flat channels');
+    p.marginalSlack, p.maxFlatChansWarnAt,    'flat channels');
 [verdict, reasons] = checkMax(verdict, reasons, m.nSatChans,      p.maxSatChans, ...
-    p.marginalSlack, 'saturated channels');
+    p.marginalSlack, p.maxSatChansWarnAt,     'saturated channels');
 [verdict, reasons] = checkMax(verdict, reasons, m.pctBadTrials,   p.maxBadTrialPct, ...
-    p.marginalSlack, '% bad trials');
+    p.marginalSlack, p.maxBadTrialPctWarnAt,  '% bad trials');
 [verdict, reasons] = checkMax(verdict, reasons, m.pctBadChans,    p.maxBadChanPct, ...
-    p.marginalSlack, '% bad channels');
+    p.marginalSlack, p.maxBadChanPctWarnAt,   '% bad channels');
 [verdict, reasons] = checkMax(verdict, reasons, m.emgFraction,    p.maxEMGFraction, ...
-    p.marginalSlack, 'EMG fraction');
+    p.marginalSlack, p.maxEMGFractionWarnAt,  'EMG fraction');
 [verdict, reasons] = checkMax(verdict, reasons, m.electrodeCount, p.maxElectrodeCount, ...
-    p.marginalSlack, 'electrode-artifact comps');
+    p.marginalSlack, p.maxElectrodeCountWarnAt, 'electrode-artifact comps');
 end
 
-function [verdict, reasons] = checkMin(verdict, reasons, value, threshold, slack, name)
+function [verdict, reasons] = checkMin(verdict, reasons, value, threshold, slack, warnAt, name)
 if threshold <= 0 || isnan(value), return, end
-if value < slack * threshold
+if warnAt > 0
+    failCutoff = warnAt;
+else
+    failCutoff = slack * threshold;
+end
+if value < failCutoff
     [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
         sprintf('%s %g < %g', name, value, threshold));
 elseif value < threshold
@@ -170,14 +177,21 @@ elseif value < threshold
 end
 end
 
-function [verdict, reasons] = checkMax(verdict, reasons, value, threshold, slack, name)
+function [verdict, reasons] = checkMax(verdict, reasons, value, threshold, slack, warnAt, name)
 if threshold <= 0 || isnan(value), return, end
 if value > threshold
     [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
         sprintf('%s %g > %g', name, value, threshold));
-elseif value > slack * threshold
-    [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
-        sprintf('%s %g near max %g', name, value, threshold));
+else
+    if warnAt > 0
+        warnCutoff = warnAt;
+    else
+        warnCutoff = slack * threshold;
+    end
+    if value > warnCutoff
+        [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
+            sprintf('%s %g near max %g', name, value, threshold));
+    end
 end
 end
 
@@ -262,7 +276,16 @@ defs = struct( ...
     'minTrials',         0, ...
     'maxEMGFraction',    0, ...
     'maxElectrodeCount', 0, ...
-    'outlierSigmas',     3);
+    'outlierSigmas',     3, ...
+    'minTriggersWarnAt',       0, ...
+    'maxFlatChansWarnAt',      0, ...
+    'maxSatChansWarnAt',       0, ...
+    'minRankRatioWarnAt',      0, ...
+    'maxBadTrialPctWarnAt',    0, ...
+    'maxBadChanPctWarnAt',     0, ...
+    'minTrialsWarnAt',         0, ...
+    'maxEMGFractionWarnAt',    0, ...
+    'maxElectrodeCountWarnAt', 0);
 fns = fieldnames(defs);
 for k = 1:numel(fns)
     if ~isfield(p, fns{k}) || isempty(p.(fns{k}))

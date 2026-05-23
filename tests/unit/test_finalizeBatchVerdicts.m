@@ -98,6 +98,46 @@ classdef test_finalizeBatchVerdicts < matlab.unittest.TestCase
             tc.verifyEqual(reports{1}.quality.gates{1}.mode, 'absolute');
         end
 
+        function WarnAt_overrides_slack_in_batch_mode(tc)
+            % vals = [3 4 5 6 50] -> median=5, MAD=1, sig=3 ->
+            % cutoff = 5 + 3 * 1.4826 * 1 ~= 9.45
+            % slack=0.8 -> slack*cutoff ~= 7.6
+            % Without WarnAt: value 7 < 7.6 -> Pass.
+            % With WarnAt=4: value 7 > 4 -> Marginal (Fail boundary
+            % still the batch cutoff 9.45).
+            vals = [3 4 5 6 50];
+            reports = makeBatch(vals);
+            % Inject a 6th file with value 7 to test the marginal zone.
+            extraM = struct('pctBadTrials', 7, 'nFlatChans', NaN, ...
+                'nSatChans', NaN, 'pctBadChans', NaN, ...
+                'emgFraction', NaN, 'electrodeCount', NaN);
+            extraGate = struct( ...
+                'label',      'g1', ...
+                'mode',       'batch', ...
+                'verdict',    'Pending', ...
+                'reasons',    {{}}, ...
+                'metrics',    extraM, ...
+                'thresholds', struct( ...
+                    'outlierSigmas', 3, 'marginalSlack', 0.8, ...
+                    'maxBadTrialPct', 1, 'maxBadTrialPctWarnAt', 4), ...
+                'stepIndex',  5);
+            extraReport = struct('inputFile', 'extra.set', ...
+                'processedAt', datetime('now'), ...
+                'quality', struct('figures', {{}}, ...
+                    'gates', {{extraGate}}, 'worstVerdict', 'Pending'));
+            reports{end+1} = extraReport;
+            % Patch all existing reports' gates to also set WarnAt=4
+            % (the resolver reads it from the group's sample, so
+            % consistency across the group is required).
+            for k = 1:numel(reports) - 1
+                reports{k}.quality.gates{1}.thresholds.maxBadTrialPctWarnAt = 4;
+            end
+
+            reports = finalizeBatchVerdicts(reports);
+
+            tc.verifyEqual(reports{end}.quality.gates{1}.verdict, 'Marginal');
+        end
+
         function worstVerdict_recomputed_after_resolve(tc)
             vals = [1 2 3 4 100];
             reports = makeBatch(vals);

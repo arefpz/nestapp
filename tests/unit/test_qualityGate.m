@@ -197,6 +197,52 @@ classdef test_qualityGate < matlab.unittest.TestCase
 
         % -- gate.metrics shape ------------------------------------------
 
+        % -- WarnAt overrides (Phase 4) ----------------------------------
+
+        function maxWarnAt_overrides_slack(tc)
+            % maxFlatChans = 10, slack = 0.8 -> warn cutoff at 8.
+            % Override with WarnAt = 3 so anything > 3 (and <= 10) is
+            % Marginal, anything > 10 is Fail.
+            EEG = test_qualityGate.makeEEG(8, 30, 500, 1000);
+            for k = 1:5
+                EEG.data(k, :, :) = 0;   % 5 flat channels
+            end
+            gate = qualityGate(EEG, struct( ...
+                'maxFlatChans',       10, ...
+                'marginalSlack',      0.8, ...
+                'maxFlatChansWarnAt', 3));
+            tc.verifyEqual(gate.metrics.nFlatChans, 5);
+            tc.verifyEqual(gate.verdict, 'Marginal');
+        end
+
+        function maxWarnAt_zero_falls_back_to_slack(tc)
+            % Same fixture as above; WarnAt = 0 -> slack semantics:
+            % nFlatChans = 5 < slack * 10 = 8 -> Pass.
+            EEG = test_qualityGate.makeEEG(8, 30, 500, 1000);
+            for k = 1:5
+                EEG.data(k, :, :) = 0;
+            end
+            gate = qualityGate(EEG, struct( ...
+                'maxFlatChans',       10, ...
+                'marginalSlack',      0.8, ...
+                'maxFlatChansWarnAt', 0));
+            tc.verifyEqual(gate.verdict, 'Pass');
+        end
+
+        function minWarnAt_overrides_slack_fail_cutoff(tc)
+            % minTriggers = 100, slack = 0.8 -> fail cutoff at 80.
+            % Override with WarnAt = 60. trigger count 70 should now be
+            % Marginal (70 >= 60 but < 100), not Fail.
+            EEG = test_qualityGate.makeEEG(8, 10, 500, 1000);
+            EEG = test_qualityGate.withEvents(EEG, 70);
+            gate = qualityGate(EEG, struct( ...
+                'minTriggers',       100, ...
+                'marginalSlack',     0.8, ...
+                'minTriggersWarnAt', 60));
+            tc.verifyEqual(gate.metrics.nTriggers, 70);
+            tc.verifyEqual(gate.verdict, 'Marginal');
+        end
+
         function metrics_always_has_cheap_fields(tc)
             EEG = test_qualityGate.makeEEG(8, 5, 500, 1000);
             gate = qualityGate(EEG, struct());

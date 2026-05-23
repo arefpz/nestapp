@@ -39,6 +39,7 @@ if ~isfield(opts, 'qcAttribute'),       opts.qcAttribute       = 'minmax_no_tms'
 if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];          end
 if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
 if ~isfield(opts, 'skipOnQualityFail'), opts.skipOnQualityFail = false;           end
+if ~isfield(opts, 'autoExportPDF'),     opts.autoExportPDF     = false;           end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -685,6 +686,18 @@ for si = 1:nSteps
                     fileReport.quality.worstVerdict, gate.verdict);
                 sendWorkerLog(opts.logQueue, wLabel, ...
                     'Quality Gate "%s" -> %s', gate.label, gate.verdict);
+                % Stream the verdict back to the progress dialog so a
+                % long parallel run shows live Pass/Marg/Fail chips per
+                % file instead of only after the run completes.
+                if ~isempty(opts.progressQueue)
+                    send(opts.progressQueue, struct( ...
+                        'fi',          opts.fileIndex, ...
+                        'si',          si, ...
+                        'nSteps',      nSteps, ...
+                        'stepName',    stepName, ...
+                        'gateVerdict', gate.verdict, ...
+                        'gateLabel',   gate.label));
+                end
                 if strcmp(gate.verdict, 'Fail') && opts.skipOnQualityFail
                     writeSessionLog(pathName, fileName, stepLog);
                     error('nestapp:qualityFail', ...
@@ -942,6 +955,19 @@ end
 
 sendWorkerLog(opts.logQueue, wLabel, 'Writing session log...');
 writeSessionLog(pathName, fileName, stepLog);
+
+% Auto-export per-file PDF when the pref is on. Failure is logged
+% but never aborts the pipeline.
+if opts.autoExportPDF
+    try
+        pdfPath = exportFileReportPDF(fileReport, pathName);
+        sendWorkerLog(opts.logQueue, wLabel, 'PDF report written: %s', pdfPath);
+    catch pdfErr
+        sendWorkerLog(opts.logQueue, wLabel, ...
+            'PDF export FAILED (continuing): %s', pdfErr.message);
+    end
+end
+
 sendWorkerLog(opts.logQueue, wLabel, 'DONE   %s  (total %.2fs)', fileName, toc(fileTic));
 
 % Sentinel: si=0 signals the file is truly done (after all cleanup).

@@ -144,6 +144,7 @@ classdef nestapp < matlab.apps.AppBase
         ReportsTextArea                 matlab.ui.control.TextArea
         ReportsDashboardPanel           matlab.ui.container.Panel
         ExportReportsCSVButton          matlab.ui.control.Button
+        ExportPDFButton                 matlab.ui.control.Button
         CopyMethodsButton               matlab.ui.control.Button
         % Analysis tab - static elements not auto-resized by MATLAB
         AnalysisSelPanel                matlab.ui.container.Panel
@@ -475,37 +476,40 @@ classdef nestapp < matlab.apps.AppBase
         %   and behavioural options. Changes are written to getpref/setpref
         %   under the 'nestapp' group and applied immediately on Save.
             dlg = uifigure('Name', 'nestapp Preferences', ...
-                'Position', [200 200 420 580], ...
+                'Position', [200 200 420 610], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
 
             % --- Quality Screening section (new, at top) ---
             uilabel(dlg, 'Text', 'Quality Screening', 'FontWeight', 'bold', ...
-                'Position', [15 545 200 20]);
+                'Position', [15 575 200 20]);
             cbAutoQC = uicheckbox(dlg, 'Text', 'Auto-generate QC images at pipeline checkpoints', ...
-                'Position', [15 520 380 22], ...
+                'Position', [15 550 380 22], ...
                 'Value', getpref('nestapp', 'autoQualityReport', false));
             cbTmsAuto = uicheckbox(dlg, 'Text', 'Auto-detect TMS pulse window from EEG events', ...
-                'Position', [15 498 380 22], ...
+                'Position', [15 528 380 22], ...
                 'Value', getpref('nestapp', 'qualityTmsAutoDetect', true));
             cbSkipFail = uicheckbox(dlg, 'Text', 'Skip remaining pipeline steps when Quality Gate fails', ...
-                'Position', [15 476 380 22], ...
+                'Position', [15 506 380 22], ...
                 'Value', getpref('nestapp', 'skipOnQualityFail', false));
+            cbAutoPDF = uicheckbox(dlg, 'Text', 'Auto-save PDF report per file (text + checkpoint images)', ...
+                'Position', [15 484 380 22], ...
+                'Value', getpref('nestapp', 'autoExportPDF', false));
             uilabel(dlg, 'Text', 'Attribute mode:', ...
-                'Position', [15 449 95 22], 'HorizontalAlignment', 'right');
+                'Position', [15 457 95 22], 'HorizontalAlignment', 'right');
             qcModes = qualityAttributeModes();
             ddAttr = uidropdown(dlg, ...
-                'Position', [115 449 150 22], ...
+                'Position', [115 457 150 22], ...
                 'Items', qcModes, ...
                 'Value', resolveAttributePref());
             uilabel(dlg, 'Text', 'TMS window (ms):', ...
-                'Position', [15 422 105 22], 'HorizontalAlignment', 'right');
+                'Position', [15 430 105 22], 'HorizontalAlignment', 'right');
             qcWin = readTmsWindowPref();
             nfTmsStart = uieditfield(dlg, 'numeric', ...
-                'Position', [125 422 55 22], 'Value', qcWin(1));
+                'Position', [125 430 55 22], 'Value', qcWin(1));
             uilabel(dlg, 'Text', 'to', ...
-                'Position', [185 422 15 22], 'HorizontalAlignment', 'center');
+                'Position', [185 430 15 22], 'HorizontalAlignment', 'center');
             nfTmsEnd = uieditfield(dlg, 'numeric', ...
-                'Position', [205 422 55 22], 'Value', qcWin(2));
+                'Position', [205 430 55 22], 'Value', qcWin(2));
 
             % --- EEGLAB section ---
             uilabel(dlg, 'Text', 'EEGLAB', 'FontWeight', 'bold', ...
@@ -628,6 +632,7 @@ classdef nestapp < matlab.apps.AppBase
                 setpref('nestapp', 'autoQualityReport',    cbAutoQC.Value);
                 setpref('nestapp', 'qualityTmsAutoDetect', cbTmsAuto.Value);
                 setpref('nestapp', 'skipOnQualityFail',    cbSkipFail.Value);
+                setpref('nestapp', 'autoExportPDF',        cbAutoPDF.Value);
 
                 attr = ddAttr.Value;
                 if ~any(strcmp(attr, qualityAttributeModes()))
@@ -674,6 +679,7 @@ classdef nestapp < matlab.apps.AppBase
                 app.ReportsDashboardPanel.Visible = 'off';
                 app.ReportsTextArea.Visible = 'on';
                 app.ExportReportsCSVButton.Enable = 'off';
+                app.ExportPDFButton.Enable = 'off';
                 app.CopyMethodsButton.Enable = 'off';
                 return
             end
@@ -739,6 +745,7 @@ classdef nestapp < matlab.apps.AppBase
             if nLoaded > 0; parts{end+1} = sprintf('%d from disk', nLoaded); end
             app.ReportsStatusLabel.Text = strjoin(parts, ', ');
             app.ExportReportsCSVButton.Enable = 'on';
+            app.ExportPDFButton.Enable = 'on';
             app.CopyMethodsButton.Enable = 'on';
         end
 
@@ -946,6 +953,53 @@ classdef nestapp < matlab.apps.AppBase
             end
             fclose(fid);
             app.ReportsStatusLabel.Text = sprintf('CSV saved: %s', fname);
+        end
+
+        function ExportPDFButtonPushed(app, ~)
+        % Export the currently selected file's report + checkpoint PNGs
+        % as a single PDF. Synthetic Summary / Dashboard entries skip.
+            idx = app.ReportsListBox.Value;
+            if isempty(idx)
+                uialert(app.UIFigure, 'No report selected.', 'Export PDF');
+                return
+            end
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if anyReportHasGates(allEntries)
+                allEntries{end+1} = struct('isDashboard', true, ...
+                    'text', '', 'report', struct());
+            end
+            if ~isnumeric(idx) || idx < 1 || idx > numel(allEntries)
+                uialert(app.UIFigure, 'No report selected.', 'Export PDF');
+                return
+            end
+            e = allEntries{idx};
+            if (isfield(e, 'isSummary') && e.isSummary) ...
+                    || (isfield(e, 'isDashboard') && e.isDashboard)
+                uialert(app.UIFigure, ...
+                    'Pick a single file report (not the Summary or Dashboard entry) before exporting PDF.', ...
+                    'Export PDF');
+                return
+            end
+            [~, baseName] = fileparts(e.report.inputFile);
+            [fname, fpath] = uiputfile('*.pdf', 'Export Report as PDF', ...
+                [baseName, '_report.pdf']);
+            if isequal(fname, 0); return; end
+            try
+                pdfPath = exportFileReportPDF(e.report, fpath);
+                % uiputfile picked a target filename; if exportFileReportPDF
+                % used its own naming convention inside the folder, move
+                % to the user's chosen name.
+                desired = fullfile(fpath, fname);
+                if ~strcmp(pdfPath, desired)
+                    movefile(pdfPath, desired, 'f');
+                    pdfPath = desired;
+                end
+                app.ReportsStatusLabel.Text = sprintf('PDF saved: %s', fname);
+            catch err
+                uialert(app.UIFigure, ...
+                    sprintf('PDF export failed: %s', err.message), ...
+                    'Export PDF', 'Icon', 'error');
+            end
         end
 
         function CopyMethodsButtonPushed(app, ~)
