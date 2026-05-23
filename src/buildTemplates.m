@@ -115,6 +115,116 @@ ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Heart',  [0.9, 1])
 ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'minimal');
 saveMat(reg, steps, ovs, 'Minimal (Delorme 2023)', fullfile(outDir, '3_minimal.mat'));
 
+%% 4 - TMS-EEG / TEP (TESA + Quality Gates)
+% Same step order as template 1, with four Quality Gate checkpoints
+% inserted at the most diagnostic handoffs. All gates run in absolute
+% mode with reasonable starting thresholds for a typical 100-150 pulse
+% single-pulse TMS protocol. Override the per-metric WarnAt fields to
+% tighten the Marginal cutoff without moving the Fail boundary; leave
+% any threshold at 0 to disable it.
+%
+% Skip-on-fail honors setpref('nestapp','skipOnQualityFail',true) so a
+% failing file aborts its own pipeline but leaves the rest of the batch
+% to run.
+%
+%   QG1  After 'Find TMS Pulses' (continuous) - trigger sanity. Only
+%        minTriggers is meaningful here; SM / ICA metrics need epoched
+%        data and a fit ICA decomposition.
+%   QG2  After 'Remove Bad Epoch' (epoched, post-rejection) - enough
+%        trials survived, channel rank is intact, no run-away flat
+%        channels.
+%   QG3  After Round 1 ICA cleanup + interpolation - TMS-evoked muscle
+%        was actually removed (EMG fraction low) and the trial pool is
+%        still reasonable.
+%   QG4  After Re-Reference (final, pre-save) - comprehensive QC:
+%        bad-channel / bad-trial fractions and residual electrode
+%        artifact comps.
+steps = { ...
+    'Load Data', 'Load Channel Location', 'Remove un-needed Channels', ...
+    'Find TMS Pulses (TESA)', ...
+    'Quality Gate', ...
+    'Remove Bad Channels', ...
+    'Epoching', 'Remove Baseline', ...
+    'Remove TMS Artifacts (TESA)', 'Interpolate Missing Data (TESA)', 'Re-Sample', ...
+    'Remove Bad Epoch', ...
+    'Quality Gate', ...
+    'Remove TMS Artifacts (TESA)', ...
+    'Run TESA ICA', 'Remove ICA Components (TESA)', ...
+    'Remove TMS Artifacts (TESA)', 'Interpolate Missing Data (TESA)', ...
+    'Quality Gate', ...
+    'Frequency Filter (TESA)', 'Frequency Filter (TESA)', ...
+    'Remove TMS Artifacts (TESA)', ...
+    'Run TESA ICA', 'Remove ICA Components (TESA)', ...
+    'Interpolate Missing Data (TESA)', ...
+    'Interpolate Channels', 'Re-Reference', ...
+    'Quality Gate', ...
+    'Remove Baseline', 'Save New Set'};
+ovs = emptyOvs(steps);
+
+% --- Inherit every override from template 1 ---------------------------
+ovs = setOv(ovs, steps, 'Epoching', 'timelim', [-1, 1]);
+ovs = setOv(ovs, steps, 'Remove Baseline', 'timerange', [-1000 1000], 1);
+ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [-2 15], 3);
+ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [-2 15], 4);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpolation', 'cubic', 1);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpWin',     [1 1],   1);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpolation', 'cubic', 2);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpWin',     [5 5],   2);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpolation', 'cubic', 3);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpWin',     [5 5],   3);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'type', 'bandstop', 2);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'high', 58,         2);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'low',  62,         2);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'ord',  2,          2);
+ovs = setOv(ovs, steps, 'Re-Reference', 'ref', '[]');
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'blink',     'on', 2);
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'move',      'on', 2);
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'muscle',    'on', 2);
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'elecNoise', 'on', 2);
+ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'tesa_qc');
+
+% --- QG1: post-trigger detection --------------------------------------
+% Continuous data; only event count is meaningful at this point.
+% Fail < 50 pulses (file is broken); Warn < 100 (below typical protocol).
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',         'post-triggers', 1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggers',       50,              1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggersWarnAt', 100,             1);
+
+% --- QG2: post-epoch-rejection ----------------------------------------
+% Epoched, post-bad-trial removal. Fail if fewer than 50 trials remain
+% (insufficient for averaging), warn at 80. Rank should stay close to
+% the post-bad-channel-removal count; 0.9 catches gross rank deficiency.
+% Flat-channel count > 2 here is a smell - removeBadChannels should
+% have caught those already.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',           'post-bad-epoch', 2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTrials',           50,               2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTrialsWarnAt',     80,               2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minRankRatio',        0.9,              2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxFlatChans',        5,                2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxFlatChansWarnAt',  2,                2);
+
+% --- QG3: post-Round 1 ICA + interpolation ----------------------------
+% Round 1 targets TMS-evoked muscle. Fail if EMG / muscle fraction
+% remains > 40% of ICA components; warn at 20%. Bad-trial fraction up
+% to 25% tolerated (Round 2 has another chance), warn at 10%.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',              'post-round1-ica', 3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFraction',         0.40,              3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFractionWarnAt',   0.20,              3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPct',         25,                3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPctWarnAt',   10,                3);
+
+% --- QG4: final, pre-save ---------------------------------------------
+% Comprehensive QC after both ICA rounds, filters, and re-referencing.
+% Tighter than QG3 because no further cleanup follows.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',               'final', 4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPct',          10,      4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPctWarnAt',    5,       4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadChanPct',           15,      4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadChanPctWarnAt',     5,       4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCount',       3,       4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCountWarnAt', 1,       4);
+saveMat(reg, steps, ovs, 'TMS-EEG / TEP (TESA + Quality Gates)', fullfile(outDir, '4_tesa_tep_qc.mat'));
+
 fprintf('buildTemplates: done - %s\n', outDir);
 end
 

@@ -65,7 +65,10 @@ H = parentTop(parent);
 % Layout: left half, vertical band starting below header.
 pos = [10, round(H * 0.42), round(W * 0.48), round(H * 0.42)];
 ax = uiaxes(parent, 'Position', pos);
-title(ax, 'Verdict heatmap (files x gates)');
+% Filenames and gate labels contain underscores; default 'tex' interpreter
+% would render them as subscripts (e.g. rtmsct_214_1_SPL).
+ax.TickLabelInterpreter = 'none';
+title(ax, 'Verdict heatmap (files x gates)', 'Interpreter', 'none');
 
 if isempty(v.verdicts)
     text(ax, 0.5, 0.5, 'No verdicts to plot', ...
@@ -121,22 +124,43 @@ end
 end
 
 function rows = collectFailures(reports)
+% One row per file. Roll up every Marginal/Fail gate's label and
+% reasons so a file is never split across multiple rows: the user gets
+% the full picture of why a file was flagged in one place.
 rows = {};
 for ri = 1:numel(reports)
     r = reports{ri};
     if ~isstruct(r) || ~isfield(r, 'quality') ...
             || ~isfield(r.quality, 'gates'), continue, end
     [~, name] = fileparts(r.inputFile);
+
+    flaggedGates = {};
+    allReasons   = {};
+    worstSeen    = 'Pass';
     for gi = 1:numel(r.quality.gates)
         g = r.quality.gates{gi};
         if ~any(strcmp(g.verdict, {'Marginal', 'Fail'})), continue, end
-        reasons = '';
+        flaggedGates{end+1} = g.label; %#ok<AGROW>
+        worstSeen = worstVerdict(worstSeen, g.verdict);
         if isfield(g, 'reasons') && ~isempty(g.reasons)
-            reasons = strjoin(g.reasons, '; ');
+            for k = 1:numel(g.reasons)
+                allReasons{end+1} = sprintf('[%s] %s', g.label, g.reasons{k}); %#ok<AGROW>
+            end
         end
-        rows(end+1, :) = {name, g.label, g.verdict, reasons}; %#ok<AGROW>
     end
+    if isempty(flaggedGates), continue, end
+
+    gateStr   = strjoin(flaggedGates, ', ');
+    reasonStr = strjoin(allReasons,   '; ');
+    rows(end+1, :) = {name, gateStr, worstSeen, reasonStr}; %#ok<AGROW>
 end
+end
+
+function v = worstVerdict(a, b)
+order = {'Pass', 'Marginal', 'Fail'};
+ia = find(strcmp(a, order)); if isempty(ia), ia = 0; end
+ib = find(strcmp(b, order)); if isempty(ib), ib = 0; end
+v = order{max(ia, ib)};
 end
 
 function handleSelect(src, ev, cb)
@@ -182,6 +206,7 @@ for k = 1:numel(metrics)
     x = 10 + col * (cellW + 5);
     y = yTop - 22 - (row + 1) * cellH - row * 5;
     ax = uiaxes(parent, 'Position', [x, y, cellW, cellH]);
+    ax.TickLabelInterpreter = 'none';
     drawOneHistogram(ax, metrics(k));
 end
 end
@@ -197,7 +222,7 @@ end
 
 nBins = max(5, min(20, ceil(sqrt(numel(vals)))));
 histogram(ax, vals, nBins, 'FaceColor', [0.3 0.5 0.8], 'EdgeColor', 'none');
-title(ax, m.displayName, 'FontSize', 9);
+title(ax, m.displayName, 'FontSize', 9, 'Interpreter', 'none');
 ax.FontSize = 8;
 
 hold(ax, 'on');

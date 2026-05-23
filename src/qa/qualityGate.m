@@ -135,9 +135,9 @@ if p.expectedSrate > 0 && abs(m.srate - p.expectedSrate) > eps
         sprintf('srate %g != expected %g Hz', m.srate, p.expectedSrate));
 end
 
-% Min checks: fail if metric below the fail cutoff; marginal if below
-% threshold but above the fail cutoff. Fail cutoff = warnAt if set,
-% else slack * threshold.
+% Min checks: fail if metric < threshold; marginal if threshold <=
+% metric < warn cutoff. Warn cutoff = warnAt if set, else threshold /
+% slack (symmetric with the max-check default).
 [verdict, reasons] = checkMin(verdict, reasons, m.nTriggers,  p.minTriggers, ...
     p.marginalSlack, p.minTriggersWarnAt,  'triggers');
 [verdict, reasons] = checkMin(verdict, reasons, m.rankRatio,  p.minRankRatio, ...
@@ -162,36 +162,44 @@ end
 end
 
 function [verdict, reasons] = checkMin(verdict, reasons, value, threshold, slack, warnAt, name)
+% slack is unused for min checks (see comment below) but kept in the
+% signature for parity with checkMax.
+%#ok<*INUSD>
 if threshold <= 0 || isnan(value), return, end
-if warnAt > 0
-    failCutoff = warnAt;
-else
-    failCutoff = slack * threshold;
-end
-if value < failCutoff
+% warnAt sits above threshold for a min check: the marginal band is
+% [threshold, warnAt). With warnAt <= threshold (including the default
+% of 0) there is no marginal band - any value below threshold fails
+% outright. Min metrics like rankRatio are capped at 1.0, so a sensible
+% default cannot be derived from slack alone; users opt into the
+% marginal band by setting WarnAt above threshold.
+warnCutoff = max(warnAt, threshold);
+if value < threshold
     [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
         sprintf('%s %g < %g', name, value, threshold));
-elseif value < threshold
+elseif value < warnCutoff
     [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
-        sprintf('%s %g near min %g', name, value, threshold));
+        sprintf('%s %g near min %g', name, value, warnCutoff));
 end
 end
 
 function [verdict, reasons] = checkMax(verdict, reasons, value, threshold, slack, warnAt, name)
 if threshold <= 0 || isnan(value), return, end
+warnCutoff = pickCutoff(warnAt, slack * threshold);
 if value > threshold
     [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
         sprintf('%s %g > %g', name, value, threshold));
+elseif value > warnCutoff
+    [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
+        sprintf('%s %g near max %g', name, value, threshold));
+end
+end
+
+function c = pickCutoff(warnAt, slackCutoff)
+% warnAt > 0 overrides the slack-derived boundary; otherwise fall back.
+if warnAt > 0
+    c = warnAt;
 else
-    if warnAt > 0
-        warnCutoff = warnAt;
-    else
-        warnCutoff = slack * threshold;
-    end
-    if value > warnCutoff
-        [verdict, reasons] = bump(verdict, reasons, 'Marginal', ...
-            sprintf('%s %g near max %g', name, value, threshold));
-    end
+    c = slackCutoff;
 end
 end
 

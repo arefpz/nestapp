@@ -18,6 +18,7 @@ if ~isfield(opts, 'pipelineName'), opts.pipelineName = ''; end
 if ~isfield(opts, 'statusBar'),    opts.statusBar    = []; end
 if ~isfield(opts, 'parallel'),     opts.parallel     = false; end
 if ~isfield(opts, 'chanLocFile'),  opts.chanLocFile  = ''; end
+if ~isfield(opts, 'outputRoot'),   opts.outputRoot   = ''; end
 
 persistent cachedNestappSrc cachedEeglabGenpath
 
@@ -37,21 +38,29 @@ if ~depsOk
     return
 end
 
+% Unified batch output: every run gets one timestamped folder.
+% Destination priority: opts.outputRoot (programmatic override, used
+% by tests) > nestapp.outputRoot pref > common parent of inputs.
+% Layout pref picks between 'typeBased' and 'perInput'. All writers
+% resolve their destinations through outputPaths(batchCtx, kind, stem).
+layout   = getpref('nestapp', 'outputLayout', 'typeBased');
+batchCtx = buildBatchContext(filePaths, opts.pipelineName, layout, opts.outputRoot);
+nestLog('CFG', 'Output root: %s', batchCtx.outputRoot);
+nestLog('CFG', 'Batch folder (%s layout): %s', batchCtx.layout, batchCtx.batchRoot);
+
 % Pre-flight overwrite check.
 if getpref('nestapp', 'suppressEEGLABDialogs', true)
-    warnIfOverwriteFiles(spec, filePaths, opts);
+    warnIfOverwriteFiles(spec, filePaths, opts, batchCtx);
 end
 
-% Auto Quality Report: read prefs once on the client, allocate one
-% timestamped batch folder shared by all workers. Off by default.
-qcBatchDir        = '';
-qcCheckpointNames = {};
+% Auto Quality Report: render a QC PNG after every Quality Gate step
+% when the pref is on. Prefs are read on the client once and threaded
+% through to workers via opts.
+autoQualityReport = getpref('nestapp', 'autoQualityReport', false);
 qcAttribute       = 'minmax_no_tms';
 qcTmsWindow       = [0 25];
 qcTmsAutoDetect   = true;
-if getpref('nestapp', 'autoQualityReport', false)
-    qcCheckpointNames = qualityCheckpoints();
-
+if autoQualityReport
     qcAttribute = getpref('nestapp', 'qualityAttribute', 'minmax_no_tms');
     if ~any(strcmp(qcAttribute, qualityAttributeModes()))
         nestLog('QC', ['Invalid qualityAttribute pref "%s"; ' ...
@@ -68,13 +77,10 @@ if getpref('nestapp', 'autoQualityReport', false)
 
     qcTmsAutoDetect = logical(getpref('nestapp', 'qualityTmsAutoDetect', true));
 
-    commonRoot = commonResultsRoot(filePaths);
-    ts         = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-    qcBatchDir = fullfile(commonRoot, ['qc_', ts]);
-    if ~exist(qcBatchDir, 'dir'), mkdir(qcBatchDir); end
     nestLog('QC', ['Auto Quality Report enabled (attribute=%s, ' ...
-        'tmsWindow=[%g %g] ms). Batch folder: %s'], ...
-        qcAttribute, qcTmsWindow(1), qcTmsWindow(2), qcBatchDir);
+        'tmsWindow=[%g %g] ms). A QC PNG is captured after every ' ...
+        'Quality Gate step.'], ...
+        qcAttribute, qcTmsWindow(1), qcTmsWindow(2));
 end
 
 % Quality Gate skip-on-fail preference. Off by default; when on, any
@@ -189,7 +195,7 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
-    wOpts = applyQCOpts(wOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
+    wOpts = applyQCOpts(wOpts, batchCtx, autoQualityReport, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -255,7 +261,7 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
-        fOpts = applyQCOpts(fOpts, qcBatchDir, qcCheckpointNames, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
+        fOpts = applyQCOpts(fOpts, batchCtx, autoQualityReport, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -284,9 +290,7 @@ end
 
 closeDlg(dlg);
 
-if ~isempty(qcBatchDir)
-    nestLog('QC', 'Quality reports saved to: %s', qcBatchDir);
-end
+nestLog('CFG', 'Batch artifacts saved to: %s', batchCtx.batchRoot);
 
 % Batch-mode Quality Gate verdicts: resolved across all completed
 % reports using median + N * MAD cutoffs. Pending verdicts inside
@@ -328,12 +332,17 @@ end
 summaries = cell(nFiles, 1);
 for fi = 1:nFiles
     if ~isempty(reports{fi})
-        [pd, ~, ~]    = fileparts(filePaths{fi});
-        [summaries{fi}, ~] = exportReport(reports{fi}, [pd, filesep]);
+        [summaries{fi}, ~] = exportReport(reports{fi}, batchCtx);
     end
 end
 allReports   = reports(~cellfun(@isempty, reports));
 allSummaries = summaries(~cellfun(@isempty, summaries));
+
+% Batch-level artifacts: spec snapshot, dashboard PNG, summary CSV.
+% Each wrapped in its own try so one failure can't take down the run.
+if ~cancelled && ~isempty(allReports)
+    writeBatchArtifacts(batchCtx, spec, opts.pipelineName, allReports, failed);
+end
 
 if cancelled
     % Discard any partially-completed reports - a cancelled run is not a result.
@@ -552,12 +561,13 @@ end
 function c = verdictFill(verdict)
 % Color the per-slot bar fill briefly while a Quality Gate verdict is
 % on display in the progress dialog. Reset by the next step-start
-% message back to the normal blue.
+% message back to the normal blue. Absolute-mode gates only ever
+% return Pass/Marginal/Fail; batch-mode Pending is resolved
+% post-batch and never streamed.
 switch verdict
     case 'Pass',     c = [0.20 0.70 0.30];   % green
     case 'Marginal', c = [0.95 0.80 0.20];   % yellow
     case 'Fail',     c = [0.85 0.20 0.20];   % red
-    case 'Pending',  c = [0.30 0.45 0.85];   % blue
     otherwise,       c = [0.70 0.70 0.70];   % gray
 end
 end
@@ -576,27 +586,16 @@ for k = 1:numel(reports)
 end
 end
 
-function opts = applyQCOpts(opts, batchDir, checkpoints, attribute, tmsWindow, ...
+function opts = applyQCOpts(opts, batchCtx, autoQualityReport, attribute, tmsWindow, ...
         skipOnQualityFail, tmsAutoDetect, autoExportPDF)
 % Assign the QC opts onto a worker/serial options struct.
-opts.qcBatchDir        = batchDir;
-opts.qcCheckpointNames = checkpoints;
+opts.batchCtx          = batchCtx;
+opts.autoQualityReport = autoQualityReport;
 opts.qcAttribute       = attribute;
 opts.qcTmsWindow       = tmsWindow;
 opts.skipOnQualityFail = skipOnQualityFail;
 opts.qcTmsAutoDetect   = tmsAutoDetect;
 opts.autoExportPDF     = autoExportPDF;
-end
-
-function root = commonResultsRoot(filePaths)
-% Common parent folder of all selected files. Falls back to the first
-% file's parent if there is no single common parent.
-parents = cellfun(@(p) fileparts(p), filePaths, 'UniformOutput', false);
-if numel(unique(parents)) == 1
-    root = parents{1};
-else
-    root = fileparts(filePaths{1});
-end
 end
 
 function parallelSkipMsg(statusBar, msg)
@@ -757,8 +756,12 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Pre-flight helpers
 
-function warnIfOverwriteFiles(spec, filePaths, opts)
+function warnIfOverwriteFiles(spec, filePaths, opts, batchCtx)
 % Throws 'nestapp:cancelled' if the user declines to overwrite.
+% Output files now land under <batchRoot>/data/ (typeBased) or
+% <batchRoot>/<stem>/ (perInput); the batch folder is freshly named
+% per-run, so legitimate collisions are rare. We still warn when the
+% destination .set exists (e.g. if outputRoot was just reused).
 saveIdx = find(strcmp({spec.name}, 'Save New Set'), 1);
 if isempty(saveIdx); return; end
 
@@ -776,12 +779,13 @@ if isempty(savenew); return; end
 nFiles   = numel(filePaths);
 existing = {};
 for fi = 1:nFiles
-    [fdir, fbase] = fileparts(filePaths{fi});
+    [~, fbase] = fileparts(filePaths{fi});
+    fbase = replace(replace(fbase, ' ', '_'), '-', '_');
+    dataDir = outputPaths(batchCtx, 'data', fbase);
     if strcmpi(ifn, 'yes')
-        stem    = replace(replace(fullfile(fdir, fbase), ' ', '_'), '-', '_');
-        outName = [stem, '_', savenew, '.set'];
+        outName = fullfile(dataDir, [fbase, '_', savenew, '.set']);
     else
-        outName = fullfile(fdir, [savenew, '.set']);
+        outName = fullfile(dataDir, [savenew, '.set']);
     end
     if exist(outName, 'file')
         [~, dispName] = fileparts(outName);
@@ -807,5 +811,82 @@ if isfield(dlg, 'overlay') && ~isempty(dlg.overlay) && isvalid(dlg.overlay)
 elseif isfield(dlg, 'fig') && ~isempty(dlg.fig) && isvalid(dlg.fig)
     close(dlg.fig);
 end
+end
+
+function writeBatchArtifacts(batchCtx, spec, pipelineName, reports, failed)
+% Drop the run-level artifacts in <batchRoot>/batch (or _batch for
+% perInput layout). Every section is independently try/catched so a
+% rendering bug never costs the user their per-file outputs.
+batchDir = outputPaths(batchCtx, 'batch');
+
+% 1) Pipeline spec snapshot, so this run is reproducible from the
+%    artifacts alone.
+try
+    specPath = fullfile(batchDir, 'spec.mat');
+    save(specPath, 'spec', 'pipelineName');
+catch err
+    nestLog('CFG', 'Could not save spec.mat: %s', err.message);
+end
+
+% 2) Per-file summary CSV.
+try
+    csvPath = fullfile(batchDir, 'session_summary.csv');
+    writeSessionSummaryCsv(csvPath, reports, failed);
+catch err
+    nestLog('CFG', 'Could not write session_summary.csv: %s', err.message);
+end
+
+% 3) Dashboard PNG - only when at least one report carries a Quality
+%    Gate (otherwise the dashboard is empty and we save nothing).
+try
+    if anyReportHasGates(reports)
+        pngPath = fullfile(batchDir, 'dashboard.png');
+        renderDashboardToFile(reports, pngPath);
+    end
+catch err
+    nestLog('CFG', 'Could not render dashboard PNG: %s', err.message);
+end
+end
+
+function writeSessionSummaryCsv(csvPath, reports, failed)
+% One row per processed file. Failed files are pulled from the
+% structured failure log.
+rows = cell(0, 6);
+for k = 1:numel(reports)
+    r = reports{k};
+    [~, stem] = fileparts(r.inputFile);
+    nSteps = numel(r.steps);
+    nErr = 0;
+    durS = 0;
+    for si = 1:nSteps
+        s = r.steps{si};
+        if isfield(s, 'duration'), durS = durS + s.duration; end
+    end
+    verdict = '';
+    if isfield(r, 'quality') && isfield(r.quality, 'worstVerdict')
+        verdict = r.quality.worstVerdict;
+    end
+    rows(end+1, :) = {stem, 'ok', nSteps, nErr, durS, verdict}; %#ok<AGROW>
+end
+for k = 1:numel(failed)
+    f = failed(k);
+    [~, stem] = fileparts(f.name);
+    kind = 'errored';
+    if isfield(f, 'kind') && ~isempty(f.kind), kind = f.kind; end
+    rows(end+1, :) = {stem, kind, NaN, 1, NaN, ''}; %#ok<AGROW>
+end
+T = cell2table(rows, 'VariableNames', ...
+    {'stem','status','n_steps','n_errors','duration_s','quality_verdict'});
+writetable(T, csvPath);
+end
+
+function renderDashboardToFile(reports, pngPath)
+% Render the Session Quality Dashboard to an offscreen uifigure and
+% export it as a PNG using exportapp (uifigure-safe).
+fig = uifigure('Visible', 'off', 'Position', [100 100 1400 900]);
+cleanup = onCleanup(@() delete(fig));
+renderDashboardPanel(fig, reports);
+drawnow;
+exportapp(fig, pngPath);
 end
 

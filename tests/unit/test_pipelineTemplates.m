@@ -59,9 +59,9 @@ for i = 1:numel(templates)
 end
 end
 
-function test_threeTemplatesExist(testCase)
+function test_fourTemplatesExist(testCase)
 templates = loadTemplates(testCase);
-testCase.verifyEqual(numel(templates), 3, 'Expected exactly 3 templates');
+testCase.verifyEqual(numel(templates), 4, 'Expected exactly 4 templates');
 end
 
 % ── template names ────────────────────────────────────────────────────────

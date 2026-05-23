@@ -5,8 +5,10 @@ function tests = test_autoQualityReport
 %   - Sets the autoQualityReport preference on
 %   - Saves a tiny synthetic EEG to disk as a .set file
 %   - Runs a one-step pipeline (Load Data, which is a checkpoint)
-%   - Asserts the qc_<timestamp>/<filebase>/NN_StepName.png hierarchy
-%     was created and that report.quality.figures records it
+%   - Asserts the <batchRoot>/qc/<filebase>/NN_StepName.png hierarchy
+%     was created and that report.quality.figures records it.
+%     (The batch root itself is named <yyyyMMdd_HHmmss>_<pipelineSlug>
+%     by buildBatchContext - see io/outputPaths.m for the layout map.)
 %
 %   Requires EEGLAB on the MATLAB path. assumeFail if absent.
 tests = functiontests(localfunctions);
@@ -59,19 +61,23 @@ setPath  = fullfile(tmpDir, [baseName, '.set']);
 EEG      = makeSyntheticEEG();
 evalc('pop_saveset(EEG, ''filename'', [baseName, ''.set''], ''filepath'', tmpDir);');
 
-% Enable auto quality report.
+% Enable auto quality report. QC images are now captured after every
+% Quality Gate step (no hardcoded checkpoint list anymore), so the
+% recipe ends with a permissive Quality Gate to trigger the render.
 setpref('nestapp', 'autoQualityReport', true);
 
-% Single-step recipe with Load Data, which is in qualityCheckpoints().
 spec(1).name   = 'Load Data';
 spec(1).params = struct();
+spec(2).name   = 'Quality Gate';
+spec(2).params = struct('gateLabel', 'auto-qc-smoke');
 
 opts = struct( ...
     'uiFigure',     [], ...
     'pipelineName', 'qc-integration-test', ...
     'statusBar',    [], ...
     'parallel',     false, ...
-    'chanLocFile',  '');
+    'chanLocFile',  '', ...
+    'outputRoot',   tmpDir);   % isolate from any user outputRoot pref
 
 % Pop a UIFigure-free dlg: runPipelineCore tolerates an empty uiFigure by
 % creating a standalone progress figure. We close it via the dlg cleanup.
@@ -91,14 +97,20 @@ pngPath = report.quality.figures{1};
 testCase.verifyTrue(exist(pngPath, 'file') == 2, ...
     sprintf('Recorded QC PNG was not written to disk: %s', pngPath));
 
-% qc folder should be qc_<timestamp> directly under tmpDir.
-qcParent = fileparts(fileparts(pngPath));
-[~, qcFolder] = fileparts(qcParent);
-testCase.verifyTrue(startsWith(qcFolder, 'qc_'), ...
-    sprintf('Top-level QC folder should start with qc_: got %s', qcFolder));
+% Layout under the batch root (typeBased default):
+%   <batchRoot>/qc/<stem>/NN_StepName.png
+% so fileparts(pngPath)         -> <batchRoot>/qc/<stem>
+%    fileparts(fileparts(...))  -> <batchRoot>/qc
+%    fileparts(...3 levels up)  -> <batchRoot>
+perFileDir = fileparts(pngPath);
+qcDir      = fileparts(perFileDir);
+batchRoot  = fileparts(qcDir);
 
-% Per-file subfolder name should match the input basename.
-[~, perFileFolder] = fileparts(fileparts(pngPath));
+[~, qcFolder] = fileparts(qcDir);
+testCase.verifyEqual(qcFolder, 'qc', ...
+    sprintf('Top-level QC folder should be "qc": got %s', qcFolder));
+
+[~, perFileFolder] = fileparts(perFileDir);
 testCase.verifyEqual(perFileFolder, baseName, ...
     'Per-file subfolder should match input basename.');
 
@@ -106,6 +118,16 @@ testCase.verifyEqual(perFileFolder, baseName, ...
 [~, pngBase] = fileparts(pngPath);
 testCase.verifyMatches(pngBase, '^\d{2}_[A-Za-z0-9_]+$', ...
     sprintf('PNG name does not match NN_StepName pattern: %s', pngBase));
+
+% Batch root should be <yyyyMMdd_HHmmss>_<pipelineSlug>.
+[~, batchFolder] = fileparts(batchRoot);
+testCase.verifyMatches(batchFolder, '^\d{8}_\d{6}_[a-z0-9_]+$', ...
+    sprintf('Batch folder name does not match expected pattern: %s', batchFolder));
+
+% Batch-level artifacts (spec.mat is the cheapest one to assert).
+specPath = fullfile(batchRoot, 'batch', 'spec.mat');
+testCase.verifyTrue(exist(specPath, 'file') == 2, ...
+    'Expected <batchRoot>/batch/spec.mat to be written.');
 end
 
 % -- helpers --------------------------------------------------------------

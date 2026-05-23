@@ -33,8 +33,8 @@ if ~isfield(opts, 'fileIndex'),      opts.fileIndex      = 0; end
 if ~isfield(opts, 'uiFigure'),       opts.uiFigure       = []; end
 if ~isfield(opts, 'logQueue'),       opts.logQueue       = []; end
 if ~isfield(opts, 'nWorkers'),      opts.nWorkers       = 1;  end
-if ~isfield(opts, 'qcBatchDir'),        opts.qcBatchDir        = ''; end
-if ~isfield(opts, 'qcCheckpointNames'), opts.qcCheckpointNames = {}; end
+if ~isfield(opts, 'batchCtx'),          opts.batchCtx          = []; end
+if ~isfield(opts, 'autoQualityReport'), opts.autoQualityReport = false; end
 if ~isfield(opts, 'qcAttribute'),       opts.qcAttribute       = 'minmax_no_tms'; end
 if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];          end
 if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
@@ -188,10 +188,17 @@ for si = 1:nSteps
                 vars([inds, inds+1]) = [];
                 fname = '';
                 if strcmp(IFN,'yes')
-                    [fdir, fbase, ~] = fileparts(fullfile(pathName, fileName));
+                    [~, fbase, ~] = fileparts(fullfile(pathName, fileName));
                     fbase = replace(fbase, ' ', '_');
                     fbase = replace(fbase, '-', '_');
-                    fname = fullfile(fdir, [fbase, '_']);
+                    % .set destination now lives under the batch folder
+                    % (data/ for typeBased, <stem>/ for perInput).
+                    if ~isempty(opts.batchCtx)
+                        targetDir = outputPaths(opts.batchCtx, 'data', fbase);
+                    else
+                        targetDir = pathDir;
+                    end
+                    fname = fullfile(targetDir, [fbase, '_']);
                 end
                 ind1 = find(strcmp(vars,'savenew'));
                 sv1 = vars{ind1+1};
@@ -699,7 +706,6 @@ for si = 1:nSteps
                         'gateLabel',   gate.label));
                 end
                 if strcmp(gate.verdict, 'Fail') && opts.skipOnQualityFail
-                    writeSessionLog(pathName, fileName, stepLog);
                     error('nestapp:qualityFail', ...
                         'Step %d (Quality Gate "%s") failed: %s', ...
                         si, gate.label, strjoin(gate.reasons, '; '));
@@ -850,12 +856,13 @@ for si = 1:nSteps
             'epochAfter',  nEpochAfter, ...
             'error',       ''); %#ok<AGROW>
 
-        % Auto Quality Report: after any successful checkpoint step, render
-        % a per-(file, step) QC PNG. Wrapped in try/catch so a rendering
-        % bug never aborts the actual data run.
-        if ~isempty(opts.qcBatchDir) && any(strcmp(stepName, opts.qcCheckpointNames))
+        % Auto Quality Report: render a per-(file, gate) QC PNG after
+        % every successful Quality Gate. Wrapped in try/catch so a
+        % rendering bug never aborts the actual data run.
+        if ~isempty(opts.batchCtx) && opts.autoQualityReport ...
+                && strcmp(stepName, 'Quality Gate')
             pngName = sprintf('%02d_%s.png', si, sanitizeForPath(stepName));
-            outPath = fullfile(opts.qcBatchDir, fileBase, pngName);
+            outPath = fullfile(outputPaths(opts.batchCtx, 'qc', fileBase), pngName);
             try
                 if opts.qcTmsAutoDetect
                     tmsWin = inferTmsWindow(EEG, opts.qcTmsWindow);
@@ -920,7 +927,6 @@ for si = 1:nSteps
         end
 
         if ~shouldContinue
-            writeSessionLog(pathName, fileName, stepLog);
             if ~isempty(opts.onStepError)
                 % Serial mode: user chose Abort on the step prompt - cancel whole run.
                 error('nestapp:cancelled', 'Run aborted at step %d (%s): %s', ...
@@ -953,14 +959,15 @@ if isstruct(EEG) && isfield(EEG, 'history')
     ALLCOM = [newLines(:)', ALLCOM];
 end
 
-sendWorkerLog(opts.logQueue, wLabel, 'Writing session log...');
-writeSessionLog(pathName, fileName, stepLog);
-
 % Auto-export per-file PDF when the pref is on. Failure is logged
 % but never aborts the pipeline.
 if opts.autoExportPDF
     try
-        pdfPath = exportFileReportPDF(fileReport, pathName);
+        if ~isempty(opts.batchCtx)
+            pdfPath = exportFileReportPDF(fileReport, opts.batchCtx);
+        else
+            pdfPath = exportFileReportPDF(fileReport, pathName);
+        end
         sendWorkerLog(opts.logQueue, wLabel, 'PDF report written: %s', pdfPath);
     catch pdfErr
         sendWorkerLog(opts.logQueue, wLabel, ...

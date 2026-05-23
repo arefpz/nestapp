@@ -116,13 +116,8 @@ for k = 1:numel(groupNames)
             % gate's thresholds, use it as the Marginal cutoff instead
             % of slack * batchCutoff. The Fail boundary (batch cutoff)
             % is unchanged.
-            warnAtField = [paramName 'WarnAt'];
-            if isfield(sampleThresholds, warnAtField) ...
-                    && sampleThresholds.(warnAtField) > 0
-                warnCutoff = sampleThresholds.(warnAtField);
-            else
-                warnCutoff = grp.slack * cutoff;
-            end
+            warnAt     = getOr(sampleThresholds, [paramName 'WarnAt'], 0);
+            warnCutoff = pickCutoff(warnAt, grp.slack * cutoff);
             if value > cutoff
                 [verdict, reasons] = bump(verdict, reasons, 'Fail', ...
                     sprintf('%s %g > batch cutoff %g', f, value, cutoff));
@@ -178,6 +173,15 @@ if isfield(s, name) && ~isempty(s.(name))
     v = s.(name);
 else
     v = NaN;
+end
+end
+
+function c = pickCutoff(warnAt, slackCutoff)
+% warnAt > 0 overrides the slack-derived boundary; otherwise fall back.
+if warnAt > 0
+    c = warnAt;
+else
+    c = slackCutoff;
 end
 end
 
