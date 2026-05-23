@@ -1198,6 +1198,15 @@
             app.ReportsTextArea.FontSize = 10;
             app.ReportsTextArea.Position = [220 10 637 457];
 
+            % Quality Dashboard panel - same rectangle as the text area,
+            % hidden by default. Visible when the user picks the
+            % synthetic "Session Quality Dashboard" entry in the listbox.
+            app.ReportsDashboardPanel = uipanel(app.ReportsTab);
+            app.ReportsDashboardPanel.Position = [220 10 637 457];
+            app.ReportsDashboardPanel.BorderType = 'none';
+            app.ReportsDashboardPanel.AutoResizeChildren = 'off';
+            app.ReportsDashboardPanel.Visible = 'off';
+
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
         end
