@@ -95,6 +95,17 @@ catch err
     axis off
     return
 end
+% Reorder rows into an anterior-posterior montage: left-temporal,
+% left para-sagittal, medial, right para-sagittal, right-temporal
+% (top to bottom). Within each band, sorted from most anterior to
+% most posterior. Falls back to identity ordering when chanlocs
+% aren't usable.
+nbchan = summary.nbchan;
+order  = montageOrder(EEG, nbchan);
+SM     = SM(order, :);
+summary.flatChanMask = summary.flatChanMask(order);
+summary.satChanMask  = summary.satChanMask(order);
+
 imagesc(SM);
 colormap(gca, 'parula');
 cb = colorbar;
@@ -106,11 +117,12 @@ subtitle(attributeDisplayName(opts.attribute));
 
 % Y-axis: cap at ~16 ticks and label each with the channel name from
 % chanlocs when available (Fp1, Cz, ...) instead of a bare index.
-nbchan  = summary.nbchan;
+% tickIdx are positions in the *reordered* SM, so look up the
+% original chanlocs index via order().
 step    = max(1, floor(nbchan/16));
 tickIdx = 1:step:nbchan;
 yticks(tickIdx);
-yticklabels(channelLabels(EEG, tickIdx));
+yticklabels(channelLabels(EEG, order(tickIdx)));
 % Disable the tex interpreter so labels like 'EXT_1' don't render
 % with a subscript.
 set(gca, 'TickLabelInterpreter', 'none');
@@ -322,6 +334,68 @@ if ~isempty(metrics)
         metrics(1).source, nKept, nRej);
 end
 s = strjoin(parts, '  |  ');
+end
+
+function order = montageOrder(EEG, nbchan)
+% Return a 1:nbchan permutation that arranges channels by montage:
+%   1. Left  temporal   (top)
+%   2. Left  para-sagittal
+%   3. Medial / midline
+%   4. Right para-sagittal
+%   5. Right temporal   (bottom)
+% Within each band, sorted from most anterior to most posterior
+% (high X to low X) per the EEGLAB convention X+ = nose, Y+ = left.
+% Bins are defined by |Y| / max(|Y|), so the same thresholds work for
+% any coordinate scale (unit sphere, mm, etc.). Falls back to the
+% identity ordering when chanlocs lack X/Y, when X/Y are missing for
+% any channel, or when all channels are on the midline.
+order = 1:nbchan;
+if ~isfield(EEG, 'chanlocs') || isempty(EEG.chanlocs), return, end
+if numel(EEG.chanlocs) < nbchan, return, end
+if ~all(isfield(EEG.chanlocs, {'X', 'Y'})), return, end
+
+cl = EEG.chanlocs(1:nbchan);
+if any(cellfun(@isempty, {cl.X})) || any(cellfun(@isempty, {cl.Y}))
+    return
+end
+X = [cl.X];
+Y = [cl.Y];
+maxAbsY = max(abs(Y));
+if maxAbsY == 0, return, end
+
+absNormY = abs(Y) / maxAbsY;
+MEDIAL_THRESH   = 0.20;   % |Y|/max(|Y|) below this counts as midline
+TEMPORAL_THRESH = 0.60;   % above this counts as far-lateral / temporal
+
+isMedial    = absNormY <  MEDIAL_THRESH;
+isTemporal  = absNormY >= TEMPORAL_THRESH;
+isPara      = ~isMedial & ~isTemporal;
+
+leftTemp  = find(isTemporal & Y > 0);
+leftPara  = find(isPara     & Y > 0);
+medial    = find(isMedial);
+rightPara = find(isPara     & Y < 0);
+rightTemp = find(isTemporal & Y < 0);
+
+order = [ ...
+    sortByX(leftTemp,  X), ...
+    sortByX(leftPara,  X), ...
+    sortByX(medial,    X), ...
+    sortByX(rightPara, X), ...
+    sortByX(rightTemp, X)];
+
+% Append any channel a band missed (e.g. Y == 0 on the right boundary)
+% in their original order so SM rows still match 1:nbchan.
+missing = setdiff(1:nbchan, order, 'stable');
+if ~isempty(missing)
+    order = [order, missing];
+end
+end
+
+function s = sortByX(idx, X)
+if isempty(idx), s = []; return, end
+[~, ord] = sort(X(idx), 'descend');
+s = reshape(idx(ord), 1, []);
 end
 
 function labels = channelLabels(EEG, idx)
