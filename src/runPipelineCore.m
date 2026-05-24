@@ -248,6 +248,22 @@ if useParallel
         end
     end
 
+    % Drain failed futures via fetchOutputs so MATLAB's destructor
+    % doesn't print "One or more futures resulted in an error" when
+    % the array goes out of scope. Reading future.Error.message above
+    % captures the message but doesn't mark the future as consumed;
+    % only fetchOutputs does. Wrapped in try/catch because fetchOutputs
+    % on a failed future rethrows what we just chose to handle.
+    for fi = 1:nFiles
+        if strcmp(futures(fi).State, 'failed')
+            try
+                fetchOutputs(futures(fi));
+            catch
+                % expected - the error is now considered consumed
+            end
+        end
+    end
+
 else
     for fi = 1:nFiles
         if dlg.fig.UserData.cancelRequested; cancelled = true; break; end
