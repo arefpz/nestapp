@@ -241,8 +241,10 @@ if useParallel
         % Capture + drain any newly-failed future immediately so its
         % error doesn't surface as MATLAB's generic "One or more
         % futures resulted in an error" warning on the next drawnow.
+        % NB: a parfeval future whose worker errored has State =
+        % 'finished' with non-empty .Error - NOT State = 'failed'.
         for fi = 1:nFiles
-            if ~drained(fi) && strcmp(states{fi}, 'failed')
+            if ~drained(fi) && futureErrored(futures(fi))
                 rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
                 if ~isempty(rec)
                     failed(end+1) = rec; %#ok<AGROW>
@@ -254,18 +256,17 @@ if useParallel
     end
     nestLog('PAR', 'Poll loop exited (cancelled=%d)', cancelled);
 
-    finalStates = {futures.State};
     for fi = 1:nFiles
-        if strcmp(finalStates{fi}, 'finished')
-            [reports{fi}, ~] = fetchOutputs(futures(fi));
-        elseif strcmp(finalStates{fi}, 'failed') && ~drained(fi)
-            % Safety net: futures that flipped to failed after the
-            % poll loop's drain (e.g. cancel-induced mid-error) get
-            % drained here. recordIt = ~cancelled so cancel-induced
-            % failures stay silent in the failure list.
+        if futureErrored(futures(fi)) && ~drained(fi)
+            % Safety net: futures that errored after the poll loop's
+            % drain (e.g. cancel-induced mid-error) get drained here.
+            % recordIt = ~cancelled so cancel-induced failures stay
+            % silent in the failure list.
             rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
             if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
             drained(fi) = true;
+        elseif strcmp(futures(fi).State, 'finished')
+            [reports{fi}, ~] = fetchOutputs(futures(fi));
         end
     end
 
@@ -642,6 +643,26 @@ if isequal(chName, 0)
     error('nestapp:cancelled', 'Channel location file selection cancelled.');
 end
 chFile = fullfile(chPath, chName);
+end
+
+function tf = futureErrored(f)
+% A parfeval future whose worker threw has State == 'finished' with
+% non-empty .Error in current MATLAB releases. Older releases used
+% State == 'failed'. Check both shapes so we don't rely on the
+% release-specific behaviour.
+if strcmp(f.State, 'failed')
+    tf = true;
+    return
+end
+if strcmp(f.State, 'finished')
+    try
+        tf = ~isempty(f.Error);
+    catch
+        tf = false;
+    end
+    return
+end
+tf = false;
 end
 
 function rec = drainFailedFuture(fi, future, filePath, recordIt)
