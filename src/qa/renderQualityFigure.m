@@ -104,9 +104,16 @@ ylabel('Channel');
 title('Channel x Trial Quality Map');
 subtitle(attributeDisplayName(opts.attribute));
 
-% Mark flagged channels with text on the y-axis.
-nbchan = summary.nbchan;
-yticks(1:max(1, floor(nbchan/16)):nbchan);
+% Y-axis: cap at ~16 ticks and label each with the channel name from
+% chanlocs when available (Fp1, Cz, ...) instead of a bare index.
+nbchan  = summary.nbchan;
+step    = max(1, floor(nbchan/16));
+tickIdx = 1:step:nbchan;
+yticks(tickIdx);
+yticklabels(channelLabels(EEG, tickIdx));
+% Disable the tex interpreter so labels like 'EXT_1' don't render
+% with a subscript.
+set(gca, 'TickLabelInterpreter', 'none');
 hold on
 for k = 1:nbchan
     if summary.flatChanMask(k)
@@ -315,6 +322,26 @@ if ~isempty(metrics)
         metrics(1).source, nKept, nRej);
 end
 s = strjoin(parts, '  |  ');
+end
+
+function labels = channelLabels(EEG, idx)
+% Best-effort channel labels for the given indices, using chanlocs
+% when available and falling back to "ch N" otherwise. Handles every
+% partial-chanlocs case (no field, empty struct, missing labels
+% field, empty per-channel label) so the Y axis always renders
+% something readable regardless of the input montage.
+n = numel(idx);
+labels = cell(1, n);
+haveChanlocs = isfield(EEG, 'chanlocs') && ~isempty(EEG.chanlocs) ...
+            && isfield(EEG.chanlocs, 'labels');
+for k = 1:n
+    i = idx(k);
+    if haveChanlocs && i <= numel(EEG.chanlocs) && ~isempty(EEG.chanlocs(i).labels)
+        labels{k} = char(EEG.chanlocs(i).labels);
+    else
+        labels{k} = sprintf('ch %d', i);
+    end
+end
 end
 
 function v = getOr(s, field, default)
