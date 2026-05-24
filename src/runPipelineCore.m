@@ -38,6 +38,10 @@ if ~depsOk
     return
 end
 
+% One-time deprecation log: warn the user about Quality Gate params
+% renamed in this version. The gate itself silently aliases them.
+warnDeprecatedGateParams(spec);
+
 % Unified batch output: every run gets one timestamped folder.
 % Destination priority: opts.outputRoot (programmatic override, used
 % by tests) > nestapp.outputRoot pref > common parent of inputs.
@@ -802,6 +806,28 @@ answer = uiconfirm(opts.uiFigure, msg, 'Output Files Exist', ...
     'Icon', 'warning');
 if strcmp(answer, 'Cancel')
     error('nestapp:cancelled', 'Run cancelled by user.');
+end
+end
+
+function warnDeprecatedGateParams(spec)
+% Scan a pipeline spec for Quality Gate steps using renamed params and
+% emit one CFG log line per unique mapping so users update their saved
+% pipelines. Silent when nothing deprecated is found.
+aliases = deprecatedGateAliases();
+seen = false(size(aliases, 1), 1);
+for si = 1:numel(spec)
+    if ~strcmp(spec(si).name, 'Quality Gate'), continue, end
+    p = spec(si).params;
+    for k = 1:size(aliases, 1)
+        if seen(k), continue, end
+        old = aliases{k, 1};
+        if isfield(p, old) && ~isempty(p.(old)) && p.(old) ~= 0
+            nestLog('CFG', ['Quality Gate param "%s" is deprecated. ' ...
+                'Rename to "%s" in your saved pipeline (the run will ' ...
+                'still honor the old name).'], old, aliases{k, 2});
+            seen(k) = true;
+        end
+    end
 end
 end
 

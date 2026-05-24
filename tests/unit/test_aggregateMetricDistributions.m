@@ -63,15 +63,15 @@ classdef test_aggregateMetricDistributions < matlab.unittest.TestCase
             mk = @test_aggregateMetricDistributions.reportWithGates;
             mg = @test_aggregateMetricDistributions.gate;
 
-            absGate = mg('absolute', struct('maxBadTrialPct', 10), ...
-                struct('pctBadTrials', 3));
-            batchGate = mg('batch', struct('maxBadTrialPct', 1), ...
-                struct('pctBadTrials', 8), ...
-                'batchCutoffs', struct('pctBadTrials', 12));
+            absGate = mg('absolute', struct('maxOutlierTrialPct', 10), ...
+                struct('pctOutlierTrials', 3));
+            batchGate = mg('batch', struct('maxOutlierTrialPct', 1), ...
+                struct('pctOutlierTrials', 8), ...
+                'batchCutoffs', struct('pctOutlierTrials', 12));
 
             d = aggregateMetricDistributions({mk({absGate, batchGate})});
             tc.verifyLength(d, 1);
-            tc.verifyEqual(d.name, 'pctBadTrials');
+            tc.verifyEqual(d.name, 'pctOutlierTrials');
             tc.verifyEqual(sort(d.values), [3 8]);
             tc.verifyEqual(d.absThresholds, 10);
             tc.verifyEqual(d.batchCutoffs, 12);

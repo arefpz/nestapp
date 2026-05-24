@@ -675,9 +675,21 @@ for si = 1:nSteps
                 pop_tesa_peakoutput( EEG, vars{:} );
 
             case 'Quality Gate'
-                gate = qualityGate(EEG, step.params);
+                % Pass the running rejection tally as context so the
+                % gate's maxRejected*Pct metrics can compare against
+                % the original counts logged at Load Data / Epoching.
+                qgContext = struct( ...
+                    'channels', fileReport.channels, ...
+                    'trials',   fileReport.trials);
+                gate = qualityGate(EEG, step.params, qgContext);
                 gate.stepIndex = si;
                 gate.stepName  = stepName;
+                % Auto-disambiguate unset / default gate labels with the
+                % step index so the dashboard, batch finalizer, and PDF
+                % don't collapse multiple "gate" entries into one row.
+                if isempty(gate.label) || strcmp(gate.label, 'gate')
+                    gate.label = sprintf('gate-%02d', si);
+                end
                 if ~isfield(fileReport, 'quality') ...
                         || ~isfield(fileReport.quality, 'gates')
                     if ~isfield(fileReport, 'quality')

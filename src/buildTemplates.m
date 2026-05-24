@@ -205,24 +205,26 @@ ovs = setOv(ovs, steps, 'Quality Gate', 'maxFlatChansWarnAt',  2,               
 
 % --- QG3: post-Round 1 ICA + interpolation ----------------------------
 % Round 1 targets TMS-evoked muscle. Fail if EMG / muscle fraction
-% remains > 40% of ICA components; warn at 20%. Bad-trial fraction up
-% to 25% tolerated (Round 2 has another chance), warn at 10%.
-ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',              'post-round1-ica', 3);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFraction',         0.40,              3);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFractionWarnAt',   0.20,              3);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPct',         25,                3);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPctWarnAt',   10,                3);
+% remains > 40% of ICA components; warn at 20%. Cumulative trial
+% rejection > 25% means Round 1 lost too many trials (Round 2 still
+% has another chance), warn at 10%.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',                 'post-round1-ica', 3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFraction',            0.40,              3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxEMGFractionWarnAt',      0.20,              3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPct',       25,                3);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPctWarnAt', 10,                3);
 
 % --- QG4: final, pre-save ---------------------------------------------
 % Comprehensive QC after both ICA rounds, filters, and re-referencing.
-% Tighter than QG3 because no further cleanup follows.
-ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',               'final', 4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPct',          10,      4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadTrialPctWarnAt',    5,       4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadChanPct',           15,      4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxBadChanPctWarnAt',     5,       4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCount',       3,       4);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCountWarnAt', 1,       4);
+% Tighter than QG3 because no further cleanup follows. Cumulative
+% rejection counts: > 10% trials or > 15% channels lost = Fail.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',                  'final', 4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPct',         10,     4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPctWarnAt',   5,      4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedChanPct',          15,     4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedChanPctWarnAt',    5,      4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCount',           3,      4);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCountWarnAt',     1,      4);
 saveMat(reg, steps, ovs, 'TMS-EEG / TEP (TESA + Quality Gates)', fullfile(outDir, '4_tesa_tep_qc.mat'));
 
 fprintf('buildTemplates: done - %s\n', outDir);

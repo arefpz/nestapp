@@ -111,7 +111,7 @@ EEG.xmin     = 0;
 EEG.xmax     = (nPnts - 1) / srate;
 EEG.times    = 1000 * (0:nPnts-1) / srate;
 EEG.data     = single(amplitude * randn(nChan, nPnts));
-% Force one channel to be very noisy so maxBadChanPct picks it up.
+% Force one channel to be very noisy so maxOutlierChanPct picks it up.
 EEG.data(1, :) = single(amplitude * 50 * randn(1, nPnts));
 EEG.event    = [];
 EEG.epoch    = [];

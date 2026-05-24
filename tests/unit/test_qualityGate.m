@@ -147,11 +147,11 @@ classdef test_qualityGate < matlab.unittest.TestCase
         function batch_mode_returns_pending(tc)
             EEG = test_qualityGate.makeEEG(8, 10, 500, 1000);
             gate = qualityGate(EEG, struct( ...
-                'thresholdMode', 'batch', ...
-                'maxBadTrialPct', 10));
+                'thresholdMode',      'batch', ...
+                'maxOutlierTrialPct', 10));
             tc.verifyEqual(gate.verdict, 'Pending');
             tc.verifyEmpty(gate.reasons);
-            tc.verifyTrue(~isnan(gate.metrics.pctBadTrials));
+            tc.verifyTrue(~isnan(gate.metrics.pctOutlierTrials));
         end
 
         function batch_mode_collects_metrics_regardless_of_threshold(tc)
@@ -276,6 +276,90 @@ classdef test_qualityGate < matlab.unittest.TestCase
                 'minTriggers',   100, ...
                 'marginalSlack', 0.8));
             tc.verifyEqual(gate.verdict, 'Fail');
+        end
+
+        % -- rejected-pct metrics (Phase 5) ------------------------------
+
+        function maxRejectedChanPct_fails_above_threshold(tc)
+            % Regression for the bug where maxBadChanPct never fired
+            % even with 8/63 channels removed. The new maxRejectedChanPct
+            % reads the running tally from the context, not statistical
+            % outliers of the surviving channels.
+            EEG = test_qualityGate.makeEEG(55, 10, 500, 1000); % 55 left now
+            ctx = struct( ...
+                'channels', struct('original', 63, 'nRejected', 8), ...
+                'trials',   struct('original', 0,  'rejected',  0));
+            gate = qualityGate(EEG, struct('maxRejectedChanPct', 10), ctx);
+            % 8/63 = 12.7% > 10 -> Fail.
+            tc.verifyEqual(gate.verdict, 'Fail');
+            tc.verifyTrue(any(contains(gate.reasons, '% rejected channels')));
+        end
+
+        function maxRejectedTrialPct_fails_above_threshold(tc)
+            EEG = test_qualityGate.makeEEG(8, 59, 500, 1000);
+            ctx = struct( ...
+                'channels', struct('original', 8,  'nRejected', 0), ...
+                'trials',   struct('original', 80, 'rejected', 21));
+            gate = qualityGate(EEG, struct('maxRejectedTrialPct', 15), ctx);
+            % 21/80 = 26.25% > 15 -> Fail.
+            tc.verifyEqual(gate.verdict, 'Fail');
+            tc.verifyTrue(any(contains(gate.reasons, '% rejected trials')));
+        end
+
+        function maxRejectedChanPct_warnAt_yields_marginal(tc)
+            % 8/63 = 12.7%. Threshold 15 (Fail above), WarnAt 10 (Marginal
+            % above) -> Marginal.
+            EEG = test_qualityGate.makeEEG(55, 10, 500, 1000);
+            ctx = struct( ...
+                'channels', struct('original', 63, 'nRejected', 8), ...
+                'trials',   struct('original', 0,  'rejected',  0));
+            gate = qualityGate(EEG, struct( ...
+                'maxRejectedChanPct',       15, ...
+                'maxRejectedChanPctWarnAt', 10), ctx);
+            tc.verifyEqual(gate.verdict, 'Marginal');
+        end
+
+        function maxRejected_passes_when_under_threshold(tc)
+            EEG = test_qualityGate.makeEEG(60, 10, 500, 1000);
+            ctx = struct( ...
+                'channels', struct('original', 63, 'nRejected', 3), ...
+                'trials',   struct('original', 80, 'rejected',  4));
+            gate = qualityGate(EEG, struct( ...
+                'maxRejectedChanPct',  10, ...
+                'maxRejectedTrialPct', 15), ctx);
+            % 3/63 = 4.8%, 4/80 = 5% - both under their thresholds.
+            tc.verifyEqual(gate.verdict, 'Pass');
+        end
+
+        function maxRejected_NaN_when_context_missing(tc)
+            % No context -> metric is NaN -> check skipped silently.
+            EEG = test_qualityGate.makeEEG(8, 10, 500, 1000);
+            gate = qualityGate(EEG, struct('maxRejectedChanPct', 10));
+            tc.verifyEqual(gate.verdict, 'Pass');
+            tc.verifyTrue(isnan(gate.metrics.rejectedChanPct));
+        end
+
+        % -- deprecated alias behavior ----------------------------------
+
+        function maxBadChanPct_alias_maps_to_maxOutlier(tc)
+            % Saved pipelines using the old key must still work. With one
+            % flat channel and seven normal ones, pctOutlierChans is 0%
+            % (the flat channel is excluded), so a permissive 0.5%
+            % outlier threshold still passes the gate either way - what
+            % we are testing here is that the *threshold* gets carried
+            % across into the new name.
+            EEG = test_qualityGate.makeEEG(8, 30, 500, 1000);
+            gate = qualityGate(EEG, struct('maxBadChanPct', 25));
+            tc.verifyEqual(gate.thresholds.maxOutlierChanPct, 25);
+            % The deprecated field is NOT mirrored in thresholds (it's
+            % been folded into the new one).
+            tc.verifyFalse(isfield(gate.thresholds, 'maxBadChanPct'));
+        end
+
+        function maxBadTrialPct_alias_maps_to_maxOutlier(tc)
+            EEG = test_qualityGate.makeEEG(8, 30, 500, 1000);
+            gate = qualityGate(EEG, struct('maxBadTrialPct', 12));
+            tc.verifyEqual(gate.thresholds.maxOutlierTrialPct, 12);
         end
 
         function metrics_always_has_cheap_fields(tc)

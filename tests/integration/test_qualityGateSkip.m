@@ -141,6 +141,52 @@ testCase.verifyEqual(report.quality.gates{1}.verdict, 'Fail');
 testCase.verifyNotEmpty(report.quality.gates{1}.reasons);
 end
 
+function test_unset_gate_labels_get_step_indexed_names(testCase)
+% Two Quality Gates in the same pipeline, neither with an explicit
+% gateLabel. processOneFile must rewrite them to gate-NN using the
+% step index so they don't collide in the dashboard / batch finalizer.
+tmpDir = fullfile(tempdir, ['qg_autoname_', char(matlab.lang.internal.uuid())]);
+mkdir(tmpDir);
+testCase.addTeardown(@() rmdir(tmpDir, 's'));
+
+baseName = 'tiny_synth';
+setPath  = fullfile(tmpDir, [baseName, '.set']);
+EEG      = makeSyntheticEEG();
+evalc('pop_saveset(EEG, ''filename'', [baseName, ''.set''], ''filepath'', tmpDir);');
+
+setpref('nestapp', 'skipOnQualityFail', false);
+setpref('nestapp', 'autoQualityReport', false);
+
+% Three-step recipe: Load Data, two unnamed Quality Gates. Both gates
+% are permissive (empty params -> all checks disabled -> Pass) so the
+% test runs to completion and we can inspect the labels.
+spec(1).name   = 'Load Data';
+spec(1).params = struct();
+spec(2).name   = 'Quality Gate';
+spec(2).params = struct();          % no gateLabel set
+spec(3).name   = 'Quality Gate';
+spec(3).params = struct('gateLabel', 'gate');   % literal default value
+
+opts = struct( ...
+    'uiFigure',     [], ...
+    'pipelineName', 'qg-autoname-test', ...
+    'statusBar',    [], ...
+    'parallel',     false, ...
+    'chanLocFile',  '', ...
+    'outputRoot',   tmpDir);
+
+allReports = runPipelineCore(spec, {setPath}, opts);
+report = allReports{1};
+gates = report.quality.gates;
+testCase.verifyLength(gates, 2);
+
+% Step 2 and step 3 -> gate-02 and gate-03. Distinct labels so the
+% dashboard renders one row per gate, not one collapsed row.
+testCase.verifyEqual(gates{1}.label, 'gate-02');
+testCase.verifyEqual(gates{2}.label, 'gate-03');
+testCase.verifyNotEqual(gates{1}.label, gates{2}.label);
+end
+
 % -- helpers --------------------------------------------------------------
 
 function EEG = makeSyntheticEEG()
