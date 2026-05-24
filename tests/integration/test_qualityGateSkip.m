@@ -19,20 +19,32 @@ if isempty(which('eeglab'))
 end
 evalc('eeglab(''nogui'')');
 
-if ispref('nestapp', 'skipOnQualityFail')
-    testCase.TestData.prevPref = getpref('nestapp', 'skipOnQualityFail');
-    testCase.TestData.prevPrefSet = true;
-else
-    testCase.TestData.prevPrefSet = false;
-end
+% Snapshot every pref any test body in this file writes to, so the
+% user's interactive settings aren't stomped by a test run.
+testCase.TestData.prefSnapshot = snapshotPrefs( ...
+    {'skipOnQualityFail', 'autoQualityReport'});
 end
 
 function teardownOnce(testCase)
-if testCase.TestData.prevPrefSet
-    setpref('nestapp', 'skipOnQualityFail', testCase.TestData.prevPref);
-else
-    if ispref('nestapp', 'skipOnQualityFail')
-        rmpref('nestapp', 'skipOnQualityFail');
+restorePrefs(testCase.TestData.prefSnapshot);
+end
+
+function snap = snapshotPrefs(keys)
+snap = struct('keys', {keys}, 'wasSet', false(size(keys)), 'values', {cell(size(keys))});
+for k = 1:numel(keys)
+    if ispref('nestapp', keys{k})
+        snap.wasSet(k) = true;
+        snap.values{k} = getpref('nestapp', keys{k});
+    end
+end
+end
+
+function restorePrefs(snap)
+for k = 1:numel(snap.keys)
+    if snap.wasSet(k)
+        setpref('nestapp', snap.keys{k}, snap.values{k});
+    elseif ispref('nestapp', snap.keys{k})
+        rmpref('nestapp', snap.keys{k});
     end
 end
 end

@@ -624,13 +624,16 @@ classdef nestapp < matlab.apps.AppBase
                 if ~isequal(p, 0); field.Value = p; end
             end
             function savePrefs()
-                % EEGLAB path
+                % EEGLAB path - warn on invalid value but don't abort
+                % the rest of the save (otherwise the other preferences
+                % the user just toggled would silently be discarded).
                 ep = strtrim(fEeglab.Value);
-                if ~isempty(ep)
-                    if ~isfolder(ep)
-                        uialert(dlg, 'EEGLAB path does not exist.', 'Invalid Path');
-                        return
-                    end
+                eeglabPathValid = isempty(ep) || isfolder(ep);
+                if ~eeglabPathValid
+                    uialert(dlg, ['EEGLAB path does not exist: ' ep ...
+                        '. Other preferences were still saved.'], ...
+                        'Invalid EEGLAB Path', 'Icon', 'warning');
+                elseif ~isempty(ep)
                     addpath(ep);
                 end
                 setpref('nestapp', 'eeglabPath',          ep);
