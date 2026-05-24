@@ -131,9 +131,10 @@ saveMat(reg, steps, ovs, 'Minimal (Delorme 2023)', fullfile(outDir, '3_minimal.m
 % failing file aborts its own pipeline but leaves the rest of the batch
 % to run.
 %
-%   QG1  After 'Find TMS Pulses' (continuous) - trigger sanity. Only
-%        minTriggers is meaningful here; SM / ICA metrics need epoched
-%        data and a fit ICA decomposition.
+%   QG1  After Epoching (post Find TMS Pulses + Remove Bad Channels) -
+%        trigger sanity (minTriggers) plus a cap on how many channels
+%        Remove Bad Channels was allowed to throw away. SM / ICA
+%        metrics still need a fit ICA decomposition.
 %   QG2  After 'Remove Bad Epoch' (epoched, post-rejection) - enough
 %        trials survived, channel rank is intact, no run-away flat
 %        channels.
@@ -146,9 +147,10 @@ saveMat(reg, steps, ovs, 'Minimal (Delorme 2023)', fullfile(outDir, '3_minimal.m
 steps = { ...
     'Load Data', 'Load Channel Location', 'Remove un-needed Channels', ...
     'Find TMS Pulses (TESA)', ...
-    'Quality Gate', ...
     'Remove Bad Channels', ...
-    'Epoching', 'Remove Baseline', ...
+    'Epoching', ...
+    'Quality Gate', ...
+    'Remove Baseline', ...
     'Remove TMS Artifacts (TESA)', 'Interpolate Missing Data (TESA)', 'Re-Sample', ...
     'Remove Bad Epoch', ...
     'Quality Gate', ...
@@ -188,12 +190,19 @@ ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'muscle',    'on', 2);
 ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'elecNoise', 'on', 2);
 ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'tesa_qc');
 
-% --- QG1: post-trigger detection --------------------------------------
-% Continuous data; only event count is meaningful at this point.
-% Fail < 50 pulses (file is broken); Warn < 100 (below typical protocol).
-ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',         'post-triggers', 1);
-ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggers',       50,              1);
-ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggersWarnAt', 100,             1);
+% --- QG1: post-epoching -----------------------------------------------
+% Runs after Find TMS Pulses + Remove Bad Channels + Epoching, so all
+% three of {trigger count, channels removed, trial-pool size} are
+% meaningful. Trigger fail < 50 pulses (file is broken); warn < 70
+% (below most TMS protocols). Channels: fail if removeBadChannels
+% threw away > 10% of channels (warn cutoff = 0.8*10 = 8%). Trials
+% rejected hasn't run yet so maxRejectedTrialPct stays at 0% here -
+% kept for future-proofing if the pipeline order shifts again.
+ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',           'post-triggers', 1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggers',         50,              1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggersWarnAt',   70,              1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPct', 15,              1);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedChanPct',  10,              1);
 
 % --- QG2: post-epoch-rejection ----------------------------------------
 % Epoched, post-bad-trial removal. Fail if fewer than 50 trials remain
