@@ -160,6 +160,13 @@ if useParallel
     nestLog('PAR', 'Propagating paths to workers...');
     t0 = tic;
     spmd
+        % Suppress MATLAB:dispatcher:nameConflict on each worker for
+        % the duration of the addpath. EEGLAB plugins ship functions
+        % named gather / labindex / numlabs (same as MATLAB's
+        % parallel built-ins); the shadowing is expected and noisy
+        % when it fires once per worker per run.
+        warnState = warning('off', 'MATLAB:dispatcher:nameConflict');
+        cleanup = onCleanup(@() warning(warnState));
         if ~isempty(nestappSrc),    addpath(nestappSrc);    end
         if ~isempty(eeglabGenpath), addpath(eeglabGenpath); end
     end
