@@ -211,28 +211,9 @@ if useParallel
     % Track which failed futures we've already captured + drained.
     drained = false(1, nFiles);
 
-    % --- DIAG: snapshot lastwarn so we can detect the first time the
-    % parfeval framework emits "One or more futures resulted in an
-    % error" and log its id/message. Remove this block once the root
-    % cause is locked down.
-    [prevWmsg, prevWid] = lastwarn;
-    lastwarn('', '');
-    diagSeenWarn = false;
-    diagPrevStates = repmat({''}, 1, nFiles);
-    % ---
-
     % Poll until all futures finish or user cancels.
     while true
         pause(0.25); drawnow;
-
-        % --- DIAG: did drawnow surface a new warning?
-        [wmsg, wid] = lastwarn;
-        if ~isempty(wmsg) && ~diagSeenWarn
-            nestLog('DIAG', 'lastwarn surfaced during poll: id="%s" msg="%s"', wid, wmsg);
-            diagSeenWarn = true;
-        end
-        % ---
-
         if ~isvalid(dlg.fig) || dlg.fig.UserData.cancelRequested
             nestLog('PAR', 'Cancel requested - cancelling futures');
             cancel(futures);
@@ -250,23 +231,13 @@ if useParallel
             break
         end
         states = {futures.State};
-
-        % --- DIAG: log every state transition so we can see exactly
-        % what value MATLAB hands us when a worker throws.
-        for fi = 1:nFiles
-            if ~strcmp(states{fi}, diagPrevStates{fi})
-                eFlag = false;
-                try, eFlag = ~isempty(futures(fi).Error); catch, end %#ok<NOSEM>
-                nestLog('DIAG', 'fi=%d state %s -> %s (errorPresent=%d)', ...
-                    fi, diagPrevStates{fi}, states{fi}, eFlag);
-                diagPrevStates{fi} = states{fi};
-            end
-        end
-        % ---
-
+        % Drain any newly-errored future immediately so we can record
+        % its message via parseFailure and so the unfetched error
+        % doesn't keep tripping fetchOutputs later. NB: a parfeval
+        % future whose worker threw lands in State == 'finished' with
+        % non-empty .Error - NOT State == 'failed'.
         for fi = 1:nFiles
             if ~drained(fi) && futureErrored(futures(fi))
-                nestLog('DIAG', 'fi=%d entering drainFailedFuture (state=%s)', fi, futures(fi).State);
                 rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
                 if ~isempty(rec)
                     failed(end+1) = rec; %#ok<AGROW>
@@ -278,47 +249,22 @@ if useParallel
     end
     nestLog('PAR', 'Poll loop exited (cancelled=%d)', cancelled);
 
-    % --- DIAG: per-future snapshot at end of poll
+    % Errored futures and successful futures both end up in
+    % State == 'finished'; the only safe way to fetch outputs is to
+    % check for an error first and skip fetchOutputs on those (it
+    % rethrows the worker's error on every call).
     for fi = 1:nFiles
-        eFlag = false; eMsg = '';
-        try
-            if ~isempty(futures(fi).Error)
-                eFlag = true;
-                eMsg = futures(fi).Error.message;
-            end
-        catch
-        end
-        nestLog('DIAG', 'post-poll fi=%d state=%s drained=%d errorPresent=%d msg="%s"', ...
-            fi, futures(fi).State, drained(fi), eFlag, oneline(eMsg));
-    end
-    % ---
-
-    % Wrap the post-loop work in try/catch so a silent exception
-    % doesn't make the function appear to return at "Poll loop exited".
-    try
-        for fi = 1:nFiles
-            if futureErrored(futures(fi)) && ~drained(fi)
+        if futureErrored(futures(fi))
+            if ~drained(fi)
                 rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
                 if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
                 drained(fi) = true;
-            elseif strcmp(futures(fi).State, 'finished')
-                [reports{fi}, ~] = fetchOutputs(futures(fi));
             end
+        elseif strcmp(futures(fi).State, 'finished')
+            [reports{fi}, ~] = fetchOutputs(futures(fi));
         end
-        delete(futures);
-    catch postErr
-        nestLog('DIAG', 'POST-LOOP EXCEPTION: %s', postErr.message);
-        nestLog('DIAG', 'stack: %s', getReport(postErr, 'extended', 'hyperlinks', 'off'));
-        rethrow(postErr);
     end
-
-    % --- DIAG: final lastwarn check after everything in the parallel
-    % block has run. If a warning is still here at this point, it
-    % means our drains didn't suppress it.
-    [wmsg, wid] = lastwarn;
-    nestLog('DIAG', 'final lastwarn: id="%s" msg="%s"', wid, wmsg);
-    lastwarn(prevWmsg, prevWid);
-    % ---
+    delete(futures);
 
 else
     for fi = 1:nFiles
