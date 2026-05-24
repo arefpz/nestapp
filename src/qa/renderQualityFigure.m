@@ -106,7 +106,11 @@ SM     = SM(order, :);
 summary.flatChanMask = summary.flatChanMask(order);
 summary.satChanMask  = summary.satChanMask(order);
 
-imagesc(SM);
+% If processOneFile told us which original trials were rejected,
+% reconstruct a full-width matrix with NaN columns at the rejected
+% positions so the X axis still shows the original trial timeline.
+[plotSM, rejectedX] = embedRejectedTrials(SM, opts);
+imagesc(plotSM, 'AlphaData', ~isnan(plotSM));
 colormap(gca, 'parula');
 cb = colorbar;
 cb.Label.String = 'Noise score (log; brighter = noisier)';
@@ -127,14 +131,49 @@ yticklabels(channelLabels(EEG, order(tickIdx)));
 % with a subscript.
 set(gca, 'TickLabelInterpreter', 'none');
 hold on
+plotWidth = size(plotSM, 2);
 for k = 1:nbchan
     if summary.flatChanMask(k)
-        plot([0.5 size(SM,2)+0.5], [k k], 'Color', [0.9 0.2 0.2], 'LineWidth', 1);
+        plot([0.5 plotWidth+0.5], [k k], 'Color', [0.9 0.2 0.2], 'LineWidth', 1);
     elseif summary.satChanMask(k)
-        plot([0.5 size(SM,2)+0.5], [k k], 'Color', [0.85 0.2 0.85], 'LineWidth', 1);
+        plot([0.5 plotWidth+0.5], [k k], 'Color', [0.85 0.2 0.85], 'LineWidth', 1);
     end
 end
+% Vertical red bars at rejected-trial positions so you can see WHEN
+% in the run the bad epochs were dropped. The heatmap columns at
+% those positions are NaN gaps; the bar makes them visible.
+for x = rejectedX
+    plot([x x], [0.5 nbchan+0.5], 'Color', [0.85 0.2 0.2], 'LineWidth', 1.5);
+end
 hold off
+end
+
+function [plotSM, rejectedX] = embedRejectedTrials(SM, opts)
+% Reconstruct the SM matrix on the full original-trial axis when we
+% know which trials were rejected upstream. Surviving columns sit at
+% their original positions; rejected columns become NaN. Returns the
+% extended matrix plus the list of rejected x-positions to mark with
+% a vertical bar. When no rejection metadata is available (or the
+% surviving count doesn't match SM's width), returns SM unchanged.
+plotSM    = SM;
+rejectedX = [];
+if ~isfield(opts, 'rejectedTrialIdx') || ~isfield(opts, 'originalTrials')
+    return
+end
+nOrig = opts.originalTrials;
+rej   = opts.rejectedTrialIdx;
+if ~isnumeric(nOrig) || isempty(nOrig) || nOrig <= 0, return, end
+if isempty(rej), return, end
+rej   = unique(rej(rej >= 1 & rej <= nOrig));
+keptX = setdiff(1:nOrig, rej);
+if numel(keptX) ~= size(SM, 2)
+    % Trial counts don't match - bail out rather than draw a
+    % misaligned heatmap.
+    return
+end
+plotSM = nan(size(SM, 1), nOrig);
+plotSM(:, keptX) = SM;
+rejectedX = rej(:)';
 end
 
 function drawICAGrid(EEG, metrics)

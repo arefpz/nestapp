@@ -428,6 +428,7 @@ for si = 1:nSteps
                 vars = stripEmptyVarin(vars);
                 [EEG, rejepochs] = pop_autorej(EEG, vars{:});
                 EEG.rejEpochs = rejepochs;
+                fileReport = recordRejectedTrials(fileReport, rejepochs);
                 EEG = eeg_checkset( EEG );
 
             case 'Run ICA'
@@ -637,6 +638,7 @@ for si = 1:nSteps
                 uiconfirm(opts.uiFigure,'Highlight bad trials in the rejection menu, then press OK to continue.','Remove Bad Trials','Options',{'OK'},'DefaultOption',1);
                 EEG.BadTr = unique([find(EEG.reject.rejjp==1) find(EEG.reject.rejmanual==1)]);
                 EEG = pop_rejepoch( EEG, EEG.BadTr ,0);
+                fileReport = recordRejectedTrials(fileReport, EEG.BadTr);
                 EEG = eeg_checkset( EEG );
 
             case 'Extract TEP (TESA)'
@@ -747,7 +749,9 @@ for si = 1:nSteps
                     (nChanAfter - nChanBefore);
             end
             if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
-                fileReport.trials.original = size(EEG.data, 3);
+                fileReport.trials.original    = size(EEG.data, 3);
+                fileReport.trials.survivingIdx = 1:fileReport.trials.original;
+                fileReport.trials.rejectedIndices = [];
             end
             if size(EEG.data, 3) > 1
                 fileReport.trials.final = nEpochAfter;
@@ -889,6 +893,11 @@ for si = 1:nSteps
                     'size',      [1600 1200]);
                 qcOpts.panels = struct('attribMatrix',true,'icaGrid',true, ...
                                        'butterfly',true,'psd',true);
+                % Hand rejected-trial info to the renderer so the
+                % heatmap can show gaps + red bars at the original
+                % positions of removed epochs.
+                qcOpts.rejectedTrialIdx = fileReport.trials.rejectedIndices;
+                qcOpts.originalTrials   = fileReport.trials.original;
                 renderQualityFigure(EEG, outPath, qcOpts);
                 if ~isfield(fileReport, 'quality') ...
                         || ~isfield(fileReport.quality, 'figures')
@@ -1002,6 +1011,28 @@ end
 end
 
 % -- local helpers ---------------------------------------------------------
+
+function fileReport = recordRejectedTrials(fileReport, localIdx)
+% Map locally-indexed rejected trials back to original-trial numbers
+% and append to the cumulative list. Maintains a surviving-trial map
+% so chained rejection steps stay correct even when multiple bad-
+% epoch passes run in the same pipeline. No-op when rejection ran
+% before any Epoching step (no surviving map yet) or when localIdx
+% is empty.
+if isempty(localIdx), return, end
+if ~isfield(fileReport.trials, 'survivingIdx') ...
+        || isempty(fileReport.trials.survivingIdx)
+    return
+end
+localIdx = sort(localIdx(:)');
+keep = localIdx >= 1 & localIdx <= numel(fileReport.trials.survivingIdx);
+localIdx = localIdx(keep);
+if isempty(localIdx), return, end
+rejectedOriginal = fileReport.trials.survivingIdx(localIdx);
+fileReport.trials.rejectedIndices = sort([fileReport.trials.rejectedIndices, ...
+                                          rejectedOriginal]);
+fileReport.trials.survivingIdx(localIdx) = [];
+end
 
 function cats = tesaICACategories()
 % TESA component category names, in the order TESA's icaCompClass.compClass codes map to.
