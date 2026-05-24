@@ -209,22 +209,34 @@ if useParallel
     end
 
     % Track which failed futures we've already captured + drained.
-    % Eager draining inside the poll loop is required because MATLAB's
-    % parfeval framework will print "One or more futures resulted in
-    % an error" during drawnow if a future has an unfetched error;
-    % waiting until after the poll loop is too late.
     drained = false(1, nFiles);
+
+    % --- DIAG: snapshot lastwarn so we can detect the first time the
+    % parfeval framework emits "One or more futures resulted in an
+    % error" and log its id/message. Remove this block once the root
+    % cause is locked down.
+    [prevWmsg, prevWid] = lastwarn;
+    lastwarn('', '');
+    diagSeenWarn = false;
+    diagPrevStates = repmat({''}, 1, nFiles);
+    % ---
 
     % Poll until all futures finish or user cancels.
     while true
         pause(0.25); drawnow;
+
+        % --- DIAG: did drawnow surface a new warning?
+        [wmsg, wid] = lastwarn;
+        if ~isempty(wmsg) && ~diagSeenWarn
+            nestLog('DIAG', 'lastwarn surfaced during poll: id="%s" msg="%s"', wid, wmsg);
+            diagSeenWarn = true;
+        end
+        % ---
+
         if ~isvalid(dlg.fig) || dlg.fig.UserData.cancelRequested
             nestLog('PAR', 'Cancel requested - cancelling futures');
             cancel(futures);
             cancelled = true;
-            % Wait for workers to reach a terminal state before closing the
-            % dialog.  cancel() is asynchronous - workers may still be
-            % mid-EEGLAB-call and need time to wind down.
             t0 = tic;
             while toc(t0) < 30
                 termStates = {futures.State};
@@ -238,13 +250,23 @@ if useParallel
             break
         end
         states = {futures.State};
-        % Capture + drain any newly-failed future immediately so its
-        % error doesn't surface as MATLAB's generic "One or more
-        % futures resulted in an error" warning on the next drawnow.
-        % NB: a parfeval future whose worker errored has State =
-        % 'finished' with non-empty .Error - NOT State = 'failed'.
+
+        % --- DIAG: log every state transition so we can see exactly
+        % what value MATLAB hands us when a worker throws.
+        for fi = 1:nFiles
+            if ~strcmp(states{fi}, diagPrevStates{fi})
+                eFlag = false;
+                try, eFlag = ~isempty(futures(fi).Error); catch, end %#ok<NOSEM>
+                nestLog('DIAG', 'fi=%d state %s -> %s (errorPresent=%d)', ...
+                    fi, diagPrevStates{fi}, states{fi}, eFlag);
+                diagPrevStates{fi} = states{fi};
+            end
+        end
+        % ---
+
         for fi = 1:nFiles
             if ~drained(fi) && futureErrored(futures(fi))
+                nestLog('DIAG', 'fi=%d entering drainFailedFuture (state=%s)', fi, futures(fi).State);
                 rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
                 if ~isempty(rec)
                     failed(end+1) = rec; %#ok<AGROW>
@@ -256,24 +278,47 @@ if useParallel
     end
     nestLog('PAR', 'Poll loop exited (cancelled=%d)', cancelled);
 
+    % --- DIAG: per-future snapshot at end of poll
     for fi = 1:nFiles
-        if futureErrored(futures(fi)) && ~drained(fi)
-            % Safety net: futures that errored after the poll loop's
-            % drain (e.g. cancel-induced mid-error) get drained here.
-            % recordIt = ~cancelled so cancel-induced failures stay
-            % silent in the failure list.
-            rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
-            if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
-            drained(fi) = true;
-        elseif strcmp(futures(fi).State, 'finished')
-            [reports{fi}, ~] = fetchOutputs(futures(fi));
+        eFlag = false; eMsg = '';
+        try
+            if ~isempty(futures(fi).Error)
+                eFlag = true;
+                eMsg = futures(fi).Error.message;
+            end
+        catch
         end
+        nestLog('DIAG', 'post-poll fi=%d state=%s drained=%d errorPresent=%d msg="%s"', ...
+            fi, futures(fi).State, drained(fi), eFlag, oneline(eMsg));
+    end
+    % ---
+
+    % Wrap the post-loop work in try/catch so a silent exception
+    % doesn't make the function appear to return at "Poll loop exited".
+    try
+        for fi = 1:nFiles
+            if futureErrored(futures(fi)) && ~drained(fi)
+                rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
+                if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
+                drained(fi) = true;
+            elseif strcmp(futures(fi).State, 'finished')
+                [reports{fi}, ~] = fetchOutputs(futures(fi));
+            end
+        end
+        delete(futures);
+    catch postErr
+        nestLog('DIAG', 'POST-LOOP EXCEPTION: %s', postErr.message);
+        nestLog('DIAG', 'stack: %s', getReport(postErr, 'extended', 'hyperlinks', 'off'));
+        rethrow(postErr);
     end
 
-    % Final safety: delete the futures array to make absolutely sure
-    % no stale error state remains when the local variable goes out
-    % of scope.
-    delete(futures);
+    % --- DIAG: final lastwarn check after everything in the parallel
+    % block has run. If a warning is still here at this point, it
+    % means our drains didn't suppress it.
+    [wmsg, wid] = lastwarn;
+    nestLog('DIAG', 'final lastwarn: id="%s" msg="%s"', wid, wmsg);
+    lastwarn(prevWmsg, prevWid);
+    % ---
 
 else
     for fi = 1:nFiles
