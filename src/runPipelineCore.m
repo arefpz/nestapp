@@ -165,10 +165,12 @@ if useParallel
         % named gather / labindex / numlabs (same as MATLAB's
         % parallel built-ins); the shadowing is expected and noisy
         % when it fires once per worker per run.
-        warnState = warning('off', 'MATLAB:dispatcher:nameConflict');
-        cleanup = onCleanup(@() warning(warnState));
+        % NB: spmd disallows anonymous functions, so we can't use
+        % onCleanup here - manually re-enable on the way out.
+        warning('off', 'MATLAB:dispatcher:nameConflict');
         if ~isempty(nestappSrc),    addpath(nestappSrc);    end
         if ~isempty(eeglabGenpath), addpath(eeglabGenpath); end
+        warning('on', 'MATLAB:dispatcher:nameConflict');
     end
     nestLog('PAR', 'spmd done (%.2fs)', toc(t0));
     nCores           = feature('numcores');

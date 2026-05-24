@@ -191,28 +191,29 @@ ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'elecNoise', 'on', 2);
 ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'tesa_qc');
 
 % --- QG1: post-epoching -----------------------------------------------
-% Runs after Find TMS Pulses + Remove Bad Channels + Epoching, so all
-% three of {trigger count, channels removed, trial-pool size} are
-% meaningful. Trigger fail < 50 pulses (file is broken); warn < 70
-% (below most TMS protocols). Channels: fail if removeBadChannels
-% threw away > 10% of channels (warn cutoff = 0.8*10 = 8%). Trials
-% rejected hasn't run yet so maxRejectedTrialPct stays at 0% here -
-% kept for future-proofing if the pipeline order shifts again.
+% Runs after Find TMS Pulses + Remove Bad Channels + Epoching, so
+% trigger count and channels-removed are both meaningful here.
+% Trigger fail < 50 pulses (file is broken); warn < 70 (below most
+% TMS protocols). Channels: fail if removeBadChannels threw away
+% > 10% of channels (warn cutoff = 0.8*10 = 8%). Trial-rejection is
+% checked on QG2 instead - that gate runs after Remove Bad Epoch
+% where rejectedTrialPct actually has signal.
 ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',           'post-triggers', 1);
 ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggers',         50,              1);
 ovs = setOv(ovs, steps, 'Quality Gate', 'minTriggersWarnAt',   70,              1);
-ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPct', 15,              1);
 ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedChanPct',  10,              1);
 
 % --- QG2: post-epoch-rejection ----------------------------------------
 % Epoched, post-bad-trial removal. Fail if fewer than 50 trials remain
-% (insufficient for averaging), warn at 80. Rank should stay close to
-% the post-bad-channel-removal count; 0.9 catches gross rank deficiency.
-% Flat-channel count > 2 here is a smell - removeBadChannels should
-% have caught those already.
+% (insufficient for averaging), warn at 80. Cap cumulative trial
+% rejection at 15% (default warn cutoff 12%). Rank should stay close
+% to the post-bad-channel-removal count; 0.9 catches gross rank
+% deficiency. Flat-channel count > 2 here is a smell - removeBadChannels
+% should have caught those already.
 ovs = setOv(ovs, steps, 'Quality Gate', 'gateLabel',           'post-bad-epoch', 2);
 ovs = setOv(ovs, steps, 'Quality Gate', 'minTrials',           50,               2);
 ovs = setOv(ovs, steps, 'Quality Gate', 'minTrialsWarnAt',     80,               2);
+ovs = setOv(ovs, steps, 'Quality Gate', 'maxRejectedTrialPct', 15,               2);
 ovs = setOv(ovs, steps, 'Quality Gate', 'minRankRatio',        0.9,              2);
 ovs = setOv(ovs, steps, 'Quality Gate', 'maxFlatChans',        5,                2);
 ovs = setOv(ovs, steps, 'Quality Gate', 'maxFlatChansWarnAt',  2,                2);
