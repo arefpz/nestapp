@@ -208,6 +208,13 @@ if useParallel
         futures(fi) = parfeval(@processOneFile, 2, spec, filePaths{fi}, fOpts); %#ok<AGROW>
     end
 
+    % Track which failed futures we've already captured + drained.
+    % Eager draining inside the poll loop is required because MATLAB's
+    % parfeval framework will print "One or more futures resulted in
+    % an error" during drawnow if a future has an unfetched error;
+    % waiting until after the poll loop is too late.
+    drained = false(1, nFiles);
+
     % Poll until all futures finish or user cancels.
     while true
         pause(0.25); drawnow;
@@ -231,6 +238,18 @@ if useParallel
             break
         end
         states = {futures.State};
+        % Capture + drain any newly-failed future immediately so its
+        % error doesn't surface as MATLAB's generic "One or more
+        % futures resulted in an error" warning on the next drawnow.
+        for fi = 1:nFiles
+            if ~drained(fi) && strcmp(states{fi}, 'failed')
+                rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
+                if ~isempty(rec)
+                    failed(end+1) = rec; %#ok<AGROW>
+                end
+                drained(fi) = true;
+            end
+        end
         if all(strcmp(states, 'finished') | strcmp(states, 'failed')); break; end
     end
     nestLog('PAR', 'Poll loop exited (cancelled=%d)', cancelled);
@@ -239,30 +258,21 @@ if useParallel
     for fi = 1:nFiles
         if strcmp(finalStates{fi}, 'finished')
             [reports{fi}, ~] = fetchOutputs(futures(fi));
-        elseif strcmp(finalStates{fi}, 'failed') && ~cancelled
-            % Only record genuine pre-cancel failures; cancel-induced ones are expected.
-            [~, fname, fext] = fileparts(filePaths{fi});
-            rec = parseFailure(fi, [fname fext], futures(fi).Error.message);
-            failed(end+1) = rec; %#ok<AGROW>
-            logFileFailure('PAR', rec);
+        elseif strcmp(finalStates{fi}, 'failed') && ~drained(fi)
+            % Safety net: futures that flipped to failed after the
+            % poll loop's drain (e.g. cancel-induced mid-error) get
+            % drained here. recordIt = ~cancelled so cancel-induced
+            % failures stay silent in the failure list.
+            rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
+            if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
+            drained(fi) = true;
         end
     end
 
-    % Drain failed futures via fetchOutputs so MATLAB's destructor
-    % doesn't print "One or more futures resulted in an error" when
-    % the array goes out of scope. Reading future.Error.message above
-    % captures the message but doesn't mark the future as consumed;
-    % only fetchOutputs does. Wrapped in try/catch because fetchOutputs
-    % on a failed future rethrows what we just chose to handle.
-    for fi = 1:nFiles
-        if strcmp(futures(fi).State, 'failed')
-            try
-                fetchOutputs(futures(fi));
-            catch
-                % expected - the error is now considered consumed
-            end
-        end
-    end
+    % Final safety: delete the futures array to make absolutely sure
+    % no stale error state remains when the local variable goes out
+    % of scope.
+    delete(futures);
 
 else
     for fi = 1:nFiles
@@ -632,6 +642,30 @@ if isequal(chName, 0)
     error('nestapp:cancelled', 'Channel location file selection cancelled.');
 end
 chFile = fullfile(chPath, chName);
+end
+
+function rec = drainFailedFuture(fi, future, filePath, recordIt)
+% Consume a failed parfeval future's error so MATLAB does not surface
+% "One or more futures resulted in an error" later. Returns a
+% parseFailure record when recordIt is true (genuine pre-cancel
+% failure); returns [] when recordIt is false (cancel-induced).
+rec = [];
+errMsg = '';
+try
+    errMsg = future.Error.message;
+catch
+    % rare: future has no .Error - drain anyway.
+end
+try
+    fetchOutputs(future);
+catch
+    % expected - error is now considered consumed
+end
+if recordIt
+    [~, fname, fext] = fileparts(filePath);
+    rec = parseFailure(fi, [fname fext], errMsg);
+    logFileFailure('PAR', rec);
+end
 end
 
 function rec = parseFailure(fi, name, msg)
