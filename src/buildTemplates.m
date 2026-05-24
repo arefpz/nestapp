@@ -46,6 +46,10 @@ ovs = emptyOvs(steps);
 ovs = setOv(ovs, steps, 'Epoching', 'timelim', [-1, 1]);
 % Demean over full epoch before ICA (manual step 7: subtract mean of entire epoch).
 ovs = setOv(ovs, steps, 'Remove Baseline', 'timerange', [-1000 1000], 1);
+% Final pre-save baseline correction: TESA / Rogasch 2017 convention
+% uses a short pre-stimulus window so each TEP trace is aligned to
+% its own pre-pulse baseline before peak analysis.
+ovs = setOv(ovs, steps, 'Remove Baseline', 'timerange', [-500 -10],   2);
 % TMS artifact cut windows: default [-2 10] ms for occurrences 1-2,
 % extended to [-2 15] ms after Round 1 (occurrences 3-4).
 ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [-2 15], 3);
@@ -164,6 +168,7 @@ ovs = emptyOvs(steps);
 % --- Inherit every override from template 1 ---------------------------
 ovs = setOv(ovs, steps, 'Epoching', 'timelim', [-1, 1]);
 ovs = setOv(ovs, steps, 'Remove Baseline', 'timerange', [-1000 1000], 1);
+ovs = setOv(ovs, steps, 'Remove Baseline', 'timerange', [-500 -10],   2);
 ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [-2 15], 3);
 ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [-2 15], 4);
 ovs = setOv(ovs, steps, 'Interpolate Missing Data (TESA)', 'interpolation', 'cubic', 1);
