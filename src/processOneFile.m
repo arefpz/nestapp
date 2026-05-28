@@ -367,7 +367,18 @@ for si = 1:nSteps
                 vars = convertContainedStringsToChars(varin);
                 ind = find(strcmp(vars,'ref'));
                 ref = vars{ind+1};
-                if ~ismember(ref,{EEG.chanlocs.labels}) && ~strcmp(ref,'[]')
+                % Average reference (ref = '[]') needs no channel labels.
+                % A named reference does, so fail with a legible message if
+                % chanlocs are missing rather than dereferencing a double.
+                hasLocs = isstruct(EEG.chanlocs) && ~isempty(EEG.chanlocs) ...
+                    && isfield(EEG.chanlocs,'labels');
+                if ~strcmp(ref,'[]') && ~hasLocs
+                    error('nestapp:noChanlocs', ...
+                        ['Re-Reference: channel locations are missing, so ' ...
+                         'reference ''%s'' cannot be resolved. An earlier ' ...
+                         'step likely dropped EEG.chanlocs.'], ref);
+                end
+                if hasLocs && ~ismember(ref,{EEG.chanlocs.labels}) && ~strcmp(ref,'[]')
                     answer = inputdlg('The reference channel is not in the data. Enter a new reference channel label:','Re-Reference',[1 50],{''});
                     if isempty(answer) || isempty(answer{1})
                         error('Re-Reference cancelled: no reference channel provided.');
@@ -499,13 +510,44 @@ for si = 1:nSteps
             case 'Interpolate Channels'
                 method = step.params.method;
                 trange = step.params.trange;
-                EEG = pop_interp(EEG, EEG.chaninfo.removedchans(1:size(EEG.chaninfo.removedchans,2)), method, trange);
-                interpElecs = [interpElecs; num2cell(EEG.chaninfo.removedchans)]; %#ok<AGROW>
-                EEG.interpElecs = interpElecs;
+                % Only interpolate genuine removed channels: those that are
+                % (a) absent from the current montage and (b) carry valid
+                % coordinates. Stale or placeholder removedchans entries
+                % (empty X, numeric-string labels) otherwise get appended to
+                % chanlocs by pop_interp with no matching data row, after
+                % which eeg_checkset discards the entire chanlocs struct on
+                % the size mismatch. The next step that dereferences
+                % EEG.chanlocs then crashes with a cryptic dot-indexing
+                % error. See test_interpolateChannelsBadRemovedchans.
+                rc = EEG.chaninfo.removedchans;
+                if ~isempty(rc)
+                    liveLabels = {EEG.chanlocs.labels};
+                    isValid = arrayfun(@(c) ~isempty(c.X) && ...
+                        ~ismember(c.labels, liveLabels), rc);
+                    rc = rc(isValid);
+                end
+                if isempty(rc)
+                    fprintf(['Interpolate Channels: no valid removed ' ...
+                        'channels to restore; skipping interpolation.\n']);
+                else
+                    EEG = pop_interp(EEG, rc, method, trange);
+                    interpElecs = [interpElecs; num2cell(rc)]; %#ok<AGROW>
+                    EEG.interpElecs = interpElecs;
+                end
                 EEG.setname = [EEG.setname '_interp'];
                 EEG.filename = [EEG.setname '.set'];
                 EEG.datfile  = [EEG.setname '.fdt'];
                 EEG = eeg_checkset( EEG );
+                % Safety net: surface a legible error at the offending step
+                % if chanlocs were dropped, instead of letting a downstream
+                % step fail on an empty (double) EEG.chanlocs.
+                if ~isstruct(EEG.chanlocs) || isempty(EEG.chanlocs)
+                    error('nestapp:chanlocsDropped', ...
+                        ['Interpolate Channels discarded channel locations ' ...
+                         '(chanlocs/data size mismatch). Check ' ...
+                         'EEG.chaninfo.removedchans for stale or ' ...
+                         'coordinate-less entries.']);
+                end
 
             case 'Find TMS Pulses (TESA)'
                 vars = convertContainedStringsToChars(varin);
