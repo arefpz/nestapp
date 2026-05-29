@@ -15,7 +15,7 @@ These conventions keep the codebase consistent and reviewable. CI runs
 
 - One primary function per file; filename matches the function name.
 - Every function starts with a header comment block — see the **docstring
-  contract** in [CONTRIBUTING.md](CONTRIBUTING.md). The generated API docs are
+  contract** in [CONTRIBUTING.md](../.github/CONTRIBUTING.md). The generated API docs are
   built from these, so keep them accurate.
 - Keep functions focused; split helpers out when one grows past ~100 lines.
 - Group related code with `%% Section` headers.

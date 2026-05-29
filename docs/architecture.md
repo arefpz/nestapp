@@ -47,7 +47,7 @@ button and headless callers like `batchTEPExtract` and the test suite.
 
 | Goal | Where | Notes |
 |---|---|---|
-| Add a processing step | `stepRegistry.m` (register) + `processOneFile.m` (dispatch `case`) | Recipe in [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-pipeline-step). |
+| Add a processing step | `stepRegistry.m` (register) + `processOneFile.m` (dispatch `case`) | Recipe in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#adding-a-pipeline-step). |
 | Change/add a built-in template | `buildTemplates.m`, then run `buildTemplates()` and commit the regenerated `templates/*.mat` | The `.mat` is generated — never edit it directly. |
 | Add a citation for a template | `templateCitation.m` | Logged per run by `runPipelineCore.m`. |
 | Change a Quality Gate metric | `qa/qualityGate.m` (+ `qa/finalizeBatchVerdicts.m` for batch mode) | Step params live in `stepRegistry.m`. |

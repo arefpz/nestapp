@@ -15,7 +15,7 @@ jobs:
     # with no license required for public repositories. The fast suite
     # (unit + regression) is designed to need no EEGLAB, so it runs here.
     # Integration tests require EEGLAB/TESA on disk and are run locally
-    # (see CONTRIBUTING.md): run_tests('all').
+    # (see .github/CONTRIBUTING.md): run_tests('all').
     runs-on: ubuntu-latest
 
     steps:

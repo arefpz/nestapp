@@ -57,7 +57,7 @@ first — it maps what each module does and where to make common changes.
 
 ## Code style
 
-See [STYLE.md](STYLE.md) for the full conventions. In short: camelCase
+See [STYLE.md](../docs/STYLE.md) for the full conventions. In short: camelCase
 functions and variables, 4-space indent, a header comment block on every
 function (see the docstring contract below), and named intermediate variables
 over dense one-liners. CI runs `tools/run_lint.m` (a `checkcode` wrapper) — fix

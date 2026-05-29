@@ -2,17 +2,14 @@
 *
 */
 
-# Explicitly track these files
+# Explicitly track these files. (Health files - CONTRIBUTING,
+# CODE_OF_CONDUCT, SECURITY - live under .github/; STYLE.md lives under docs/.)
 !.gitignore
 !.editorconfig
 !LICENSE
 !README.md
 !THIRD_PARTY_NOTICES.md
-!CONTRIBUTING.md
-!CODE_OF_CONDUCT.md
-!SECURITY.md
 !CHANGELOG.md
-!STYLE.md
 !CITATION.cff
 !run_nestapp.m
 
@@ -51,12 +48,13 @@
 !tests/helpers/*.m
 !tests/*.m
 
-# CI & community health
+# CI & community health (CONTRIBUTING / CODE_OF_CONDUCT / SECURITY +
+# pull_request_template live here as .github/*.md)
 !.github/
+!.github/*.md
+!.github/CODEOWNERS
 !.github/workflows/
 !.github/workflows/*.yml
-!.github/CODEOWNERS
-!.github/pull_request_template.md
 !.github/ISSUE_TEMPLATE/
 !.github/ISSUE_TEMPLATE/*.yml
 !.github/ISSUE_TEMPLATE/*.md

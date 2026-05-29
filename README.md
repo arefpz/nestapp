@@ -6,7 +6,7 @@
 
 **nestapp** is a MATLAB GUI for cleaning and analysing TMS-EEG recordings. It wraps [EEGLAB](https://eeglab.org/), [TESA](https://nigelrogasch.gitbook.io/tesa-user-manual/), and [FastICA](http://research.ics.aalto.fi/ica/fastica/) into a point-and-click pipeline builder that lets researchers process data without writing code.
 
-**Contributing** → [CONTRIBUTING.md](CONTRIBUTING.md) · **Changes** → [CHANGELOG.md](CHANGELOG.md) · **Cite** → [CITATION.cff](CITATION.cff) · **Architecture** → [docs/architecture.md](docs/architecture.md)
+**Contributing** → [CONTRIBUTING.md](.github/CONTRIBUTING.md) · **Changes** → [CHANGELOG.md](CHANGELOG.md) · **Cite** → [CITATION.cff](CITATION.cff) · **Architecture** → [docs/architecture.md](docs/architecture.md)
 
 ---
 
@@ -172,7 +172,7 @@ Open **Settings → Preferences** to configure:
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, how to run the test suite, the pipeline-step extension recipe, and the pull-request process. New to the codebase? Start with [docs/architecture.md](docs/architecture.md) for a map of what each module does and where to make changes.
+Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the development setup, how to run the test suite, the pipeline-step extension recipe, and the pull-request process. New to the codebase? Start with [docs/architecture.md](docs/architecture.md) for a map of what each module does and where to make changes.
 
 ## Citing nestapp
 
