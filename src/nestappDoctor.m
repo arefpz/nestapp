@@ -147,8 +147,9 @@ for i = 1:numel(reqs)
     if any(strcmp(seen, key)); continue; end
     seen{end+1} = key; %#ok<AGROW>
     isOptional = isfield(reqs, 'fileExt') && ~isempty(reqs(i).fileExt);
+    wh = which(key);
     deps(end+1) = struct('plugin', reqs(i).plugin, 'fn', key, ...
-        'found', ~isempty(which(key)), 'path', which(key), ...
+        'found', ~isempty(wh), 'path', wh, ...
         'optional', isOptional); %#ok<AGROW>
 end
 end

@@ -8,10 +8,9 @@ function logPath = nestDebugLog(action, folder)
 %   Syntax
 %     logPath = nestDebugLog('start', folder)  % open a log file in folder
 %     nestDebugLog('stop')                      % close the log file
-%     fid = nestDebugLog('fid')                 % current fid (-1 if none)
 %
 %   Inputs
-%     action  char - 'start', 'stop', or 'fid'.
+%     action  char - 'start' or 'stop'.
 %     folder  char - directory for the log file (created if needed); 'start' only.
 %
 %   Outputs
@@ -58,15 +57,8 @@ switch lower(action)
         end
         NESTAPP_DEBUG_FID = [];
 
-    case 'fid'
-        if isempty(NESTAPP_DEBUG_FID)
-            logPath = -1;   % returned via logPath for convenience
-        else
-            logPath = NESTAPP_DEBUG_FID;
-        end
-
     otherwise
         error('nestDebugLog:badAction', ...
-            'Unknown action "%s" (use start, stop, or fid).', action);
+            'Unknown action "%s" (use start or stop).', action);
 end
 end
