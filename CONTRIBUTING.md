@@ -112,6 +112,17 @@ requires, and flags shadowed functions (a common cause of wrong-version
 calls). The same report is available in the GUI via **Help → Copy Diagnostics
 to Clipboard** and should be attached to bug reports.
 
+For a deeper trace, enable the debug log before a run:
+
+```matlab
+setpref('nestapp', 'debugLog', true)   % writes a full run trace to the batch folder
+```
+
+If a run fails mid-pipeline, nestapp also writes a **metadata-only** error
+bundle (no recordings) under `<batch>/debug/`. **Help → Collect Support
+Bundle** produces the same environment + pipeline summary on demand. These
+artifacts are what to attach when reporting a hard-to-reproduce problem.
+
 ## Gotchas (read before your first change)
 
 - **Allowlist `.gitignore`.** The repo ignores everything by default and

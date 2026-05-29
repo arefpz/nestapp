@@ -502,6 +502,83 @@ classdef nestapp < matlab.apps.AppBase
                 numel(app.spec)), 'Pipeline Copied', 'Icon', 'success');
         end
 
+        function revealFolder(~, folder)
+        % REVEALFOLDER  Open a folder in the OS file browser (best-effort).
+            try
+                if ispc
+                    winopen(folder);
+                elseif ismac
+                    system(sprintf('open "%s" &', folder));
+                else
+                    system(sprintf('xdg-open "%s" &', folder));
+                end
+            catch
+                % Non-fatal: the path is shown in the dialog regardless.
+            end
+        end
+
+        function collectSupportBundleMenu(app, ~)
+        % COLLECTSUPPORTBUNDLEMENU  Help action: write a metadata-only support
+        %   bundle (environment + current pipeline) and reveal the folder.
+            outRoot = getpref('nestapp', 'outputRoot', '');
+            if isempty(outRoot) || ~isfolder(outRoot)
+                outRoot = tempdir;
+            end
+            try
+                bundleDir = collectSupportBundle(outRoot, app.spec);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not collect support bundle:\n%s', ME.message), ...
+                    'Support Bundle Failed', 'Icon', 'error');
+                return
+            end
+            revealFolder(app, bundleDir);
+            uialert(app.UIFigure, sprintf(['Support bundle written to:\n%s\n\n' ...
+                'It contains environment + pipeline details only (no recordings). ' ...
+                'Attach the folder to your bug report.'], bundleDir), ...
+                'Support Bundle', 'Icon', 'success');
+        end
+
+        function selfTestMenu(app, ~)
+        % SELFTESTMENU  Help action: run the fast test suite to verify the
+        %   install, reporting pass/fail. Best-effort: needs tests/ present.
+            repo = fileparts(fileparts(which('nestappVersion')));
+            runner = fullfile(repo, 'tests', 'run_tests.m');
+            if ~isfile(runner)
+                uialert(app.UIFigure, ['The test suite (tests/) is not present ' ...
+                    'in this installation, so the self-test cannot run.'], ...
+                    'Self-test Unavailable', 'Icon', 'warning');
+                return
+            end
+            dlg = uiprogressdlg(app.UIFigure, 'Title', 'Checking install', ...
+                'Message', 'Running the fast test suite...', 'Indeterminate', 'on');
+            closeDlg = onCleanup(@() close(dlg));
+            try
+                addpath(fullfile(repo, 'tests'));
+                addpath(fullfile(repo, 'tests', 'helpers'));
+                results = [];
+                evalc('results = run_tests(''fast'')');   % capture verbose output
+            catch ME
+                clear closeDlg;
+                uialert(app.UIFigure, sprintf('Self-test could not run:\n%s', ...
+                    ME.message), 'Self-test Error', 'Icon', 'error');
+                return
+            end
+            clear closeDlg;
+            nPass = sum([results.Passed]);
+            nFail = sum([results.Failed]);
+            nInc  = sum([results.Incomplete]);
+            if nFail == 0
+                uialert(app.UIFigure, sprintf(['Install looks healthy.\n' ...
+                    '%d passed, %d skipped (optional plugins).'], nPass, nInc), ...
+                    'Self-test Passed', 'Icon', 'success');
+            else
+                uialert(app.UIFigure, sprintf(['%d test(s) FAILED (%d passed).\n' ...
+                    'Run Help > Copy Diagnostics and check your setup.'], nFail, nPass), ...
+                    'Self-test Failed', 'Icon', 'error');
+            end
+        end
+
         function loadPrefs(~)
         % LOADPREFS  Read persistent preferences and apply to app state.
         %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.

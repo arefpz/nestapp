@@ -53,6 +53,18 @@ warnDeprecatedGateParams(spec);
 % resolve their destinations through outputPaths(batchCtx, kind, stem).
 layout   = getpref('nestapp', 'outputLayout', 'typeBased');
 batchCtx = buildBatchContext(filePaths, opts.pipelineName, layout, opts.outputRoot);
+
+% Debug log: when the 'debugLog' pref is on, tee the full run trace to a
+% file in the batch folder (closed on cleanup, even if the run errors).
+if getpref('nestapp', 'debugLog', false)
+    lp = nestDebugLog('start', batchCtx.batchRoot);
+    debugLogCleanup = onCleanup(@() nestDebugLog('stop'));
+    nestLog('CFG', 'Debug log: %s', lp);
+end
+
+% Save-on-error bundle (metadata only) - read here, threaded to workers.
+opts.saveErrorBundle = getpref('nestapp', 'saveErrorBundle', true);
+
 nestLog('CFG', 'Output root: %s', batchCtx.outputRoot);
 nestLog('CFG', 'Batch folder (%s layout): %s', batchCtx.layout, batchCtx.batchRoot);
 

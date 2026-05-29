@@ -57,6 +57,10 @@ function createComponents(app)
                 'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
             uimenu(mHelp, 'Text', 'Copy Diagnostics to Clipboard', 'Separator', 'on', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @copyDiagnosticsMenu, true));
+            uimenu(mHelp, 'Text', 'Collect Support Bundle...', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @collectSupportBundleMenu, true));
+            uimenu(mHelp, 'Text', 'Check My Install', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @selfTestMenu, true));
 
             % Create status bar - pinned to bottom of UIFigure, visible on both tabs
             app.StatusBar = uilabel(app.UIFigure);

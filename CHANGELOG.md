@@ -16,6 +16,12 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 - `describePipeline` — a readable summary of the current pipeline (steps and
   the parameters that differ from defaults), for methods sections and bug
   reports. Surfaced via **File → Copy Pipeline Description**.
+- Debug log (`debugLog` preference) — tees a run's full step-by-step trace
+  to a file in the batch output folder (`nestDebugLog` + `nestLog`).
+- Metadata-only debug bundles — on a step failure, `saveErrorBundle` writes
+  the error, environment, pipeline, and EEG **metadata** (never recordings)
+  to `<batch>/debug/`. **Help → Collect Support Bundle** produces the same
+  on demand, and **Help → Check My Install** runs the fast test suite.
 
 ## [1.0.0] - 2026-05-29
 

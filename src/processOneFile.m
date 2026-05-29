@@ -44,6 +44,7 @@ if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];        
 if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
 if ~isfield(opts, 'skipOnQualityFail'), opts.skipOnQualityFail = false;           end
 if ~isfield(opts, 'autoExportPDF'),     opts.autoExportPDF     = false;           end
+if ~isfield(opts, 'saveErrorBundle'),   opts.saveErrorBundle   = false;           end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -1051,6 +1052,24 @@ for si = 1:nSteps
         end
 
         warning('An error occurred at file %s at step %d: %s', fileName, si, stepName);
+
+        % Save a metadata-only debug bundle (never raw data) for bug reports.
+        if opts.saveErrorBundle
+            try
+                if ~isempty(opts.batchCtx) && isfield(opts.batchCtx, 'batchRoot')
+                    bundleParent = fullfile(opts.batchCtx.batchRoot, 'debug');
+                else
+                    bundleParent = '';
+                end
+                saveErrorBundle(bundleParent, struct( ...
+                    'err', err, 'EEG', EEG, 'spec', spec, ...
+                    'stepName', stepName, 'stepIndex', si, ...
+                    'fileName', fileName, 'pipelineName', opts.pipelineName));
+            catch bundleErr
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'Error bundle save FAILED (continuing): %s', bundleErr.message);
+            end
+        end
 
         shouldContinue = false;
         if ~isempty(opts.onStepError)
