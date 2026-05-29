@@ -13,6 +13,9 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   toolbox versions, every plugin the step registry requires, and flag
   shadowed functions. Surfaced in the GUI via **Help → Copy Diagnostics to
   Clipboard** and referenced from the bug-report template.
+- `describePipeline` — a readable summary of the current pipeline (steps and
+  the parameters that differ from defaults), for methods sections and bug
+  reports. Surfaced via **File → Copy Pipeline Description**.
 
 ## [1.0.0] - 2026-05-29
 

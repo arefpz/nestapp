@@ -41,7 +41,7 @@ button and headless callers like `batchTEPExtract` and the test suite.
 | **Quality control** | `qa/*.m` | Quality Gate scoring, batch verdicts, QC images, dashboard, attribute matrices. |
 | **Reporting / IO** | `buildReportText.m`, `initPipelineReport.m`, `exportReport.m`, `summarizeReports.m`, `buildHistoryEntry.m`, `io/*.m` | Per-file reports, methods paragraphs, provenance, and output-path layout. |
 | **Version** | `nestappVersion.m` | Single source of truth for the app version (SemVer). |
-| **Diagnostics** | `nestappDoctor.m` | Collects and validates the runtime environment (versions, toolboxes, EEGLAB/plugins, function shadows); produces the Markdown report behind Help → Copy Diagnostics. |
+| **Diagnostics** | `nestappDoctor.m`, `describePipeline.m` | `nestappDoctor` validates the runtime environment (versions, toolboxes, EEGLAB/plugins, function shadows) for Help → Copy Diagnostics; `describePipeline` renders the current pipeline (steps + customised params) for File → Copy Pipeline Description. |
 
 ## "If you want to change X, edit Y"
 

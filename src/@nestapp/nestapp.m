@@ -480,6 +480,28 @@ classdef nestapp < matlab.apps.AppBase
             uialert(app.UIFigure, msg, 'nestapp Diagnostics', 'Icon', icon);
         end
 
+        function copyPipelineDescriptionMenu(app, ~)
+        % COPYPIPELINEDESCRIPTIONMENU  File-menu action: copy a readable
+        %   description of the current pipeline (steps + customised params)
+        %   to the clipboard, for methods sections and bug reports.
+            if isempty(app.spec)
+                uialert(app.UIFigure, 'The pipeline is empty - add steps first.', ...
+                    'No Pipeline', 'Icon', 'warning');
+                return
+            end
+            try
+                describePipeline(app.spec, 'Copy', true, 'Quiet', true);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not describe the pipeline:\n%s', ME.message), ...
+                    'Export Failed', 'Icon', 'error');
+                return
+            end
+            uialert(app.UIFigure, sprintf( ...
+                'Pipeline description (%d steps) copied to the clipboard.', ...
+                numel(app.spec)), 'Pipeline Copied', 'Icon', 'success');
+        end
+
         function loadPrefs(~)
         % LOADPREFS  Read persistent preferences and apply to app state.
         %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.
