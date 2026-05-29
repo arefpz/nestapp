@@ -53,6 +53,8 @@ function createComponents(app)
             mHelp = uimenu(app.UIFigure, 'Text', 'Help');
             uimenu(mHelp, 'Text', 'About nestapp', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
+            uimenu(mHelp, 'Text', 'Copy Diagnostics to Clipboard', 'Separator', 'on', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @copyDiagnosticsMenu, true));
 
             % Create status bar - pinned to bottom of UIFigure, visible on both tabs
             app.StatusBar = uilabel(app.UIFigure);

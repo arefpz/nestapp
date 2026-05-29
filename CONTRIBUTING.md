@@ -99,6 +99,19 @@ Steps are data-driven. To add one (worked detail in
    regenerate: run `buildTemplates()` and commit the updated `src/templates/*.mat`.
 4. Add a test under `tests/unit/` (see `test_newStepDispatch.m` for the pattern).
 
+## Diagnosing environment problems
+
+If steps fail to run, the app won't launch, or a dependency seems missing, run:
+
+```matlab
+nestappDoctor          % prints a validated environment report
+```
+
+It checks MATLAB/EEGLAB/toolbox versions, every plugin the step registry
+requires, and flags shadowed functions (a common cause of wrong-version
+calls). The same report is available in the GUI via **Help → Copy Diagnostics
+to Clipboard** and should be attached to bug reports.
+
 ## Gotchas (read before your first change)
 
 - **Allowlist `.gitignore`.** The repo ignores everything by default and

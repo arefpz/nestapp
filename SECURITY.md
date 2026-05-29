@@ -33,7 +33,8 @@ Email **dunne.wesley@gmail.com** with:
 
 - a description of the issue and its impact,
 - steps to reproduce (a minimal example if possible),
-- the nestapp version (`nestappVersion()` or Help → About) and MATLAB version.
+- environment details — run `nestappDoctor` (or Help → Copy Diagnostics)
+  and include the output.
 
 We will acknowledge receipt within a reasonable timeframe, work with you on a
 fix, and credit you in the release notes unless you prefer otherwise.

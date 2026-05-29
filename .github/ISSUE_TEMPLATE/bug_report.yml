@@ -7,6 +7,11 @@ body:
       value: |
         Thanks for reporting a bug. Please do not use this form for security
         issues — see SECURITY.md.
+
+        **Tip:** In nestapp, click **Help → Copy Diagnostics to Clipboard**
+        (or run `nestappDoctor` in MATLAB) and paste the result into the
+        "Environment diagnostics" box below — it captures versions, plugins,
+        and any detected problems automatically.
   - type: textarea
     id: what-happened
     attributes:
@@ -35,14 +40,22 @@ body:
       render: text
     validations:
       required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Environment diagnostics
+      description: Output of Help → Copy Diagnostics to Clipboard (or `nestappDoctor`).
+      render: text
+    validations:
+      required: false
   - type: input
     id: nestapp-version
     attributes:
       label: nestapp version
-      description: From Help → About, or run nestappVersion().
+      description: From Help → About, or run nestappVersion(). (Skip if you pasted diagnostics above.)
       placeholder: "1.0.0"
     validations:
-      required: true
+      required: false
   - type: input
     id: matlab-version
     attributes:

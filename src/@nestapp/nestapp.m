@@ -455,6 +455,31 @@ classdef nestapp < matlab.apps.AppBase
             showAbout(app);
         end
 
+        function copyDiagnosticsMenu(app, ~)
+        % COPYDIAGNOSTICSMENU  Help-menu action: copy environment diagnostics.
+        %   Runs nestappDoctor, copies the Markdown report to the clipboard,
+        %   and shows the problems summary so the user can paste it into a
+        %   bug report (see .github/ISSUE_TEMPLATE/bug_report.yml).
+            try
+                [~, diagInfo] = nestappDoctor('Copy', true, 'Quiet', true);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not collect diagnostics:\n%s', ME.message), ...
+                    'Diagnostics Failed', 'Icon', 'error');
+                return
+            end
+            if isempty(diagInfo.problems)
+                msg  = 'Diagnostics copied to the clipboard. No problems detected.';
+                icon = 'success';
+            else
+                msg  = sprintf(['Diagnostics copied to the clipboard.\n\n' ...
+                    '%d problem(s) detected:\n  - %s'], ...
+                    numel(diagInfo.problems), strjoin(diagInfo.problems, sprintf('\n  - ')));
+                icon = 'warning';
+            end
+            uialert(app.UIFigure, msg, 'nestapp Diagnostics', 'Icon', icon);
+        end
+
         function loadPrefs(~)
         % LOADPREFS  Read persistent preferences and apply to app state.
         %   Called from startupFcn. Uses MATLAB getpref with 'nestapp' group.
