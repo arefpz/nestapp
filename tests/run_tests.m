@@ -8,12 +8,20 @@
 %     run_tests('integration') % integration tests only (EEGLAB required)
 %
 %   OUTPUT
-%     Prints pass/fail summary to the MATLAB command window.
-%     Non-zero exit status on any failure (useful for CI).
+%     results  (optional) matlab.unittest.TestResult array. When called with
+%              no output (e.g. interactively), run_tests errors on any
+%              failure so the failure is impossible to miss. When the caller
+%              captures results (e.g. CI), it inspects [results.Failed]
+%              itself and run_tests does not throw.
+%     Also prints a pass/fail summary to the MATLAB command window.
 %
 %   See also: runtests
 
-function run_tests(suite)
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+
+function results = run_tests(suite)
 if nargin < 1
     suite = 'fast';   % unit + regression, no EEGLAB
 end

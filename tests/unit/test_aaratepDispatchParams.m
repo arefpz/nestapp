@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_aaratepDispatchParams
 % TEST_AARATEPDISPATCHPARAMS  Regression tests that the AARATEP dispatch
 %   cases in processOneFile.m only pass parameter names that the

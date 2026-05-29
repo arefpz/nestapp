@@ -1,0 +1,50 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Allow the workflow to publish to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    # Self-hosted runner with MATLAB R2024b+ (same as the Tests workflow).
+    runs-on: self-hosted
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate API reference from source headers
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            addpath(fullfile(getenv('GITHUB_WORKSPACE'), 'tools'));
+            addpath(genpath(fullfile(getenv('GITHUB_WORKSPACE'), 'src')));
+            gen_docs(fullfile(getenv('GITHUB_WORKSPACE'), 'site'));
+
+      - name: Copy hand-written docs alongside the generated reference
+        run: |
+          cp -r docs site/docs
+          cp README.md site/ 2>/dev/null || true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

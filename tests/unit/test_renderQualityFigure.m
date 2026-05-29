@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 classdef test_renderQualityFigure < matlab.unittest.TestCase
 % TEST_RENDERQUALITYFIGURE  Smoke test for src/qa/renderQualityFigure.m
 %   Asserts the renderer produces a PNG without error for both an epoched

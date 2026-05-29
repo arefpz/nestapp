@@ -1,6 +1,12 @@
 # nestapp
 
+![version](https://img.shields.io/badge/version-1.0.0-blue)
+![MATLAB](https://img.shields.io/badge/MATLAB-R2023b%2B-orange)
+![license](https://img.shields.io/badge/license-GPL--3.0-green)
+
 **nestapp** is a MATLAB GUI for cleaning and analysing TMS-EEG recordings. It wraps [EEGLAB](https://eeglab.org/), [TESA](https://nigelrogasch.gitbook.io/tesa-user-manual/), and [FastICA](http://research.ics.aalto.fi/ica/fastica/) into a point-and-click pipeline builder that lets researchers process data without writing code.
+
+**Contributing** → [CONTRIBUTING.md](CONTRIBUTING.md) · **Changes** → [CHANGELOG.md](CHANGELOG.md) · **Cite** → [CITATION.cff](CITATION.cff) · **Architecture** → [docs/architecture.md](docs/architecture.md)
 
 ---
 
@@ -164,8 +170,16 @@ Open **Settings → Preferences** to configure:
 
 ---
 
-## Contributors
+## Contributing
 
-**Aref Pariz** — original application (v1.0, 2023), developed at the Royal Institute for Mental Health in Dr. Sara Tremblay's lab ([NESTLAB](https://www.nest-lab.ca/)) and Dr. Jeremie Lefebvre's Lab, University of Ottawa.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, how to run the test suite, the pipeline-step extension recipe, and the pull-request process. New to the codebase? Start with [docs/architecture.md](docs/architecture.md) for a map of what each module does and where to make changes.
 
-**Wesley Dunne** — v2.0 (2025): pipeline engine, progress reporting and provenance, automated reports with ICA tracking, TEP visualisation and batch peak extraction, pipeline templates, test suite.
+## Citing nestapp
+
+If you use nestapp in published work, please cite it using the metadata in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button generates APA/BibTeX for you). Also cite the pipeline papers for any built-in template you run — these are listed per template under **Pipeline templates → Citing nestapp** above and are logged to the run output. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for all bundled and vendored dependencies.
+
+## Authors
+
+**Aref Pariz** — original application (2023), developed at the Royal Institute for Mental Health in Dr. Sara Tremblay's lab ([NESTLAB](https://www.nest-lab.ca/)) and Dr. Jeremie Lefebvre's Lab, University of Ottawa.
+
+**Wesley Dunne** — pipeline engine, progress reporting and provenance, automated reports with ICA tracking, TEP visualisation and batch peak extraction, pipeline templates, quality-control gates, and test suite. Led the 1.0.0 open-source release.

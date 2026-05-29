@@ -1,4 +1,8 @@
-﻿function steps = stepRegistry()
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function steps = stepRegistry()
 % STEPREGISTRY  Returns metadata for all nestapp pipeline steps.
 %
 %   steps = stepRegistry() returns a 1-by-N struct array. Each element:

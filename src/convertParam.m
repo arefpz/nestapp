@@ -1,4 +1,8 @@
-﻿function v = convertParam(raw, type)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function v = convertParam(raw, type)
 % CONVERTPARAM Convert a raw parameter value to the correct typed form.
 %   v = CONVERTPARAM(raw, type) coerces raw (from UITable, TextArea, or a
 %   saved .mat) to the type declared in the step registry.

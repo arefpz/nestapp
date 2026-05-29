@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_newStepDispatch
 % TEST_NEWSTEPDISPATCH  Regression tests for the ARTIST + AARATEP step
 %   dispatch wiring. These would have caught:

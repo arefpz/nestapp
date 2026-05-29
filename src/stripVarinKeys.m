@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function vars = stripVarinKeys(vars, keysToStrip)
 % STRIPVARINKEYS  Remove name-value pairs whose key is in keysToStrip.
 %   vars = STRIPVARINKEYS(vars, keysToStrip) drops both the key and its

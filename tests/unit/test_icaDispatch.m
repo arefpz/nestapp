@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_icaDispatch
 % TEST_ICADISPATCH  Regression tests for the Run ICA and Label ICA
 %   Components dispatch cases. These would have caught:

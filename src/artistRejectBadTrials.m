@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function EEG = artistRejectBadTrials(EEG, opts)
 % ARTISTREJECTBADTRIALS  Reject bad trials per ARTIST stage 2 (Wu 2018).
 %   EEG = ARTISTREJECTBADTRIALS(EEG, opts) marks epochs as bad if the

@@ -4,10 +4,26 @@
 
 # Explicitly track these files
 !.gitignore
+!.editorconfig
 !LICENSE
 !README.md
 !THIRD_PARTY_NOTICES.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!CHANGELOG.md
+!STYLE.md
+!CITATION.cff
 !run_nestapp.m
+
+# Documentation (hand-written only; the generated API site is built into
+# ./site by tools/gen_docs.m and deployed in CI - it is NOT committed)
+!docs/
+!docs/*.md
+
+# Developer tooling
+!tools/
+!tools/*.m
 
 # Source files
 !src/
@@ -35,7 +51,12 @@
 !tests/helpers/*.m
 !tests/*.m
 
-# CI
+# CI & community health
 !.github/
 !.github/workflows/
 !.github/workflows/*.yml
+!.github/CODEOWNERS
+!.github/pull_request_template.md
+!.github/ISSUE_TEMPLATE/
+!.github/ISSUE_TEMPLATE/*.yml
+!.github/ISSUE_TEMPLATE/*.md

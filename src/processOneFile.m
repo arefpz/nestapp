@@ -1,4 +1,8 @@
-﻿function [fileReport, stepLog] = processOneFile(spec, fullPath, opts)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [fileReport, stepLog] = processOneFile(spec, fullPath, opts)
 % PROCESSONEFILE  Execute a typed pipeline spec against a single EEG file.
 %   [fileReport, stepLog] = PROCESSONEFILE(spec, fullPath, opts)
 %

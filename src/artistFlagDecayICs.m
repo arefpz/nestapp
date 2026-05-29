@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function EEG = artistFlagDecayICs(EEG, opts)
 % ARTISTFLAGDECAYICS  Flag ICs dominated by post-pulse decay (ARTIST stage 1).
 %   EEG = ARTISTFLAGDECAYICS(EEG, opts) marks ICs whose mean rectified

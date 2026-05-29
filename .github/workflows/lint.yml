@@ -1,0 +1,23 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  checkcode:
+    # Requires a self-hosted runner with a MATLAB R2024b+ license, matching
+    # the Tests workflow. Swap to matlab-actions/setup-matlab@v2 + a MathWorks
+    # license secret for GitHub-hosted runners.
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static analysis (checkcode via tools/run_lint.m)
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            addpath(fullfile(getenv('GITHUB_WORKSPACE'), 'tools'));
+            run_lint('error');

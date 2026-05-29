@@ -1,4 +1,8 @@
-﻿function [ok, msg] = checkStepDependencies(stepNames, filePaths)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [ok, msg] = checkStepDependencies(stepNames, filePaths)
 % CHECKSTEPDEPENDENCIES  Verify required plugins are on the MATLAB path.
 %
 %   [ok, msg] = checkStepDependencies(stepNames, filePaths)

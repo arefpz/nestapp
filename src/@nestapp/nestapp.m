@@ -1,6 +1,10 @@
-﻿% WARNING: Do not open nestapp_designer.mlapp and save - App Designer will
+% WARNING: Do not open nestapp_designer.mlapp and save - App Designer will
 % regenerate this file and overwrite startupFcn and other hand-edited methods.
 % All edits must be made directly to nestapp.m.
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 classdef nestapp < matlab.apps.AppBase
 
     % Properties that correspond to app components
@@ -1080,12 +1084,13 @@ classdef nestapp < matlab.apps.AppBase
             end
             msg = sprintf([ ...
                 'nestapp - TMS-EEG Processing\n\n' ...
+                'nestapp: %s\n' ...
                 'EEGLAB:  %s\n' ...
                 'MATLAB:  %s\n\n' ...
                 'Please cite:\n' ...
                 'Rogasch et al. (2017) NeuroImage - TESA toolbox\n' ...
                 'Delorme & Makeig (2004) J Neurosci Methods - EEGLAB'], ...
-                eeglabVer, version);
+                nestappVersion(), eeglabVer, version);
             uialert(app.UIFigure, msg, 'About nestapp', 'Icon', 'info');
         end
 

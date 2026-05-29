@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function name = reportArtifactName(report, ext)
 % REPORTARTIFACTNAME  Filename for a per-file report artifact (.mat / .pdf / ...).
 %   name = REPORTARTIFACTNAME(report, ext) builds "<base>_report.<ext>" when

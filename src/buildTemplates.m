@@ -1,4 +1,8 @@
-﻿function buildTemplates()
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function buildTemplates()
 % BUILDTEMPLATES  Regenerate all built-in pipeline template .mat files.
 %
 %   Run this from the MATLAB command window (after run_nestapp, or from

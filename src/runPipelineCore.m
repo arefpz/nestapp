@@ -1,4 +1,8 @@
-﻿function [allReports, allSummaries] = runPipelineCore(spec, filePaths, opts)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [allReports, allSummaries] = runPipelineCore(spec, filePaths, opts)
 % RUNPIPELINECORE Execute a typed pipeline spec against a list of files.
 %   [allReports, allSummaries] = RUNPIPELINECORE(spec, filePaths, opts)
 %
