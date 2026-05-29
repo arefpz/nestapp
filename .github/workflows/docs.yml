@@ -18,14 +18,18 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    # Self-hosted runner with MATLAB R2024b+ (same as the Tests workflow).
-    runs-on: self-hosted
+    # GitHub-hosted; no license needed for public repos. gen_docs only needs
+    # base MATLAB (it reads source headers and calls stepRegistry).
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
 
       - name: Generate API reference from source headers
         uses: matlab-actions/run-command@v2

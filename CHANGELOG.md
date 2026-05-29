@@ -9,6 +9,10 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 ## [Unreleased]
 
 ### Changed
+- CI now runs on free GitHub-hosted runners via `matlab-actions/setup-matlab`
+  (no self-hosted runner or license needed for the public repo). The fast
+  suite, lint, and docs build run in CI; the EEGLAB-dependent integration
+  suite is run locally.
 - AARATEP path setup (`ensureAaratepOnPath`) no longer lets the bundled
   FastICA shadow the user's own (normally EEGLAB's) FastICA. The bundled
   copy is used only as a fallback when no other FastICA is on the path, and

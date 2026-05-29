@@ -44,10 +44,11 @@ first — it maps what each module does and where to make common changes.
 
 ## Pull requests
 
-- Ensure `run_tests` passes. If your change touches pipeline execution or
-  anything EEGLAB-dependent, run `run_tests('all')` locally and add
-  `[run-integration]` to the **PR title** so CI runs the integration suite
-  (it is gated off by default — see `.github/workflows/tests.yml`).
+- Ensure `run_tests` passes. CI runs the fast suite (unit + regression) on a
+  GitHub-hosted runner — no setup required. The integration suite needs
+  EEGLAB/TESA, which CI does not provide, so **run `run_tests('all')`
+  locally** when your change touches pipeline execution or anything
+  EEGLAB-dependent.
 - Add or update tests for the behaviour you change. When fixing a bug, add a
   regression test that fails before your fix (the "if you liked it, put a test
   on it" rule).

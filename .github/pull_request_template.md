@@ -15,8 +15,8 @@
 
 - [ ] Branched from and targeting `develop`.
 - [ ] `run_tests` passes locally.
-- [ ] If pipeline/EEGLAB behaviour changed: ran `run_tests('all')` and added
-      `[run-integration]` to this PR's title so CI runs the integration suite.
+- [ ] If pipeline/EEGLAB behaviour changed: ran `run_tests('all')` locally
+      (CI runs only the fast suite; integration needs EEGLAB).
 - [ ] Added/updated tests (regression test included for bug fixes).
 - [ ] Updated `CHANGELOG.md` under `## [Unreleased]`.
 - [ ] Updated docs / function headers if the public surface or behaviour changed.
