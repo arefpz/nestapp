@@ -18,6 +18,11 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+# Run JavaScript actions on Node 24 (silences the Node 20 deprecation warning;
+# some actions, e.g. matlab-actions, have no Node 24 release yet).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # Build job
   build:

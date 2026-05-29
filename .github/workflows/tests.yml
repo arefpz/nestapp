@@ -5,6 +5,10 @@ on:
     branches: [main, develop]
   pull_request:
 
+# Run JavaScript actions on Node 24 (silences the Node 20 deprecation warning).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   fast-tests:
     # Runs on a free GitHub-hosted runner. matlab-actions installs MATLAB
