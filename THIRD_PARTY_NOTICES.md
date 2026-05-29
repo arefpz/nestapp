@@ -30,6 +30,7 @@ These external packages each define the algorithm and parameters of a built-in n
 - **Copyright:** © 2021 Chris Cline
 - **What was copied:** the entire repository at the pinned commit, including the `Common/` subtree (~280 files). Nothing was modified in place.
 - **What invokes it:** dispatch cases in `src/processOneFile.m` call `c_TMSEEG_fitAndRemoveDecayArtifact` and `c_EEG_ReplaceEpochTimeSegment` directly. `src/ensureAaratepOnPath.m` adds the vendored tree to the MATLAB path on first call.
+- **Bundled forks kept off the path:** `Common/ThirdParty/FromEEGLab` (forked EEGLAB functions) and `Common/ThirdParty/FastICA` are excluded so they cannot shadow the user's own EEGLAB/FastICA. The bundled FastICA is added back only as a fallback when no other FastICA is present, and a `nestapp:aaratepFastICAMismatch` warning is printed if the user's FastICA version differs from the bundled (tested) one.
 - **Derivative work:** `src/aaratepMuscleClassifier.m` ports a 12-line block from `c_TMSEEG_Preprocess_AARATEPPipeline.m` (lines 400-412) under the same MIT license. The header comment in `aaratepMuscleClassifier.m` credits the origin.
 - **Cite as:** Cline C.C. et al. (2021). Advanced Artifact Removal for Automated TMS-EEG Data Processing. *IEEE NER*. doi:[10.1109/NER49283.2021.9441147](https://doi.org/10.1109/NER49283.2021.9441147)
 

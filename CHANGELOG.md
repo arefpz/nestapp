@@ -8,6 +8,13 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+### Changed
+- AARATEP path setup (`ensureAaratepOnPath`) no longer lets the bundled
+  FastICA shadow the user's own (normally EEGLAB's) FastICA. The bundled
+  copy is used only as a fallback when no other FastICA is on the path, and
+  a one-time warning (`nestapp:aaratepFastICAMismatch`) is printed when the
+  user's FastICA version differs from the one AARATEP was tested with.
+
 ### Added
 - `nestappDoctor` — environment diagnostics that validate MATLAB/EEGLAB/
   toolbox versions, every plugin the step registry requires, and flag

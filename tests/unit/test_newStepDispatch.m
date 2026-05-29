@@ -127,7 +127,67 @@ testCase.verifyNotEmpty(which('c_TMSEEG_fitAndRemoveDecayArtifact'), ...
     'Decay-fit helper not on path after ensureAaratepOnPath.');
 end
 
+function test_ensureAaratepOnPath_doesNotShadowBundledFastICA(testCase)
+% The bundled FastICA must not be added to the path when another fastica
+% (e.g. EEGLAB's) is already resolvable - users get the one they expect.
+testCase.assumeNotEmpty(which('fastica'), ...
+    'No fastica on the path - cannot verify the bundled one is not preferred.');
+fasticaDir = fullfile(repoRoot(), 'third_party', 'aaratep', ...
+                      'Common', 'ThirdParty', 'FastICA');
+clear ensureAaratepOnPath;
+prePath = path;
+restorePath = onCleanup(@() restoreAaratepState(prePath));
+
+ensureAaratepOnPath();
+
+onPath = any(strcmp(strsplit(path, pathsep), fasticaDir));
+testCase.verifyFalse(onPath, ...
+    'ensureAaratepOnPath added the bundled FastICA dir, shadowing the user''s.');
+resolved = which('fastica');
+testCase.verifyFalse(strcmpi(resolved, fullfile(fasticaDir, 'fastica.m')), ...
+    'fastica resolved to the bundled copy instead of the user''s install.');
+end
+
+function test_ensureAaratepOnPath_warnsOnFastICAMismatch(testCase)
+% A user fastica whose version differs from the bundled one must trigger a
+% one-time mismatch warning when the AARATEP tree is activated.
+bundled = fullfile(repoRoot(), 'third_party', 'aaratep', ...
+                  'Common', 'ThirdParty', 'FastICA', 'fastica.m');
+testCase.assumeTrue(isfile(bundled), 'Bundled FastICA absent - cannot test mismatch.');
+
+fakeDir = tempname; mkdir(fakeDir);
+fid = fopen(fullfile(fakeDir, 'fastica.m'), 'w');
+fprintf(fid, 'function varargout = fastica(varargin)\n%% FastICA version 99.9\nend\n');
+fclose(fid);
+
+clear ensureAaratepOnPath;
+prePath = path;
+restorePath = onCleanup(@() restoreAaratepState(prePath, fakeDir));
+addpath(fakeDir);   % addpath prepends, so the fake resolves first
+
+lastwarn('');
+ws = warning('off', 'all');
+ensureAaratepOnPath();
+[~, wid] = lastwarn();
+warning(ws);
+
+testCase.verifyEqual(wid, 'nestapp:aaratepFastICAMismatch', ...
+    'A FastICA version mismatch must raise nestapp:aaratepFastICAMismatch.');
+end
+
 % ── fixtures and helpers ─────────────────────────────────────────────────────
+
+function restoreAaratepState(prePath, varargin)
+% Restore the path and reset ensureAaratepOnPath's persistent so a
+% path-mutating test cannot leave later tests with a stale path state.
+path(prePath);
+clear ensureAaratepOnPath;
+for i = 1:numel(varargin)
+    if isfolder(varargin{i})
+        try; rmdir(varargin{i}, 's'); catch; end
+    end
+end
+end
 
 function EEG = makeFakeEpochedEEG()
 % Minimal epoched EEG struct: 8 channels x 200 samples x 20 trials at 1 kHz,
