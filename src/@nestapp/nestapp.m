@@ -1276,9 +1276,14 @@ classdef nestapp < matlab.apps.AppBase
 
             legend(app.UIAxes, 'show', 'Location', 'best');
 
-            % Component detection on grand mean (runs regardless of toggle to cache peaks)
+            % Component detection runs on the SMOOTHED grand mean - the same
+            % waveform that is plotted (meanx) and the same smoothing the batch
+            % CSV path applies in batchTEPExtract. Feeding TESA the raw grandMean
+            % let baseline noise wiggles register as spurious local extrema
+            % (e.g. a "negative peak" on a flat baseline or a shoulder on a
+            % monotonic rise), which defeats tesa_peakanalysis's own peak guard.
             try
-                app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime, app.tepComponentDefs);
+                app.tepPeaks = tepPeakFinder(meanx, app.EEGtime, app.tepComponentDefs);
                 if app.ShowComponentsButton.Value
                     overlayTEPComponents(app);
                 end

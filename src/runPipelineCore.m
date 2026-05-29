@@ -103,6 +103,22 @@ if autoExportPDF
     nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
 end
 
+% Citation for built-in templates. Logged once per batch so the
+% reference ends up in the run log alongside the data, where the user
+% will look when writing the methods section.
+citation = templateCitation(opts.pipelineName);
+if ~isempty(citation.reference)
+    nestLog('CITE', 'Pipeline: %s', opts.pipelineName);
+    nestLog('CITE', 'Cite as:  %s', citation.reference);
+    if ~isempty(citation.doi)
+        nestLog('CITE', 'DOI:      %s', citation.doi);
+    end
+    if ~isempty(citation.notes)
+        nestLog('CITE', '%s', citation.notes);
+    end
+    nestLog('CITE', 'See THIRD_PARTY_NOTICES.md for vendored dependencies.');
+end
+
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
 useParallel = false;
 if opts.parallel

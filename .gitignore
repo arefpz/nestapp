@@ -6,6 +6,7 @@
 !.gitignore
 !LICENSE
 !README.md
+!THIRD_PARTY_NOTICES.md
 !run_nestapp.m
 
 # Source files

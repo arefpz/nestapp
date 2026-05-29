@@ -242,6 +242,193 @@ ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCount',           3,      4
 ovs = setOv(ovs, steps, 'Quality Gate', 'maxElectrodeCountWarnAt',     1,      4);
 saveMat(reg, steps, ovs, 'TMS-EEG / TEP (TESA + Quality Gates)', fullfile(outDir, '4_tesa_tep_qc.mat'));
 
+%% 5 - TMS-EEG / ARTIST (paper-faithful, TESA compselect fallback)
+% ARTIST (Wu et al. 2018, Hum Brain Mapp 39(4):1607,
+% doi:10.1002/hbm.23938). Three-stage TMS-EEG pipeline:
+%   Stage 1: cut + interpolate TMS pulse, downsample, baseline, bandpass.
+%   Stage 2: z-score trial rejection + RANSAC bad-channel rejection.
+%   Stage 3: two ICA rounds. Round 1 catches decay components (mean |act|
+%            in [0, 50] ms > 30 uV); Round 2 with PCA dim-reduction +
+%            FLDA classifier in the paper. We substitute TESA compselect
+%            because the trained FLDA weights are not publicly distributed.
+% Numeric values trace to Wu 2018 §2.2.1 - §2.2.3.
+% Order per Wu 2018 §2.2.2 ("Preprocessing": epoch + baseline + filter)
+% followed by §2.2.1 stages (pulse cut, downsample, stage 2 reject,
+% stage 3 ICA). Filtering comes BEFORE bad-trial / bad-channel rejection.
+% Two Remove Baseline occurrences match template 1's pattern: an early
+% full-epoch demean for ICA stability, then a final pre-save TEP baseline
+% [-300, -100] ms per Wu 2018 §2.2.3.
+% Notch is TESA Butterworth bandstop 58-62 Hz (paper-faithful substitute
+% for FIR notch; safe on epoched data, unlike CleanLine).
+% Stage-3 IC classification: TESA pop_tesa_compselect substitutes for
+% ARTIST's 23-feature FLDA, which is not publicly distributed.
+% Known gap: paper specifies PCA -> 99.9% variance for round-2 ICA; the
+% Run ICA step does not yet expose a pca parameter. See THIRD_PARTY_NOTICES.md.
+steps = { ...
+    'Load Data', 'Load Channel Location', 'Remove un-needed Channels', ...
+    'Find TMS Pulses (TESA)', ...
+    'Epoching', ...
+    'Remove Baseline', ...
+    'Remove TMS Artifacts (TESA)', 'Interpolate Missing Data (TESA)', ...
+    'Re-Sample', ...
+    'Frequency Filter', ...
+    'Frequency Filter (TESA)', ...
+    'Reject Bad Trials (ARTIST)', ...
+    'Remove Bad Channels (ARTIST)', ...
+    'Run ICA', ...
+    'Flag ICA Components (ARTIST Decay)', ...
+    'Remove Flagged ICA Components', ...
+    'Run ICA', ...
+    'Remove ICA Components (TESA)', ...
+    'Interpolate Channels', 'Re-Reference', ...
+    'Remove Baseline', 'Save New Set'};
+ovs = emptyOvs(steps);
+ovs = setOv(ovs, steps, 'Epoching',            'timelim',   [-0.5, 1.5]);
+% First baseline: full-epoch demean for ICA stability (matches template 1).
+ovs = setOv(ovs, steps, 'Remove Baseline',     'timerange', [-500, 1500], 1);
+ovs = setOv(ovs, steps, 'Remove TMS Artifacts (TESA)', 'cutTimesTMS', [0, 10]);
+ovs = setOv(ovs, steps, 'Re-Sample',           'freq',      1000);
+ovs = setOv(ovs, steps, 'Frequency Filter',    'locutoff',  1);
+ovs = setOv(ovs, steps, 'Frequency Filter',    'hicutoff',  100);
+% 60 Hz notch via TESA bandstop (paper-faithful substitute for FIR notch).
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'type', 'bandstop');
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'high', 58);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'low',  62);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'ord',  2);
+% Round 1 ICA: infomax, no PCA. Round 2: infomax (TESA compselect needs runica).
+ovs = setOv(ovs, steps, 'Run ICA', 'icatype', 'runica', 1);
+ovs = setOv(ovs, steps, 'Run ICA', 'icatype', 'runica', 2);
+% Stage-3 compselect: TMS-EEG-aware fallback for the missing FLDA. All
+% detectors on, mirroring the round-2 settings of template 1.
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'blink',     'on');
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'move',      'on');
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'muscle',    'on');
+ovs = setOv(ovs, steps, 'Remove ICA Components (TESA)', 'elecNoise', 'on');
+ovs = setOv(ovs, steps, 'Re-Reference',        'ref',       '[]');
+% Final pre-save baseline per Wu 2018 §2.2.3.
+ovs = setOv(ovs, steps, 'Remove Baseline',     'timerange', [-300, -100], 2);
+ovs = setOv(ovs, steps, 'Save New Set',        'savenew',   'artist');
+saveMat(reg, steps, ovs, ...
+    'TMS-EEG / ARTIST (paper-faithful, TESA compselect fallback)', ...
+    fullfile(outDir, '5_artist.mat'));
+
+%% 6 - TMS-EEG / AARATEP (Cline 2021)
+% AARATEP (Cline et al. 2021, IEEE NER, doi:10.1109/NER49283.2021.9441147).
+% Helpers vendored from chriscline/AARATEPPipeline under MIT.
+% SOUND uses TESA's default lead field (subject-individual anatomy is
+% intentionally out of scope - override leadFieldPath in the SOUND step
+% to use your own). Numeric values trace to
+% third_party/aaratep/c_TMSEEG_Preprocess_AARATEPPipeline.m.
+% Order traced verbatim from c_TMSEEG_Preprocess_AARATEPPipeline.m:
+%   - pop_reref([]) is applied BEFORE the early eye-IC ICA (line 244)
+%     so the early ICA decomposition is on average-referenced data
+%   - the early eye-IC pass calls c_TMSEEG_runICLabel with
+%     muscleComponentThreshold = NaN (line 254): ONLY Eye gets flagged
+%   - round-2 IC rejection ORs muscle flags onto ICLabel flags before a
+%     single pop_subcomp - so Label/Flag (ICLabel) must come BEFORE the
+%     AARATEP muscle classifier (otherwise pop_icflag overwrites the
+%     muscle flags via gcompreject assignment)
+%   - upstream uses c_EEG_filter_butterworth bandstop (NOT CleanLine);
+%     we use Frequency Filter (TESA) bandstop 58-62 Hz as the equivalent
+%     (same algorithm class: Butterworth + filtfilt zero-phase).
+% Known gap: upstream Remove Bad Channels uses a {PREP_deviation,
+%   TESA_DDWiener_PerTrial} ensemble via c_TMSEEG_detectBadChannels;
+%   nestapp's Remove Bad Channels uses pop_rejchan kurtosis with
+%   threshold 10. Documented in THIRD_PARTY_NOTICES.md.
+steps = { ...
+    'Load Data', 'Load Channel Location', 'Remove un-needed Channels', ...
+    'Find TMS Pulses (TESA)', ...
+    'Epoching', ...
+    'Interpolate Missing Data (AR-Blend)', ...
+    'Re-Sample', ...
+    'Remove Baseline', ...
+    'Frequency Filter', ...
+    'Remove Bad Channels', ...
+    'Re-Reference', ...
+    'Run ICA', ...
+    'Label ICA Components', ...
+    'Flag ICA Components for Rejection', ...
+    'Remove Flagged ICA Components', ...
+    'Remove Recording Noise (SOUND)', ...
+    'Remove Decay Artifact', ...
+    'Interpolate Missing Data (AR-Blend)', ...
+    'Frequency Filter (TESA)', ...
+    'Run ICA', ...
+    'Label ICA Components', ...
+    'Flag ICA Components for Rejection', ...
+    'Flag ICA Components (AARATEP Muscle)', ...
+    'Remove Flagged ICA Components', ...
+    'Frequency Filter', ...
+    'Re-Reference', ...
+    'Save New Set'};
+ovs = emptyOvs(steps);
+% Epoching: example value from README; users can override.
+ovs = setOv(ovs, steps, 'Epoching',  'timelim',   [-1, 2]);
+% AR-Blend interp: artifactTimespan = [-0.002, 0.012] s -> [-2, 12] ms.
+% prePostFitDurations = [20, 20] ms hardcoded upstream.
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'artifactStartMs', -2, 1);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'artifactEndMs',   12, 1);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'prePostFitMs',    20, 1);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'artifactStartMs', -2, 2);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'artifactEndMs',   12, 2);
+ovs = setOv(ovs, steps, 'Interpolate Missing Data (AR-Blend)', 'prePostFitMs',    20, 2);
+ovs = setOv(ovs, steps, 'Re-Sample',                     'freq',                    1000);
+ovs = setOv(ovs, steps, 'Remove Baseline',               'timerange',               [-500, -10]);
+% Two-stage filter: HPF at 1 Hz first, LPF at 200 Hz second.
+ovs = setOv(ovs, steps, 'Frequency Filter', 'locutoff', 1,   1);
+ovs = setOv(ovs, steps, 'Frequency Filter', 'hicutoff', 0,   1);
+ovs = setOv(ovs, steps, 'Frequency Filter', 'locutoff', 0,   2);
+ovs = setOv(ovs, steps, 'Frequency Filter', 'hicutoff', 200, 2);
+% Bad-channel detection: threshold 10 per badChannelThreshold = 10.
+% Note: nestapp's Remove Bad Channels uses pop_rejchan kurtosis; upstream
+% uses an ensemble. Same threshold value, different algorithm. Documented.
+ovs = setOv(ovs, steps, 'Remove Bad Channels',           'threshold',               10);
+% Early average reference before the early eye-IC ICA (upstream line 244).
+ovs = setOv(ovs, steps, 'Re-Reference', 'ref', '[]', 1);
+% Both ICA rounds: fastica.
+ovs = setOv(ovs, steps, 'Run ICA', 'icatype', 'fastica', 1);
+ovs = setOv(ovs, steps, 'Run ICA', 'icatype', 'fastica', 2);
+% Early eye-IC pass: c_TMSEEG_runICLabel called with eyeThreshold=0.9 and
+% muscle/brain/other = NaN (line 254). Only Eye is flagged. Explicitly
+% disable Muscle (registry default is [0.9, 1]) and all others.
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Brain',        [NaN, NaN], 1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Muscle',       [NaN, NaN], 1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Eye',          [0.9, 1],   1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Heart',        [NaN, NaN], 1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'LineNoise',    [NaN, NaN], 1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'ChannelNoise', [NaN, NaN], 1);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Other',        [NaN, NaN], 1);
+% SOUND: lambda = 10^-1.5 ~ 0.0316; iter stays at default 10.
+ovs = setOv(ovs, steps, 'Remove Recording Noise (SOUND)', 'lambdaValue', 10^-1.5);
+% Decay removal: artifactTimespan = [-2, 12] ms, doDecayRemovalPerTrial = true.
+ovs = setOv(ovs, steps, 'Remove Decay Artifact', 'artifactStartMs', -2);
+ovs = setOv(ovs, steps, 'Remove Decay Artifact', 'artifactEndMs',   12);
+ovs = setOv(ovs, steps, 'Remove Decay Artifact', 'perTrial',        'on');
+% Line noise: 60 Hz Butterworth bandstop (paper-faithful substitute
+% for upstream's c_EEG_filter_butterworth bandstop). Tight 58-62 Hz band
+% per AARATEP's typical practice.
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'type', 'bandstop');
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'high', 58);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'low',  62);
+ovs = setOv(ovs, steps, 'Frequency Filter (TESA)', 'ord',  2);
+% Round-2 IC rejection: pop_icflag writes gcompreject from ICLabel
+% probabilities FIRST, then the AARATEP muscle classifier ORs its
+% flags into gcompreject. Reverse order would let pop_icflag clobber
+% the muscle flags. Brain < 0.3 = reject (brainComponentThreshold from
+% upstream). Eye/Heart/Line/ChannelNoise use standard 0.8 ICLabel
+% thresholds (c_TMSEEG_runICLabel's defaults for the categories upstream
+% does not explicitly override).
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Brain',       [0, 0.3], 2);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Eye',         [0.8, 1], 2);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Heart',       [0.8, 1], 2);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'LineNoise',   [0.8, 1], 2);
+ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'ChannelNoise',[0.8, 1], 2);
+% Final average reference (upstream line 498).
+ovs = setOv(ovs, steps, 'Re-Reference',  'ref',     '[]', 2);
+ovs = setOv(ovs, steps, 'Save New Set',  'savenew', 'aaratep');
+saveMat(reg, steps, ovs, 'TMS-EEG / AARATEP (Cline 2021)', ...
+    fullfile(outDir, '6_aaratep.mat'));
+
 fprintf('buildTemplates: done - %s\n', outDir);
 end
 

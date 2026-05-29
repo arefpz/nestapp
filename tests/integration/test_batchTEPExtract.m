@@ -20,8 +20,8 @@ addpath(fullfile(r, 'src'));
 % Hard requirement — missing TESA must be a visible failure, not a silent pass.
 if isempty(which('tesa_peakanalysis'))
     testCase.assumeFail( ...
-        'TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
-        'Install TESA via the EEGLAB Plugin Manager before running these tests.');
+        ['TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
+         'Install TESA via the EEGLAB Plugin Manager before running these tests.']);
 end
 end
 

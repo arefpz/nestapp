@@ -19,8 +19,8 @@ addpath(fullfile(r, 'src'));
 % Hard requirement — if TESA is absent these tests must fail visibly, not pass.
 if isempty(which('tesa_peakanalysis'))
     testCase.assumeFail( ...
-        'TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
-        'Install TESA via the EEGLAB Plugin Manager before running these tests.');
+        ['TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
+         'Install TESA via the EEGLAB Plugin Manager before running these tests.']);
 end
 end
 
@@ -136,4 +136,52 @@ function test_emptyCompDefsUsesDefaults(testCase)
 peaks = tepPeakFinder(w, t, []);
 testCase.verifyEqual(numel(peaks), 6, ...
     'Passing [] as compDefs must fall back to the 6 canonical components');
+end
+
+% ── polarity (sign) guard ──────────────────────────────────────────────────────
+% ERP/TEP nomenclature: an N component is a negative baseline-relative
+% deflection, a P component is positive. tesa_peakanalysis only finds a
+% turning point, so the valley between two positive peaks is reported as a
+% "negative" peak with positive amplitude. tepPeakFinder must reject that.
+
+function [w, t] = twoPositivePeaksWaveform()
+% P30 and P60 positivities with a positive-valued valley (~45 ms) between
+% them, and a genuine N100 negativity. Mirrors the reported N45 false
+% positive (valley between P30/P60) and a real negative component.
+t = -50:1:300;
+w = 2.0*exp(-((t-30)/8).^2) ...   % P30
+  + 2.0*exp(-((t-60)/9).^2) ...   % P60
+  - 3.0*exp(-((t-100)/18).^2);    % N100 (dips well below zero)
+end
+
+function test_negativeComponentWithPositiveAmplitudeRejected(testCase)
+[w, t] = twoPositivePeaksWaveform();
+compDefs = struct('name',{'N45'},'polarity',{'neg'}, ...
+    'nomLatency',{45},'winStart',{40},'winEnd',{55});
+peaks = tepPeakFinder(w, t, compDefs);
+testCase.verifyFalse(logical(peaks(1).found), ...
+    ['A negative component whose amplitude is positive (the valley ' ...
+     'between P30 and P60) must NOT be reported as found.']);
+end
+
+function test_genuineNegativeComponentStillFound(testCase)
+[w, t] = twoPositivePeaksWaveform();
+compDefs = struct('name',{'N100'},'polarity',{'neg'}, ...
+    'nomLatency',{100},'winStart',{80},'winEnd',{140});
+peaks = tepPeakFinder(w, t, compDefs);
+testCase.verifyTrue(logical(peaks(1).found), ...
+    'A genuine negative deflection (amplitude < 0) must still be found.');
+testCase.verifyLessThan(peaks(1).amplitudeUV, 0, ...
+    'A found N component must have negative amplitude.');
+end
+
+function test_positiveComponentWithNegativeAmplitudeRejected(testCase)
+% Inverse case: a "positive" component sitting in a negative trough.
+t = -50:1:300;
+w = -2.0*exp(-((t-30)/8).^2) - 2.0*exp(-((t-60)/9).^2);  % two negativities
+compDefs = struct('name',{'P45'},'polarity',{'pos'}, ...
+    'nomLatency',{45},'winStart',{40},'winEnd',{55});
+peaks = tepPeakFinder(w, t, compDefs);
+testCase.verifyFalse(logical(peaks(1).found), ...
+    'A positive component whose amplitude is negative must NOT be found.');
 end

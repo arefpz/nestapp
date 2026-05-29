@@ -14,6 +14,19 @@
 %     peaks  1xN struct array:
 %              .name, .polarity, .latencyMs, .amplitudeUV, .found
 %
+%   A peak is reported found only if it is (a) a local extremum of the
+%   correct polarity within its window (tesa_peakanalysis) AND (b) its
+%   baseline-relative amplitude carries the component's defining sign
+%   (negative for N components, positive for P components). The sign guard
+%   rejects local minima that are not true negativities - notably the
+%   valley between two positive peaks - per ERP/TEP nomenclature
+%   (Luck 2014; Rogasch et al. 2017). It assumes the input waveform is
+%   baseline-corrected so that zero is the pre-stimulus baseline.
+%
+%   Callers should pass the same smoothed, trial-averaged ROI waveform
+%   they display, so detection runs on the curve the user sees rather than
+%   on un-smoothed noise (see plotTEP / batchTEPExtract).
+%
 %   Requires: TESA toolbox (tesa_peakanalysis) on the MATLAB path.
 
 if isempty(which('tesa_peakanalysis'))
@@ -72,7 +85,24 @@ for k = 1:numel(compDefs)
         continue
     end
     c = EEGstub.ROI.R1.(compName);
-    peaks(k).found       = strcmp(c.found, 'yes');
+    found = strcmp(c.found, 'yes');
+
+    % Polarity guard. ERP/TEP nomenclature defines an N component as a
+    % NEGATIVE baseline-relative deflection and a P component as a POSITIVE
+    % one (Luck 2014; Rogasch et al. 2017). tesa_peakanalysis only tests for
+    % a local extremum (turning point), so it reports the valley between two
+    % positive peaks (e.g. between P30 and P60) as a "negative" peak whose
+    % amplitude is still positive - a relative minimum, not a negativity.
+    % A genuine component must carry its defining sign relative to the
+    % (baseline-corrected) pre-stimulus zero.
+    if found
+        isNeg = strcmpi(compDefs(k).polarity, 'neg');
+        if (isNeg && c.amp >= 0) || (~isNeg && c.amp <= 0)
+            found = false;
+        end
+    end
+
+    peaks(k).found       = found;
     peaks(k).latencyMs   = c.lat;
     peaks(k).amplitudeUV = c.amp;
 end

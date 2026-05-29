@@ -445,13 +445,29 @@ for si = 1:nSteps
             case 'Run ICA'
                 EEG.data = double(EEG.data);
                 vars = convertContainedStringsToChars(varin);
-                EEG = pop_runica(EEG,vars{:});
+                % FastICA-specific params crash runica's internal parser
+                % ("Output argument 'sphere' not assigned"). Strip them
+                % when the user picked icatype = runica (extended Infomax).
+                idx = find(strcmpi(vars, 'icatype'), 1);
+                if ~isempty(idx) && strcmpi(vars{idx+1}, 'runica')
+                    vars = stripVarinKeys(vars, ...
+                        {'approach', 'g', 'stabilization'});
+                end
+                EEG = pop_runica(EEG, vars{:});
                 EEG = eeg_checkset( EEG );
 
             case 'Label ICA Components'
                 vars = convertContainedStringsToChars(varin);
-                ind = find(strcmpi(vars, 'iclabelVersion'));
-                iclabelVersion = vars{ind+1};
+                % Registry key is 'version' (the underlying pop_iclabel
+                % argument). Older dispatch looked up 'iclabelVersion'
+                % and crashed with "Unable to perform assignment with 0
+                % elements" when the lookup returned empty.
+                ind = find(strcmpi(vars, 'version'), 1);
+                if isempty(ind)
+                    iclabelVersion = 'default';
+                else
+                    iclabelVersion = vars{ind+1};
+                end
                 EEG = pop_iclabel(EEG, iclabelVersion);
                 EEG = eeg_checkset( EEG );
 
@@ -659,6 +675,55 @@ for si = 1:nSteps
             case 'Remove Recording Noise (SOUND)'
                 vars = convertContainedStringsToChars(varin);
                 EEG = pop_tesa_sound(EEG, vars{:} );
+                EEG = eeg_checkset( EEG );
+
+            case 'Interpolate Missing Data (AR-Blend)'
+                ensureAaratepOnPath();
+                opts2 = varinToStruct(varin);
+                artifactTimespan = [opts2.artifactStartMs, opts2.artifactEndMs] * 1e-3;
+                fitDur = opts2.prePostFitMs * 1e-3;
+                EEG = c_EEG_ReplaceEpochTimeSegment(EEG, ...
+                    'timespanToReplace',   artifactTimespan, ...
+                    'method',              'ARExtrapolation', ...
+                    'prePostFitDurations', [fitDur, fitDur]);
+                EEG = eeg_checkset( EEG );
+
+            case 'Remove Decay Artifact'
+                ensureAaratepOnPath();
+                opts2 = varinToStruct(varin);
+                artifactTimespan = [opts2.artifactStartMs, opts2.artifactEndMs] * 1e-3;
+                % Upstream c_TMSEEG_Preprocess_AARATEPPipeline.m line 336:
+                %   doDecayRemovalPerTrial = true  -> 'none'
+                %   doDecayRemovalPerTrial = false -> 'mean'
+                if strcmpi(opts2.perTrial, 'on')
+                    trialAggMethod = 'none';
+                else
+                    trialAggMethod = 'mean';
+                end
+                EEG = c_TMSEEG_fitAndRemoveDecayArtifact(EEG, ...
+                    'artifactTimespan',                 artifactTimespan, ...
+                    'trialAggMethod_timeCourseRemoval', trialAggMethod, ...
+                    'aggTrimPercent',                   10);
+                EEG = eeg_checkset( EEG );
+
+            case 'Flag ICA Components (AARATEP Muscle)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = aaratepMuscleClassifier(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Reject Bad Trials (ARTIST)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistRejectBadTrials(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Remove Bad Channels (ARTIST)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistBadChannelsRansac(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Flag ICA Components (ARTIST Decay)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistFlagDecayICs(EEG, vars{:});
                 EEG = eeg_checkset( EEG );
 
             case 'Median Filter 1D'
