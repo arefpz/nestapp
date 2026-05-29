@@ -20,9 +20,16 @@ jobs:
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
         with:
+          # Signal Processing is required (qa/ uses butter/filtfilt/pwelch,
+          # exercised by the fast suite). Statistics is a declared requirement.
+          # Parallel Computing backs runPipelineCore's parallel run path; the
+          # serial fast suite does not exercise it, but it is installed so CI
+          # matches the software's real dependency set. (Image Processing /
+          # Wavelet / Optimization are NOT used by nestapp and are omitted.)
           products: >
             Signal_Processing_Toolbox
             Statistics_and_Machine_Learning_Toolbox
+            Parallel_Computing_Toolbox
 
       - name: Run fast test suite (unit + regression)
         uses: matlab-actions/run-command@v2
