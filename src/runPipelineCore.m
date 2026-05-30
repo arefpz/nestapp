@@ -463,10 +463,15 @@ else
     figX = (sc(3) - figW) / 2;
     figY = (sc(4) - figH) / 2;
     dlg.overlay = [];
+    % Headless (no embedding app figure: CLI / batch / tests). Build the
+    % progress figure INVISIBLE - progress is reported on the command window
+    % (see dlg.streamConsole below). A visible window here would pop up and
+    % steal focus on every run, and during an automated test sweep it looks
+    % like a frozen dialog. The app path (parentFig present) is unaffected.
     dlg.fig = uifigure('Name', 'Running Pipeline', ...
         'Position', [figX figY figW figH], ...
         'Color',    [0.97 0.97 0.98], ...
-        'Resize',   'off');
+        'Resize',   'off', 'Visible', 'off');
 end
 
 % Headless (no embedding app figure): also stream progress to the command
