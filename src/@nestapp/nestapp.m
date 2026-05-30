@@ -1768,6 +1768,12 @@ classdef nestapp < matlab.apps.AppBase
                 'ButtonPushedFcn', @(~,~) doLoad());
             uiwait(dlg);
 
+            % Closing the modal picker can leave the main window buried behind
+            % other apps (Chrome, etc.); raise nestapp so it isn't lost.
+            if isvalid(app.UIFigure)
+                figure(app.UIFigure);
+            end
+
             function doLoad()
                 idx = find(strcmp(names, lb.Value), 1);
                 close(dlg);
