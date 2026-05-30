@@ -34,9 +34,10 @@ function report = initPipelineReport(inputFile)
 
 report.inputFile   = inputFile;
 report.processedAt = datetime('now');
-% Built-in template name (e.g. 'ARTIST', 'AARATEP'); set by processOneFile from
-% opts.pipelineName. Drives the citation block in the text report / PDF. '' for
-% ad-hoc pipelines with no registered citation.
+% Pipeline / template name (e.g. 'TMS-EEG / AARATEP'); set by processOneFile
+% from opts.pipelineName. Provenance metadata saved with the report. ''
+% for ad-hoc pipelines. (Citations are derived from the steps that ran, not
+% this name - see stepCitations.)
 report.pipelineName = '';
 
 report.steps = {};

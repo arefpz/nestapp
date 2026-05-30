@@ -1,0 +1,93 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function cites = stepCitations(stepNames)
+% STEPCITATIONS  Citations for the methods a pipeline actually used.
+%   cites = STEPCITATIONS(stepNames)
+%
+%   stepNames - cellstr of pipeline step names that ran (or are planned).
+%   cites     - struct array with fields .reference and .doi: one entry per
+%               cited method whose trigger steps appear in stepNames, in
+%               registry order, deduped.
+%
+%   Citations are derived from the steps present, not from a template name, so
+%   any constellation of steps cites exactly the methods it used. Combine TESA
+%   compselect with ARTIST trial rejection and both references appear; run a
+%   pipeline without SOUND and the SOUND reference does not - no spurious
+%   "if you also used X" notes.
+%
+%   To add a method, append an entry() in registry() below with its reference,
+%   DOI, and a predicate over step names. Used by citationLines (report text /
+%   PDF / session summary) and runPipelineCore (batch log).
+%
+%   See also: citationLines, buildReportText, summarizeReports, stepRegistry
+
+cites = struct('reference', {}, 'doi', {});
+if nargin < 1 || isempty(stepNames)
+    return
+end
+if ~iscell(stepNames); stepNames = cellstr(stepNames); end
+
+reg = registry();
+keep = false(1, numel(reg));
+for i = 1:numel(reg)
+    keep(i) = any(cellfun(reg(i).match, stepNames));
+end
+if any(keep)
+    cites = rmfield(reg(keep), 'match');
+end
+end
+
+% -- the registry ---------------------------------------------------------
+
+function reg = registry()
+% Method citations, in the order they should appear (platform first, then
+% toolboxes, then pipeline-specific methods). Each entry's match(stepName)
+% predicate decides whether the method was used.
+reg = struct('reference', {}, 'doi', {}, 'match', {});
+
+reg(end+1) = entry( ...
+    ['Delorme A, Makeig S (2004). EEGLAB: an open source toolbox for analysis ' ...
+     'of single-trial EEG dynamics. J Neurosci Methods 134(1):9-21.'], ...
+    '10.1016/j.jneumeth.2003.10.009', ...
+    @(s) strcmp(s, 'Load Data'));
+
+reg(end+1) = entry( ...
+    ['Rogasch N.C. et al. (2017). Analysing concurrent transcranial magnetic ' ...
+     'stimulation and electroencephalographic data: a review and introduction ' ...
+     'to the open-source TESA software. NeuroImage 147:934-951.'], ...
+    '10.1016/j.neuroimage.2017.06.014', ...
+    @(s) contains(s, '(TESA)'));
+
+reg(end+1) = entry( ...
+    ['Pion-Tonachini L. et al. (2019). ICLabel: An automated ' ...
+     'electroencephalographic independent component classifier, dataset, and ' ...
+     'website. NeuroImage 198:181-197.'], ...
+    '10.1016/j.neuroimage.2019.05.026', ...
+    @(s) strcmp(s, 'Label ICA Components'));
+
+reg(end+1) = entry( ...
+    ['Mutanen T.P. et al. (2018). Automatic and robust noise suppression in ' ...
+     'EEG and MEG: The SOUND algorithm. NeuroImage 166:135-151.'], ...
+    '10.1016/j.neuroimage.2017.10.021', ...
+    @(s) strcmp(s, 'Remove Recording Noise (SOUND)'));
+
+reg(end+1) = entry( ...
+    ['Wu W. et al. (2018). ARTIST: A fully automated artifact rejection ' ...
+     'algorithm for single-pulse TMS-EEG data. Hum Brain Mapp 39(4):1607-1625.'], ...
+    '10.1002/hbm.23938', ...
+    @(s) contains(s, '(ARTIST'));
+
+reg(end+1) = entry( ...
+    ['Cline C.C. et al. (2021). Advanced Artifact Removal for Automated ' ...
+     'TMS-EEG Data Processing. IEEE NER.'], ...
+    '10.1109/NER49283.2021.9441147', ...
+    @(s) any(strcmp(s, {'Interpolate Missing Data (AR-Blend)', ...
+                        'Remove Decay Artifact', ...
+                        'Flag ICA Components (AARATEP Muscle)'})));
+end
+
+function e = entry(reference, doi, matchFcn)
+e = struct('reference', reference, 'doi', doi, 'match', matchFcn);
+end

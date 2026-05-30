@@ -100,10 +100,13 @@ lines{end+1} = 'METHODS';
 lines{end+1} = ['  ', methodsParagraphAggregate(reports)];
 lines{end+1} = '';
 
-%% Citation - one block for the template that drove this session
-pipelineName = '';
-if isfield(reports{1}, 'pipelineName'); pipelineName = reports{1}.pipelineName; end
-citeLines = citationLines(pipelineName);
+%% Citation - references for every method used across the session, from the
+%% union of steps that ran (stepCitations dedupes by method).
+allSteps = {};
+for i = 1:numel(reports)
+    allSteps = [allSteps, reportStepNames(reports{i})]; %#ok<AGROW>
+end
+citeLines = citationLines(allSteps);
 if ~isempty(citeLines)
     lines = [lines, citeLines];
     lines{end+1} = '';

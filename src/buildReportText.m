@@ -168,12 +168,11 @@ lines{end+1} = '';
 lines{end+1} = 'METHODS';
 lines{end+1} = ['  ', methodsParagraph(report)];
 
-% Citation - attribution for the built-in template that produced this run.
-% Same block runPipelineCore prints to the batch log and the session summary
-% shows; rendered here so each per-file report (and its PDF) carries it.
-pipelineName = '';
-if isfield(report, 'pipelineName'); pipelineName = report.pipelineName; end
-citeLines = citationLines(pipelineName);
+% Citation - references for the methods this file's pipeline actually used,
+% derived from the steps that ran. Same block runPipelineCore prints to the
+% batch log and the session summary shows; rendered here so each per-file
+% report (and its PDF) carries it.
+citeLines = citationLines(reportStepNames(report));
 if ~isempty(citeLines)
     lines{end+1} = '';
     lines = [lines, citeLines];

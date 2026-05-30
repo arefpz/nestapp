@@ -99,7 +99,7 @@ end
 stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
                  'epochBefore',{},'epochAfter',{},'error',{});
 fileReport = initPipelineReport(fullPath);
-fileReport.pipelineName = opts.pipelineName;  % drives the report's citation block
+fileReport.pipelineName = opts.pipelineName;  % provenance (citations come from steps)
 
 for si = 1:nSteps
     step     = spec(si);

@@ -119,18 +119,17 @@ if autoExportPDF
     nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
 end
 
-% Citation for built-in templates. Logged once per batch so the
-% reference ends up in the run log alongside the data, where the user
-% will look when writing the methods section.
-citation = templateCitation(opts.pipelineName);
-if ~isempty(citation.reference)
-    nestLog('CITE', 'Pipeline: %s', opts.pipelineName);
-    nestLog('CITE', 'Cite as:  %s', citation.reference);
-    if ~isempty(citation.doi)
-        nestLog('CITE', 'DOI:      %s', citation.doi);
-    end
-    if ~isempty(citation.notes)
-        nestLog('CITE', '%s', citation.notes);
+% Citations for the methods this pipeline uses, derived from its steps.
+% Logged once per batch so the references end up in the run log alongside the
+% data, where the user will look when writing the methods section.
+cites = stepCitations({spec.name});
+if ~isempty(cites)
+    nestLog('CITE', 'Methods used in this pipeline - please cite:');
+    for ci = 1:numel(cites)
+        nestLog('CITE', '  %s', cites(ci).reference);
+        if ~isempty(cites(ci).doi)
+            nestLog('CITE', '  DOI: %s', cites(ci).doi);
+        end
     end
     nestLog('CITE', 'See THIRD_PARTY_NOTICES.md for vendored dependencies.');
 end

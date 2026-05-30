@@ -2,34 +2,30 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
 % Part of nestapp; see the LICENSE file for full terms.
-function lines = citationLines(pipelineName)
-% CITATIONLINES  Format a built-in template's citation as report text lines.
-%   lines = CITATIONLINES(pipelineName)
+function lines = citationLines(stepNames)
+% CITATIONLINES  Format a CITATION block for the methods a pipeline used.
+%   lines = CITATIONLINES(stepNames)
 %
-%   Returns a cellstr CITATION block (a header plus 'Cite as:' / 'DOI:' / notes)
-%   for the built-in template named pipelineName, or {} when the name has no
-%   citation registered. Wraps templateCitation so buildReportText (per-file
-%   report + PDF cover) and summarizeReports (session summary) share one source
-%   of truth with the batch-log citation printed by runPipelineCore.
+%   Returns a cellstr CITATION block listing one reference (+ DOI) per method
+%   whose trigger steps appear in stepNames, or {} when no cited method was
+%   used. Derives the list from the actual steps via stepCitations, so the
+%   report cites exactly what ran - no template-name guessing, no conditional
+%   "if you also used X" notes.
 %
-%   See also: templateCitation, buildReportText, summarizeReports
+%   See also: stepCitations, buildReportText, summarizeReports
 
 lines = {};
-if nargin < 1 || isempty(pipelineName)
-    return
-end
-
-c = templateCitation(pipelineName);
-if isempty(c.reference)
+cites = stepCitations(stepNames);
+if isempty(cites)
     return
 end
 
 lines{end+1} = 'CITATION';
-lines{end+1} = sprintf('  Cite as: %s', c.reference);
-if ~isempty(c.doi)
-    lines{end+1} = sprintf('  DOI:     %s', c.doi);
-end
-if ~isempty(c.notes)
-    lines{end+1} = sprintf('  %s', c.notes);
+lines{end+1} = '  Methods used in this pipeline - please cite:';
+for i = 1:numel(cites)
+    lines{end+1} = sprintf('    %s', cites(i).reference); %#ok<AGROW>
+    if ~isempty(cites(i).doi)
+        lines{end+1} = sprintf('      DOI: %s', cites(i).doi); %#ok<AGROW>
+    end
 end
 end

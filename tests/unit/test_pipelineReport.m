@@ -275,31 +275,53 @@ end
 
 % ── citation block (per-file report + session summary) ───────────────────
 
-function test_citationAppearsForKnownTemplate(testCase)
-% A built-in template name must surface a CITATION block with the reference
-% and DOI from templateCitation.
+function rec = stepRecord(name)
+% Minimal complete step record (buildReportText's STEPS RUN reads these fields).
+rec = struct('name', name, 'chansBefore', 0, 'chansAfter', 0, ...
+             'trialsBefore', 0, 'trialsAfter', 0, 'duration', 0);
+end
+
+function test_citationDerivedFromSteps(testCase)
+% Citations come from the steps that ran: an ARTIST step surfaces the ARTIST
+% reference and DOI.
 report = initPipelineReport('test.set');
-report.pipelineName = 'ARTIST TEP';
+report.steps = {stepRecord('Reject Bad Trials (ARTIST)')};
 txt = exportReport(report, '');
 testCase.verifyTrue(contains(txt, 'CITATION'), 'Report must include a CITATION section');
-testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'Citation must name the reference');
+testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'Citation must name the ARTIST reference');
 testCase.verifyTrue(contains(txt, '10.1002/hbm.23938'), 'Citation must include the DOI');
 end
 
-function test_noCitationForAdhocPipeline(testCase)
-% An ad-hoc pipeline (no registered citation) must omit the CITATION block.
+function test_noCitationForUncitedSteps(testCase)
+% Steps with no associated method citation produce no CITATION block.
 report = initPipelineReport('test.set');
-report.pipelineName = 'My Custom Pipeline 7';
+report.steps = {stepRecord('Remove Baseline'), stepRecord('Re-Reference')};
 txt = exportReport(report, '');
 testCase.verifyFalse(contains(txt, 'CITATION'), ...
-    'No CITATION section when the pipeline has no registered citation');
+    'No CITATION section when no step maps to a cited method');
+end
+
+function test_noSpuriousSoundCitation(testCase)
+% Regression: a TESA pipeline without a SOUND step must cite TESA but NOT
+% Mutanen/SOUND. Previously the template citation note always mentioned SOUND.
+report = initPipelineReport('test.set');
+report.steps = {stepRecord('Remove ICA Components (TESA)'), ...
+                stepRecord('Reject Bad Trials (ARTIST)')};
+txt = exportReport(report, '');
+testCase.verifyTrue(contains(txt, 'Rogasch'), 'TESA step must cite Rogasch');
+testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'ARTIST step must cite Wu');
+testCase.verifyFalse(contains(txt, 'SOUND') || contains(txt, 'Mutanen'), ...
+    'No SOUND/Mutanen citation when no SOUND step was used');
 end
 
 function test_summaryHasMethodsAndCitation(testCase)
-% The session summary must carry the aggregate METHODS prose and the citation.
-r1 = initPipelineReport('a.set'); r1.pipelineName = 'AARATEP';
+% The session summary carries the aggregate METHODS prose and the union of
+% method citations across files (derived from steps).
+r1 = initPipelineReport('a.set');
+r1.steps = {stepRecord('Remove Decay Artifact')};
 r1.channels.original = 64; r1.channels.nRejected = 2; r1.channels.final = 62;
-r2 = initPipelineReport('b.set'); r2.pipelineName = 'AARATEP';
+r2 = initPipelineReport('b.set');
+r2.steps = {stepRecord('Flag ICA Components (AARATEP Muscle)')};
 r2.channels.original = 64; r2.channels.nRejected = 4; r2.channels.final = 60;
 txt = summarizeReports({r1, r2});
 testCase.verifyTrue(contains(txt, 'METHODS'), 'Summary must include a METHODS section');
