@@ -49,13 +49,32 @@ switch lower(suite)
         error('run_tests: unknown suite "%s". Valid: fast, unit, regression, integration, all', suite);
 end
 
+% Per-test progress: log every test's start/end to the console and a file, so
+% a hanging or slow test is easy to pinpoint (the last START with no matching
+% END is the culprit, and the file survives a killed session). Built with an
+% explicit TestRunner so the logger plugin can attach to the standard text
+% output.
+logFile = fullfile(tempdir, 'nestapp_test_progress.log');
+if exist(logFile, 'file'); delete(logFile); end
+fprintf('Per-test progress log: %s\n\n', logFile);
+
+% Sweep stale scratch folders from prior runs before starting. Integration
+% tests clean up their own temp dirs on teardown, but a run that is killed
+% mid-way (e.g. a frozen session closed by hand) leaves them orphaned in
+% tempdir. Removing them here keeps test artifacts from piling up over time.
+sweepStaleTestArtifacts();
+
+runner = matlab.unittest.TestRunner.withTextOutput;
+runner.addPlugin(TestProgressLogger(logFile));
+
 results = matlab.unittest.TestResult.empty;
 for i = 1:numel(suites)
     if ~exist(suites{i}, 'dir')
         warning('run_tests: suite directory not found: %s', suites{i});
         continue
     end
-    r = runtests(suites{i});
+    s = matlab.unittest.TestSuite.fromFolder(suites{i});
+    r = runner.run(s);
     results = [results, r]; %#ok<AGROW>
 end
 
@@ -96,5 +115,25 @@ if nFail > 0 && nargout == 0
     % In CI contexts: exit with non-zero status
     % (MATLAB does not have a direct exit code, but the caller can check)
     error('run_tests: %d test(s) failed.', nFail);
+end
+end
+
+function sweepStaleTestArtifacts()
+% Remove orphaned integration-test scratch folders left in tempdir by runs
+% that did not tear down cleanly. Only nestapp's own test-folder prefixes are
+% touched; each prefix matches the unique-UUID dirs the integration tests
+% create (e.g. tempdir/nestapp_qc_<uuid>). Best-effort: a folder still locked
+% by another process is skipped rather than erroring the run.
+prefixes = {'nestapp_qc_', 'qg_skip_', 'qg_advisory_', 'qg_autoname_', 'qg_batch_'};
+for pi = 1:numel(prefixes)
+    stale = dir(fullfile(tempdir, [prefixes{pi} '*']));
+    for k = 1:numel(stale)
+        if ~stale(k).isdir; continue; end
+        try
+            rmdir(fullfile(stale(k).folder, stale(k).name), 's');
+        catch
+            % Locked or already gone - leave it for the next sweep.
+        end
+    end
 end
 end
