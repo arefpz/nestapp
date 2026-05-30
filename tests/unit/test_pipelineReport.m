@@ -136,20 +136,21 @@ testCase.verifyFalse(isempty(summaryText), 'summaryText must be non-empty');
 testCase.verifyTrue(ischar(matPath) || isstring(matPath), 'matPath must be text type');
 end
 
-% ── exportReport — METHODS SUMMARY branch coverage ───────────────────────
-% These tests pin the Apr-2026 fix: methods text now uses nRejected and
-% nInterpolated directly rather than computing finCh/origCh fractions.
+% ── exportReport — METHODS branch coverage ───────────────────────────────
+% The per-file METHODS line is one concise sentence built by methodsParagraph
+% (channels/epochs retained + ICA removed). The full cross-file prose lives in
+% the session summary. These tests pin the per-file wording.
 
 function test_methodsNone(testCase)
-% No rejection, no interpolation → "none rejected"
+% No rejection, no interpolation → "all N channels were retained"
 report = initPipelineReport('test.set');
 report.channels.original      = 32;
 report.channels.nRejected     = 0;
 report.channels.nInterpolated = 0;
 report.channels.final         = 32;
 txt = exportReport(report, '');
-testCase.verifyTrue(contains(txt, 'none rejected'), ...
-    'Methods should say "none rejected" when no channels were rejected');
+testCase.verifyTrue(contains(txt, 'all 32 channels were retained'), ...
+    'Methods should say "all 32 channels were retained" when none were removed');
 end
 
 function test_methodsRejectionOnly(testCase)
@@ -160,9 +161,8 @@ report.channels.nRejected     = 3;
 report.channels.nInterpolated = 0;
 report.channels.final         = 61;
 txt = exportReport(report, '');
-testCase.verifyTrue(contains(txt, '3'), 'Should mention 3 rejected channels');
-testCase.verifyTrue(contains(txt, 'identified as bad'), ...
-    'Should use "identified as bad" phrasing');
+testCase.verifyTrue(contains(txt, '61 of 64 channels were retained (3 removed)'), ...
+    'Should report "61 of 64 channels were retained (3 removed)"');
 % Must NOT claim all channels retained
 testCase.verifyFalse(contains(txt, '100%'), ...
     'Must not claim 100% retained when channels were rejected');
@@ -205,15 +205,15 @@ testCase.verifyTrue(contains(txt, '90') || contains(txt, '72') || contains(txt, 
 end
 
 function test_methodsICANoRejection(testCase)
-% ICA ran but nothing removed → "none rejected"
+% ICA ran but nothing removed → "none removed"
 report = initPipelineReport('test.set');
 report.ica.nComponents = 30;
 report.ica.nRejected   = 0;
 report.ica.nKept       = 30;
 txt = exportReport(report, '');
 testCase.verifyTrue(contains(txt, '30'), 'Should mention 30 components');
-testCase.verifyTrue(contains(txt, 'none rejected'), ...
-    'Should say "none rejected" when no ICA components removed');
+testCase.verifyTrue(contains(txt, 'ICA identified 30 components, none removed'), ...
+    'Methods should say "ICA identified 30 components, none removed"');
 end
 
 function test_methodsICAWithVariance(testCase)
@@ -271,4 +271,39 @@ testCase.verifyTrue(contains(txt, '2') && contains(lower(txt), 'round'), ...
 testCase.verifyFalse(contains(txt, sprintf('%.1f%% ICA variance', ...
     rnd1.varRemoved + rnd2.varRemoved)), ...
     'Must not sum variance across rounds in top-level summary');
+end
+
+% ── citation block (per-file report + session summary) ───────────────────
+
+function test_citationAppearsForKnownTemplate(testCase)
+% A built-in template name must surface a CITATION block with the reference
+% and DOI from templateCitation.
+report = initPipelineReport('test.set');
+report.pipelineName = 'ARTIST TEP';
+txt = exportReport(report, '');
+testCase.verifyTrue(contains(txt, 'CITATION'), 'Report must include a CITATION section');
+testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'Citation must name the reference');
+testCase.verifyTrue(contains(txt, '10.1002/hbm.23938'), 'Citation must include the DOI');
+end
+
+function test_noCitationForAdhocPipeline(testCase)
+% An ad-hoc pipeline (no registered citation) must omit the CITATION block.
+report = initPipelineReport('test.set');
+report.pipelineName = 'My Custom Pipeline 7';
+txt = exportReport(report, '');
+testCase.verifyFalse(contains(txt, 'CITATION'), ...
+    'No CITATION section when the pipeline has no registered citation');
+end
+
+function test_summaryHasMethodsAndCitation(testCase)
+% The session summary must carry the aggregate METHODS prose and the citation.
+r1 = initPipelineReport('a.set'); r1.pipelineName = 'AARATEP';
+r1.channels.original = 64; r1.channels.nRejected = 2; r1.channels.final = 62;
+r2 = initPipelineReport('b.set'); r2.pipelineName = 'AARATEP';
+r2.channels.original = 64; r2.channels.nRejected = 4; r2.channels.final = 60;
+txt = summarizeReports({r1, r2});
+testCase.verifyTrue(contains(txt, 'METHODS'), 'Summary must include a METHODS section');
+testCase.verifyTrue(contains(txt, 'Across 2 files'), 'Summary methods must be cross-file prose');
+testCase.verifyTrue(contains(txt, 'CITATION'), 'Summary must include a CITATION section');
+testCase.verifyTrue(contains(txt, 'Cline C.C. et al. (2021)'), 'Summary must cite the AARATEP reference');
 end

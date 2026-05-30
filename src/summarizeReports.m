@@ -95,6 +95,20 @@ if any(hasICA)
     lines{end+1} = '';
 end
 
+%% Methods - publication-ready prose aggregated across the session
+lines{end+1} = 'METHODS';
+lines{end+1} = ['  ', methodsParagraphAggregate(reports)];
+lines{end+1} = '';
+
+%% Citation - one block for the template that drove this session
+pipelineName = '';
+if isfield(reports{1}, 'pipelineName'); pipelineName = reports{1}.pipelineName; end
+citeLines = citationLines(pipelineName);
+if ~isempty(citeLines)
+    lines = [lines, citeLines];
+    lines{end+1} = '';
+end
+
 summaryText = strjoin(lines, newline);
 end
 

@@ -162,97 +162,21 @@ for k = 1:numel(report.steps)
 end
 lines{end+1} = '';
 
-% Methods summary - prose suitable for copy-paste into a methods section
-lines{end+1} = 'METHODS SUMMARY';
-methLines = {};
+% Methods note - one concise sentence per file. The full cross-file methods
+% prose (mean +/- SD across files) lives in the session summary; see
+% summarizeReports / methodsParagraphAggregate.
+lines{end+1} = 'METHODS';
+lines{end+1} = ['  ', methodsParagraph(report)];
 
-% Channels sentence
-nBad  = report.channels.nRejected;
-nIntp = report.channels.nInterpolated;
-if origCh > 0
-    if nBad == 0 && nIntp == 0
-        methLines{end+1} = sprintf('  %d channels recorded; none rejected.', origCh);
-    elseif nBad > 0 && nIntp == 0
-        methLines{end+1} = sprintf( ...
-            '  Of %d channels, %d were identified as bad and removed (%.0f%% retained).', ...
-            origCh, nBad, 100*(origCh-nBad)/origCh);
-    elseif nBad > 0 && nIntp > 0
-        methLines{end+1} = sprintf( ...
-            ['  Of %d channels, %d were identified as bad and removed; ' ...
-             '%d were subsequently interpolated (%d channels for analysis).'], ...
-            origCh, nBad, nIntp, finCh);
-    else
-        methLines{end+1} = sprintf( ...
-            '  %d channels recorded; %d interpolated (%d for analysis).', ...
-            origCh, nIntp, finCh);
-    end
-elseif finCh > 0
-    methLines{end+1} = sprintf('  %d channels.', finCh);
-end
-
-% Trials sentence
-if report.trials.original > 0
-    origTr_ = report.trials.original;
-    rejTr_  = report.trials.rejected;
-    finTr_  = report.trials.final;
-    pctRet  = 100 * finTr_ / origTr_;
-    if rejTr_ == 0
-        methLines{end+1} = sprintf('  %d trials; none rejected.', origTr_);
-    else
-        methLines{end+1} = sprintf( ...
-            '  Of %d trials, %d were rejected (%d retained, %.0f%%).', ...
-            origTr_, rejTr_, finTr_, pctRet);
-    end
-end
-
-% ICA sentence
-if report.ica.nComponents > 0
-    nComp      = report.ica.nComponents;
-    nRej       = report.ica.nRejected;
-    hasVar     = ~isnan(report.ica.varRemoved);
-    multiRound = isfield(report.ica, 'rounds') && numel(report.ica.rounds) > 1;
-    hasCats    = isfield(report.ica, 'categories') && any(report.ica.categories.nRemoved > 0);
-
-    if nRej == 0
-        methLines{end+1} = sprintf( ...
-            '  ICA decomposition identified %d components; none rejected.', nComp);
-    else
-        if multiRound
-            icaBase = sprintf( ...
-                '  ICA decomposition (%d rounds) identified %d components; %d were removed', ...
-                numel(report.ica.rounds), nComp, nRej);
-        else
-            icaBase = sprintf( ...
-                '  ICA decomposition identified %d components; %d were removed', nComp, nRej);
-        end
-
-        catStr = '';
-        if hasCats
-            cats = report.ica.categories;
-            catParts = {};
-            for ci = 1:numel(cats.names)
-                if cats.nRemoved(ci) > 0
-                    catParts{end+1} = sprintf('%s: %d', cats.names{ci}, cats.nRemoved(ci)); %#ok<AGROW>
-                end
-            end
-            if ~isempty(catParts)
-                catStr = sprintf(' (%s)', strjoin(catParts, ', '));
-            end
-        end
-
-        if hasVar && ~multiRound
-            methLines{end+1} = sprintf('%s%s, accounting for %.1f%% of ICA variance.', ...
-                icaBase, catStr, report.ica.varRemoved);
-        else
-            methLines{end+1} = sprintf('%s%s.', icaBase, catStr);
-        end
-    end
-end
-
-if isempty(methLines)
-    lines{end+1} = '  No metrics available.';
-else
-    lines = [lines, methLines];
+% Citation - attribution for the built-in template that produced this run.
+% Same block runPipelineCore prints to the batch log and the session summary
+% shows; rendered here so each per-file report (and its PDF) carries it.
+pipelineName = '';
+if isfield(report, 'pipelineName'); pipelineName = report.pipelineName; end
+citeLines = citationLines(pipelineName);
+if ~isempty(citeLines)
+    lines{end+1} = '';
+    lines = [lines, citeLines];
 end
 
 summaryText = strjoin(lines, newline);

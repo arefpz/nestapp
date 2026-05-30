@@ -34,6 +34,10 @@ function report = initPipelineReport(inputFile)
 
 report.inputFile   = inputFile;
 report.processedAt = datetime('now');
+% Built-in template name (e.g. 'ARTIST', 'AARATEP'); set by processOneFile from
+% opts.pipelineName. Drives the citation block in the text report / PDF. '' for
+% ad-hoc pipelines with no registered citation.
+report.pipelineName = '';
 
 report.steps = {};
 
