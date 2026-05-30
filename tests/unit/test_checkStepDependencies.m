@@ -23,6 +23,7 @@ function setupOnce(testCase) %#ok<INUSD>
 r = repoRoot();
 addpath(r);
 addpath(fullfile(r, 'src'));
+addpath(fullfile(r, 'tests', 'helpers'));
 end
 
 function r = repoRoot()
@@ -55,18 +56,9 @@ testCase.verifyTrue(ischar(msg) || isstring(msg), 'msg must be char or string');
 end
 
 function test_msgIsCharWhenNotOk(testCase)
-% We need at least one missing dep to reach the not-ok path.
-% Use a step that has external deps and assume we can find at least one missing.
-% If everything is installed, this test is skipped.
-steps = stepRegistry();
-names = {steps.name};
-% Try TESA steps first (most likely to be missing)
-tesaSteps = names(~cellfun(@(n) isempty(steps(strcmp(names,n)).requires), names));
-if isempty(tesaSteps) || isempty(which('tesa_peakanalysis'))
-    % Attempt with TESA
-end
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'No missing deps detected — cannot test msg type in not-ok path');
+% Force the not-ok path by hiding TESA, so this runs even with TESA installed.
+cleanup = hideFromPath('pop_tesa_fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_tesa_fastica'), 'Could not hide TESA from the path.');
 [ok, msg] = checkStepDependencies({'Run TESA ICA'}, {});
 testCase.verifyFalse(ok);
 testCase.verifyTrue(ischar(msg) || isstring(msg), 'msg must be char or string when not ok');
@@ -113,10 +105,10 @@ end
 end
 
 function test_cntExtensionPassesThroughFilter(testCase)
-% With a .cnt file, the loadcnt dep check must not be filtered out.
-% Only testable when loadcnt is NOT installed (otherwise ok=true for wrong reason).
-testCase.assumeTrue(isempty(which('pop_loadcnt')), ...
-    'loadcnt is installed — cannot verify extension filter passes .cnt dep through');
+% With a .cnt file, the loadcnt dep check must not be filtered out. Hide
+% loadcnt so the missing-dep condition holds regardless of what's installed.
+cleanup = hideFromPath('pop_loadcnt'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_loadcnt'), 'Could not hide loadcnt from the path.');
 [ok, msg] = checkStepDependencies({'Load Data'}, {'recording.cnt'});
 testCase.verifyFalse(ok, 'Should flag missing loadcnt when .cnt file is selected');
 testCase.verifyTrue(contains(msg, 'loadcnt'), ...
@@ -124,10 +116,10 @@ testCase.verifyTrue(contains(msg, 'loadcnt'), ...
 end
 
 function test_vhdrExtensionPassesThroughFilter(testCase)
-% With a .vhdr file, bva-io must be checked (not filtered).
-% Only testable when bva-io is NOT installed.
-testCase.assumeTrue(isempty(which('pop_loadbv')), ...
-    'bva-io is installed — cannot verify extension filter passes .vhdr dep through');
+% With a .vhdr file, bva-io must be checked (not filtered). Hide bva-io so
+% the missing-dep condition holds regardless of what's installed.
+cleanup = hideFromPath('pop_loadbv'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_loadbv'), 'Could not hide bva-io from the path.');
 [ok, msg] = checkStepDependencies({'Load Data'}, {'recording.vhdr'});
 testCase.verifyFalse(ok, 'Should flag missing bva-io when .vhdr file is selected');
 testCase.verifyTrue(contains(msg, 'bva-io'), ...
@@ -137,8 +129,8 @@ end
 % ── message format ────────────────────────────────────────────────────────────
 
 function test_missingDepMessageNamesPlugin(testCase)
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'TESA is installed — cannot test missing-plugin message format');
+cleanup = hideFromPath('pop_tesa_fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_tesa_fastica'), 'Could not hide TESA from the path.');
 [ok, msg] = checkStepDependencies({'Run TESA ICA'}, {});
 testCase.verifyFalse(ok);
 testCase.verifyTrue(contains(msg, 'TESA'), ...
@@ -146,8 +138,8 @@ testCase.verifyTrue(contains(msg, 'TESA'), ...
 end
 
 function test_missingDepMessageIncludesInstallNote(testCase)
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'TESA is installed — cannot test install note in message');
+cleanup = hideFromPath('pop_tesa_fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_tesa_fastica'), 'Could not hide TESA from the path.');
 [ok, msg] = checkStepDependencies({'Run TESA ICA'}, {});
 testCase.verifyFalse(ok);
 testCase.verifyTrue(contains(msg, 'Install') || contains(msg, 'install'), ...
@@ -155,8 +147,8 @@ testCase.verifyTrue(contains(msg, 'Install') || contains(msg, 'install'), ...
 end
 
 function test_missingDepMessageIncludesStepName(testCase)
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'TESA is installed — cannot test step name in message');
+cleanup = hideFromPath('pop_tesa_fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_tesa_fastica'), 'Could not hide TESA from the path.');
 [ok, msg] = checkStepDependencies({'Run TESA ICA'}, {});
 testCase.verifyFalse(ok);
 testCase.verifyTrue(contains(msg, 'Run TESA ICA') || contains(msg, 'Steps'), ...
@@ -165,8 +157,8 @@ end
 
 function test_multipleStepsSamePluginGroupedOnce(testCase)
 % Two steps that both need TESA must produce a single TESA plugin entry.
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'TESA is installed — cannot test plugin grouping');
+cleanup = hideFromPath('pop_tesa_fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('pop_tesa_fastica'), 'Could not hide TESA from the path.');
 [ok, msg] = checkStepDependencies( ...
     {'Run TESA ICA', 'Remove ICA Components (TESA)'}, {});
 testCase.verifyFalse(ok);

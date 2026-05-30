@@ -41,9 +41,12 @@ end
 end
 
 function teardownOnce(testCase)
+if ~isfield(testCase.TestData, 'prevPrefSet')
+    return   % setupOnce assumeFail'd (no EEGLAB) before snapshotting prefs
+end
 if testCase.TestData.prevPrefSet
     setpref('nestapp', 'autoQualityReport', testCase.TestData.prevPref);
-else
+elseif ispref('nestapp', 'autoQualityReport')
     rmpref('nestapp', 'autoQualityReport');
 end
 end

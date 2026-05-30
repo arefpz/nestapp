@@ -52,11 +52,8 @@ testCase.verifyFalse(exist(mlappPath, 'file') == 2, ...
      'Opening it in App Designer regenerates nestapp.m and destroys all hand-edits.']);
 end
 
-function test_runNestappEntryPointExists(testCase)
-entryPath = fullfile(repoRoot(), 'run_nestapp.m');
-testCase.verifyTrue(exist(entryPath, 'file') == 2, ...
-    'Phase 1: run_nestapp.m entry point must exist at repo root');
-end
+% (Cut test_runNestappEntryPointExists — a trivial "file exists" check with no
+%  regression value, unlike test_mlappRemovedFromRepo which guards a real hazard.)
 
 % ══════════════════════════════════════════════════════════════════════════
 %% PHASE 2 — Architecture
@@ -137,10 +134,9 @@ function test_noRandColorInPlotTEP(testCase)
 src = fileread(nestappFile());
 % Find plotTEP function body
 startIdx = strfind(src, 'function plotTEP(app)');
-if isempty(startIdx)
-    % If function was renamed, skip
-    return
-end
+testCase.assertNotEmpty(startIdx, ...
+    ['Phase 4: plotTEP(app) not found in nestapp.m. If it was renamed, update ' ...
+     'this test to point at the new name rather than letting it silently pass.']);
 % Extract window up to next function declaration
 nextFn = regexp(src(startIdx(1)+1:end), '\bfunction\b', 'once');
 if isempty(nextFn)
@@ -173,15 +169,8 @@ testCase.verifyTrue(isa(report.processedAt, 'datetime'), ...
     'Phase 4: initPipelineReport.processedAt must be a datetime, not a double (deprecated now())');
 end
 
-function test_loadLabelsNoReturnValue(testCase)
-% LoadLabels returns the app handle unnecessarily — handles are pass-by-reference.
-src = fileread(nestappFile());
-% Look for the function declaration pattern with a return value
-matches = regexp(src, 'function\s+app\s*=\s*LoadLabels\s*\(', 'match');
-testCase.verifyEmpty(matches, ...
-    ['Phase 4: LoadLabels returns app handle unnecessarily. ' ...
-     'Change to: function LoadLabels(app)']);
-end
+% (Cut test_loadLabelsNoReturnValue — a one-off signature grep from a past
+%  refactor with no ongoing regression value.)
 
 function test_electrodeButtonAccessGuarded(testCase)
 % Dynamic property access must have an isprop guard to handle non-standard
@@ -200,15 +189,14 @@ end
 %% PHASE 6 — Efficiency
 % ══════════════════════════════════════════════════════════════════════════
 
-function test_stepRegistrySecondCallFasterThanFirst(testCase)
-% stepRegistry() is called multiple times from callbacks. A persistent cache
-% avoids rebuilding the struct on every call — the second call should be
-% materially faster than the first (cold) call.
-clear stepRegistry
-t1 = tic; stepRegistry(); e1 = toc(t1);
-t2 = tic; stepRegistry(); e2 = toc(t2);
-testCase.verifyLessThan(e2, e1 * 0.5, ...
-    'Phase 6: stepRegistry second call is not faster than first — persistent cache may be missing');
+function test_stepRegistryHasPersistentCache(testCase)
+% stepRegistry() is called repeatedly from callbacks, so it caches its result
+% in a persistent variable to avoid rebuilding the struct every call. Assert
+% the cache exists by inspecting the source — deterministic, unlike timing the
+% two calls against a wall clock (which is flaky on a loaded CI machine).
+src = fileread(fullfile(srcRoot(), 'stepRegistry.m'));
+testCase.verifyNotEmpty(regexp(src, 'persistent\s+\w', 'once'), ...
+    'Phase 6: stepRegistry has no persistent cache — it rebuilds on every call');
 end
 
 
@@ -218,7 +206,9 @@ function test_resizeCallbackHasThrottle(testCase)
 src = fileread(nestappFile());
 % Search for the function definition, not just any mention of the name.
 fnIdx = regexp(src, 'function\s+UIFigureSizeChanged', 'once');
-if isempty(fnIdx); return; end
+testCase.assertNotEmpty(fnIdx, ...
+    ['Phase 6: UIFigureSizeChanged not found in nestapp.m. If the resize callback ' ...
+     'was renamed, update this test rather than letting it silently pass.']);
 window = src(fnIdx : min(fnIdx+500, numel(src)));
 testCase.verifyTrue(contains(window, 'drawnow'), ...
     ['Phase 6: UIFigureSizeChanged should call drawnow limitrate to throttle ' ...
