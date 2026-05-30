@@ -62,6 +62,7 @@ function EEG = artistFlagDecayICs(EEG, opts)
         EEG.reject.gcompreject = false(1, numComps);
     end
     EEG.reject.gcompreject = EEG.reject.gcompreject(:)' | flagged(:)';
+    EEG = markICClass(EEG, flagged, 'Decay');   % category for the run report
 
     nestLog('ARTIST', 'Decay-IC flag: %d / %d ICs flagged (mean |act| > %g µV in [%g, %g] ms).', ...
         sum(flagged), numComps, opts.magnitudeThreshold, opts.winStartMs, opts.winEndMs);

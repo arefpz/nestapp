@@ -64,6 +64,7 @@ function EEG = aaratepMuscleClassifier(EEG, opts)
         EEG.reject.gcompreject = false(1, numComps);
     end
     EEG.reject.gcompreject = EEG.reject.gcompreject(:)' | toReject(:)';
+    EEG = markICClass(EEG, toReject, 'Muscle');   % category for the run report
 
     nestLog('AARATEP', 'Muscle classifier: %d / %d ICs flagged (ratio > %g in [%g, %g] ms).', ...
         sum(toReject), numComps, opts.muscleThreshold, opts.winStartMs, opts.winEndMs);
