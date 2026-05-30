@@ -939,6 +939,23 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
 
+        function reRenderReportsOnResize(app)
+        % Repaint the Session Quality Dashboard after a window resize so its
+        % absolute-positioned children (heatmap, table, histograms) reflow to
+        % the new panel size. No-op unless the dashboard is the visible pane;
+        % renderDashboardPanel itself clears and re-lays-out from parent size.
+            if isempty(app.ReportsDashboardPanel) || ~isvalid(app.ReportsDashboardPanel)
+                return
+            end
+            if ~strcmp(app.ReportsDashboardPanel.Visible, 'on'); return; end
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if anyReportHasGates(allEntries)
+                allEntries{end+1} = struct('isDashboard', true, ...
+                    'text', '', 'report', struct());
+            end
+            renderReportsRightPane(app, allEntries);
+        end
+
         function exportDashboardPNG(app, allEntries)
         % Render the dashboard into an offscreen uifigure and save as PNG.
             [fname, fpath] = uiputfile('*.png', 'Export Quality Dashboard', ...
@@ -1147,50 +1164,36 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function CopyMethodsButtonPushed(app, ~)
-        % Build a brief methods paragraph from the selected report and copy to clipboard.
+        % Copy a methods paragraph to the clipboard. A single file report copies
+        % that file's prose; the Session Summary / Dashboard copies the
+        % cross-file aggregate (mean +/- SD). Shares the same builders the text
+        % reports use (methodsParagraph / methodsParagraphAggregate).
             idx = app.ReportsListBox.Value;
             if isempty(idx); return; end
             allEntries = [app.allPipelineReports, app.loadedReports];
             if ~isnumeric(idx) || idx < 1 || idx > numel(allEntries); return; end
-            if isfield(allEntries{idx}, 'isSummary') && allEntries{idx}.isSummary
-                uialert(app.UIFigure, ...
-                    'Select an individual file report to copy a methods paragraph.', ...
-                    'Session Summary');
-                return
-            end
-            r = allEntries{idx}.report;
+            e = allEntries{idx};
 
-            parts = {};
-            if r.channels.original > 0
-                nRej  = r.channels.nRejected;
-                nIntp = r.channels.nInterpolated;
-                if nRej > 0 && nIntp > 0
-                    parts{end+1} = sprintf('%d of %d channels were retained (%d rejected, %d interpolated)', ...
-                        r.channels.final, r.channels.original, nRej, nIntp);
-                elseif nRej > 0
-                    parts{end+1} = sprintf('%d of %d channels were retained (%d rejected)', ...
-                        r.channels.final, r.channels.original, nRej);
-                elseif nIntp > 0
-                    parts{end+1} = sprintf('%d channels were retained (%d interpolated)', ...
-                        r.channels.final, nIntp);
-                else
-                    parts{end+1} = sprintf('%d channels were retained', r.channels.final);
-                end
-            end
-            if r.trials.original > 0
-                parts{end+1} = sprintf('%d of %d epochs were retained (%d rejected)', ...
-                    r.trials.final, r.trials.original, r.trials.rejected);
-            end
-            if r.ica.nComponents > 0
-                parts{end+1} = sprintf('%d ICA components were identified and %d removed', ...
-                    r.ica.nComponents, r.ica.nRejected);
-            end
-
-            if isempty(parts)
-                methodsText = 'TMS-EEG data were preprocessed using nestapp.';
+            if isfield(e, 'report') && isstruct(e.report) && ~isempty(e.report)
+                methodsText = methodsParagraph(e.report);
             else
-                methodsText = sprintf('TMS-EEG data were preprocessed using nestapp. %s.', ...
-                    strjoin(parts, '; '));
+                % Summary / Dashboard entry: aggregate over every per-file report.
+                reportStructs = {};
+                for k = 1:numel(allEntries)
+                    ek = allEntries{k};
+                    if (isfield(ek, 'isSummary')   && ek.isSummary)   ...
+                            || (isfield(ek, 'isDashboard') && ek.isDashboard)
+                        continue
+                    end
+                    if isfield(ek, 'report') && isstruct(ek.report) && ~isempty(ek.report)
+                        reportStructs{end+1} = ek.report; %#ok<AGROW>
+                    end
+                end
+                if isempty(reportStructs)
+                    methodsText = 'TMS-EEG data were preprocessed using nestapp.';
+                else
+                    methodsText = methodsParagraphAggregate(reportStructs);
+                end
             end
 
             clipboard('copy', methodsText);
@@ -1951,6 +1954,7 @@ classdef nestapp < matlab.apps.AppBase
             sX = newSize(1) / app.originalSize(1);
             sY = newSize(2) / app.originalSize(2);
             rescaleComponents(app, sX, sY);
+            reRenderReportsOnResize(app);  % reflow the Quality Dashboard if it's showing
         end
 
         % Cell edit callback: UITable
