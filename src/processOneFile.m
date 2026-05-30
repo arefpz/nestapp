@@ -619,12 +619,23 @@ for si = 1:nSteps
 
             case 'Epoching'
                 vars = convertContainedStringsToChars(varin);
-                vars = stripEmptyVarin(vars);
-                ind1 = find(strcmp(vars,'types'));
-                type = vars{ind1+1};
-                ind2 = find(strcmp(vars,'timelim'));
+                ind1 = find(strcmp(vars,'types'), 1);
+                type = {};
+                if ~isempty(ind1); type = vars{ind1+1}; end
+                % Require explicit event marker label(s). Epoching around an
+                % empty type list silently epochs every event - rarely what is
+                % intended, and wrong for an ERP task (oddball / go-no-go) where
+                % you epoch around specific stimulus/response codes.
+                if isempty(type)
+                    error('nestapp:epochingNoTypes', ...
+                        ['Epoching needs the event marker label(s) to epoch around ' ...
+                         '(e.g. {''S 1'',''S 2''} for an oddball task). Set the ' ...
+                         'Epoching step''s "Event label(s)" field to your task triggers.']);
+                end
+                ind2 = find(strcmp(vars,'timelim'), 1);
                 timelim = vars{ind2+1};
                 vars([ind1, ind1+1, ind2, ind2+1]) = [];
+                vars = stripEmptyVarin(vars);
                 EEG = pop_epoch( EEG, type, timelim, vars{:});
                 EEG = eeg_checkset( EEG );
 
