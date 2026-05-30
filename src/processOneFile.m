@@ -880,30 +880,28 @@ for si = 1:nSteps
                 end
             end
             if any(strcmp(stepName, {'Run ICA','Run TESA ICA'})) && ~isempty(EEG.icaweights)
-                fileReport.ica.nComponents = size(EEG.icaweights, 1);
-                % Keep nKept correct when ICA runs but no components are removed
-                % (removal rounds update it again via recordICARound).
-                fileReport.ica.nKept = fileReport.ica.nComponents - fileReport.ica.nRejected;
+                % Open a round per decomposition so the round count is correct
+                % even for a round that removes nothing (e.g. AARATEP's 2nd ICA).
+                fileReport = openICARound(fileReport, size(EEG.icaweights, 1));
             end
             if strcmp(stepName, 'Remove Flagged ICA Components') && ...
                     isfield(pendingICAStats, 'rejMask')
                 rMask = logical(pendingICAStats.rejMask(:)');
                 nRej  = sum(rMask);
                 if nRej > 0
-                    rnd = struct( ...
-                        'roundNum',    numel(fileReport.ica.rounds) + 1, ...
+                    removal = struct( ...
                         'nComponents', numel(rMask), ...
                         'nRejected',   nRej, ...
                         'varRemoved',  NaN, 'varMin', NaN, 'varMax', NaN);
                     if isfield(pendingICAStats, 'compVarPct') && ...
                             numel(pendingICAStats.compVarPct) == numel(rMask)
-                        rejPct         = pendingICAStats.compVarPct(rMask);
-                        rnd.varRemoved = sum(rejPct);
-                        rnd.varMin     = min(rejPct);
-                        rnd.varMax     = max(rejPct);
+                        rejPct          = pendingICAStats.compVarPct(rMask);
+                        removal.varRemoved = sum(rejPct);
+                        removal.varMin     = min(rejPct);
+                        removal.varMax     = max(rejPct);
                     end
-                    rnd.categories = icaCategoriesFromFlags(rMask, pendingICAStats);
-                    fileReport     = recordICARound(fileReport, rnd);
+                    removal.categories = icaCategoriesFromFlags(rMask, pendingICAStats);
+                    fileReport         = addICARemoval(fileReport, removal);
                 end
                 pendingICAStats = struct();
             end
@@ -916,29 +914,28 @@ for si = 1:nSteps
                 TESA_CODES = tesaICAClassCodes();
                 rejIdx   = cl.compClass > 1;
                 nRejTESA = sum(rejIdx);
-                rnd = struct( ...
-                    'roundNum',    numel(tesaKeys), ...
+                removal = struct( ...
                     'nComponents', numel(cl.compClass), ...
                     'nRejected',   nRejTESA, ...
                     'varRemoved',  NaN, 'varMin', NaN, 'varMax', NaN);
-                rnd.categories.names    = TESA_CATS;
-                rnd.categories.nRemoved = zeros(1, numel(TESA_CATS));
-                rnd.categories.varShare = zeros(1, numel(TESA_CATS));
+                removal.categories.names    = TESA_CATS;
+                removal.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                removal.categories.varShare = zeros(1, numel(TESA_CATS));
                 hasVars = isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass);
                 if hasVars && nRejTESA > 0
-                    rejPct         = double(cl.compVars(rejIdx));
-                    rnd.varRemoved = sum(rejPct);
-                    rnd.varMin     = min(rejPct);
-                    rnd.varMax     = max(rejPct);
+                    rejPct             = double(cl.compVars(rejIdx));
+                    removal.varRemoved = sum(rejPct);
+                    removal.varMin     = min(rejPct);
+                    removal.varMax     = max(rejPct);
                 end
                 for ci = 1:numel(TESA_CODES)
                     inCat = (cl.compClass == TESA_CODES(ci));
-                    rnd.categories.nRemoved(ci) = sum(inCat);
+                    removal.categories.nRemoved(ci) = sum(inCat);
                     if hasVars
-                        rnd.categories.varShare(ci) = sum(cl.compVars(inCat));
+                        removal.categories.varShare(ci) = sum(cl.compVars(inCat));
                     end
                 end
-                fileReport = recordICARound(fileReport, rnd);
+                fileReport = addICARemoval(fileReport, removal);
             end
         else
             nChanAfter  = nChanBefore;
