@@ -470,6 +470,12 @@ else
         'Resize',   'off');
 end
 
+% Headless (no embedding app figure): also stream progress to the command
+% window. When the pipeline runs under tests or a batch CLI there is no human
+% watching the dialog, so a stall leaves no trace - the console echo (with
+% nestLog timestamps) shows the last step reached before a hang.
+dlg.streamConsole = isempty(dlg.overlay);
+
 % slotMap(fi)=slot tracks which bar slot is assigned to each file.
 % slotAvailable marks which slots are free to accept a new file.
 dlg.fig.UserData = struct( ...
@@ -537,6 +543,10 @@ if ~isvalid(dlg.fig); return; end
 % and recolors the bar fill until the next step start message
 % restores the normal step-progress display.
 if isfield(msg, 'gateVerdict') && ~isempty(msg.gateVerdict)
+    if dlg.streamConsole
+        nestLog('PROG', 'File %d \x2014 [%s] %s  (%d/%d)', ...
+            msg.fi, upper(msg.gateVerdict), msg.stepName, msg.si, msg.nSteps);
+    end
     udGate = dlg.fig.UserData;
     slot = udGate.slotMap(msg.fi);
     if slot > 0
@@ -571,6 +581,12 @@ if msg.si == 0
     dlg.fig.UserData = ud;
     nDone = ud.nDone;
     isFailed = isfield(msg, 'failed') && msg.failed;
+    if dlg.streamConsole
+        doneStatus = 'Done';
+        if isFailed; doneStatus = 'FAILED'; end
+        nestLog('PROG', 'File %d \x2014 %s  (%d / %d files complete)', ...
+            msg.fi, doneStatus, nDone, nFiles);
+    end
     if isFailed
         dlg.fills(slot).BackgroundColor = [0.85 0.27 0.27];   % red
         dlg.labels(slot).Text = sprintf('File %d \x2014 FAILED', msg.fi);
@@ -594,6 +610,10 @@ else
         ud.slotMap(msg.fi)     = slot;
         ud.slotAvailable(slot) = false;
         dlg.fig.UserData = ud;
+    end
+    if dlg.streamConsole
+        nestLog('PROG', 'File %d \x2014 %s  (%d/%d)', ...
+            msg.fi, msg.stepName, msg.si, msg.nSteps);
     end
     dlg.fills(slot).BackgroundColor = [0.23 0.51 0.96];
     dlg.fills(slot).Position(3)     = round(barW * msg.si / msg.nSteps);
