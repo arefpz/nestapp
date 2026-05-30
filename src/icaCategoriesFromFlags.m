@@ -31,19 +31,19 @@ n     = numel(rMask);
 rej   = find(rMask);
 catOf = repmat({''}, 1, n);
 
-if isfield(p, 'classLabels') && numel(p.classLabels) == n
-    for c = rej
-        if ~isempty(p.classLabels{c}); catOf{c} = p.classLabels{c}; end
-    end
-end
-if isfield(p, 'iclabelProbs') && size(p.iclabelProbs, 1) >= n
-    [~, best] = max(p.iclabelProbs, [], 2);
-    for c = rej
-        if isempty(catOf{c}); catOf{c} = ICLABEL_NAMES{best(c)}; end
-    end
-end
+hasClass = isfield(p, 'classLabels')  && numel(p.classLabels) == n;
+hasICL   = isfield(p, 'iclabelProbs') && size(p.iclabelProbs, 1) >= n;
+if hasICL; [~, iclBest] = max(p.iclabelProbs, [], 2); end
+
+% One pass, priority: classifier label > ICLabel argmax > 'Manual'.
 for c = rej
-    if isempty(catOf{c}); catOf{c} = 'Manual'; end
+    if hasClass && ~isempty(p.classLabels{c})
+        catOf{c} = p.classLabels{c};
+    elseif hasICL
+        catOf{c} = ICLABEL_NAMES{iclBest(c)};
+    else
+        catOf{c} = 'Manual';
+    end
 end
 
 hasVar = isfield(p, 'compVarPct') && numel(p.compVarPct) == n;
