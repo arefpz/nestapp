@@ -1,15 +1,15 @@
-function summaryText = summarizeReports(reports)
+﻿function summaryText = summarizeReports(reports)
 % SUMMARIZEREPORTS  Build a cross-file summary from a cell array of PipelineReport structs.
 %
 %   summaryText = SUMMARIZEREPORTS(reports)
 %
-%   reports - 1×N cell array of structs returned by initPipelineReport and
-%             populated by runPipeline. N must be >= 2.
+%   reports - 1xN cell array of structs returned by initPipelineReport and
+%             populated by runPipelineCore. N must be >= 2.
 %
 %   Returns a formatted char suitable for display in the pipeline report dialog
 %   above the individual per-file reports.
 %
-%   See also: initPipelineReport, exportReport, runPipeline
+%   See also: initPipelineReport, exportReport, runPipelineCore
 
 N = numel(reports);
 lines = {};
@@ -48,7 +48,7 @@ if any(epoched)
     lines{end+1} = sprintf('  Original:  %s', fmtStat(origTr(ep)));
     if any(rejTr(ep) > 0)
         pctRej = rejTr(ep) ./ origTr(ep) * 100;
-        lines{end+1} = sprintf('  Rejected:  %s  (%.1f%%±%.1f%% of trials)', ...
+        lines{end+1} = sprintf('  Rejected:  %s  (%.1f%%+/-%.1f%% of trials)', ...
             fmtStat(rejTr(ep)), mean(pctRej), std(pctRej));
     end
     lines{end+1} = sprintf('  Final:     %s', fmtStat(finalTr(ep)));
@@ -91,52 +91,19 @@ if any(hasICA)
     lines{end+1} = '';
 end
 
-%% TEP Quality
-AXES = { ...
-    'retention',         'Retention'; ...
-    'artifactReduction', 'Artifact reduction'; ...
-    'bgRestoration',     'Background'; ...
-    'reproducibility',   'Reproducibility'; ...
-    'aepLikeness',       'AEP-likeness [EXP]' };
-
-hasQ = cellfun(@(r) isstruct(r.teps) && isfield(r.teps,'version'), reports);
-if any(hasQ)
-    qReports = reports(hasQ);
-    lines{end+1} = sprintf('TEP QUALITY  (%d of %d files)', sum(hasQ), N);
-    for ai = 1:size(AXES, 1)
-        axField = AXES{ai, 1};
-        axLabel = AXES{ai, 2};
-        vals = cellfun(@(r) getAxisValue(r.teps, axField), qReports);
-        vals = vals(~isnan(vals));
-        if ~isempty(vals)
-            lines{end+1} = sprintf('  %-24s  %s', axLabel, fmtStat(vals));
-        end
-    end
-    lines{end+1} = '';
-end
-
 summaryText = strjoin(lines, newline);
 end
 
 %% ---- helpers ---------------------------------------------------------------
 
-function v = getAxisValue(teps, axField)
-% Safely extract axis value; returns NaN if axis is absent or skipped.
-if isfield(teps, axField)
-    v = teps.(axField).value;
-else
-    v = NaN;
-end
-end
-
 function s = fmtStat(v)
-% Format a numeric vector as "mean ± SD" or just the value when all equal.
+% Format a numeric vector as "mean +/- SD" or just the value when all equal.
 v = double(v(:));
 if isscalar(v)
     s = sprintf('%.1f', v);
 elseif std(v) < 1e-9
     s = sprintf('%.1f (all equal)', mean(v));
 else
-    s = sprintf('%.1f ± %.1f  [%g – %g]', mean(v), std(v), min(v), max(v));
+    s = sprintf('%.1f +/- %.1f  [%g - %g]', mean(v), std(v), min(v), max(v));
 end
 end

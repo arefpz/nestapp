@@ -1,17 +1,36 @@
-*.zip
+# Ignore everything by default
+*
+*/
 
-# markdown
-*.md
+# Explicitly track these files
+!.gitignore
+!LICENSE
+!README.md
+!run_nestapp.m
 
-# MATLAB artifacts
-*.asv
-*.mex*
+# Source files
+!src/
+!src/*.m
+!src/*.png
+!src/*.jpg
+!src/templates/
+!src/templates/*.mat
+!src/@nestapp/
+!src/@nestapp/*.m
 
-# Data and output (large files / generated content)
-data/
-results/
-*.mat
-!exemplar_pipeline.mat
+# Tests (develop branch only)
+!tests/
+!tests/unit/
+!tests/unit/*.m
+!tests/integration/
+!tests/integration/*.m
+!tests/regression/
+!tests/regression/*.m
+!tests/helpers/
+!tests/helpers/*.m
+!tests/*.m
 
-# EEGLAB bundle (not versioned)
-eeglab*/
+# CI
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml

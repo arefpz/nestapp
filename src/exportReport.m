@@ -1,4 +1,4 @@
-function [summaryText, matPath] = exportReport(report, outputDir)
+﻿function [summaryText, matPath] = exportReport(report, outputDir)
 % EXPORTREPORT  Export a PipelineReport to disk and return a formatted summary.
 %
 %   [summaryText, matPath] = EXPORTREPORT(report, outputDir)
@@ -9,7 +9,7 @@ function [summaryText, matPath] = exportReport(report, outputDir)
 %   summaryText - formatted char suitable for uitextarea or uialert
 %   matPath     - full path to saved .mat file, or '' if save failed
 %
-%   See also: initPipelineReport, runPipeline
+%   See also: initPipelineReport, runPipelineCore
 
 if nargin < 2 || isempty(outputDir)
     % Use the user-specified report folder if set, otherwise data folder
@@ -28,7 +28,7 @@ end
 lines = {};
 lines{end+1} = '=== Pipeline Report ===';
 lines{end+1} = sprintf('File:      %s', report.inputFile);
-lines{end+1} = sprintf('Processed: %s', datestr(report.processedAt, 'yyyy-mm-dd HH:MM:SS'));
+lines{end+1} = sprintf('Processed: %s', string(report.processedAt, 'yyyy-MM-dd HH:mm:ss'));
 lines{end+1} = '';
 
 % Channels
@@ -68,7 +68,12 @@ lines{end+1} = 'ICA';
 if report.ica.nComponents > 0
     nComp = report.ica.nComponents;
     nRej  = report.ica.nRejected;
-    nKept = report.ica.nKept;
+    % nKept added in M3; fall back for reports saved before that field existed.
+    if isfield(report.ica, 'nKept')
+        nKept = report.ica.nKept;
+    else
+        nKept = nComp - nRej;
+    end
     lines{end+1} = sprintf('  Identified: %d components', nComp);
     if nRej > 0
         hasVar   = ~isnan(report.ica.varRemoved);
@@ -93,18 +98,7 @@ if report.ica.nComponents > 0
         % Per-category summary (totals across all rounds)
         if isfield(report.ica, 'categories') && any(report.ica.categories.nRemoved > 0)
             lines{end+1} = '  By category (all rounds):';
-            cats = report.ica.categories;
-            for ci = 1:numel(cats.names)
-                if cats.nRemoved(ci) > 0
-                    if hasVar && ~multiRound
-                        lines{end+1} = sprintf('    %-12s %d  (%.1f%% ICA var)', ...
-                            [cats.names{ci} ':'], cats.nRemoved(ci), cats.varShare(ci));
-                    else
-                        lines{end+1} = sprintf('    %-12s %d', ...
-                            [cats.names{ci} ':'], cats.nRemoved(ci));
-                    end
-                end
-            end
+            lines = appendCategoryLines(lines, report.ica.categories, hasVar && ~multiRound);
         end
 
         % Per-round detail for multi-round TESA
@@ -119,18 +113,7 @@ if report.ica.nComponents > 0
                     lines{end+1} = sprintf('  Round %d: %d components, %d removed', ...
                         ri, rnd.nComponents, rnd.nRejected);
                 end
-                cats = rnd.categories;
-                for ci = 1:numel(cats.names)
-                    if cats.nRemoved(ci) > 0
-                        if rndHasVar
-                            lines{end+1} = sprintf('    %-12s %d  (%.1f%% ICA var)', ...
-                                [cats.names{ci} ':'], cats.nRemoved(ci), cats.varShare(ci));
-                        else
-                            lines{end+1} = sprintf('    %-12s %d', ...
-                                [cats.names{ci} ':'], cats.nRemoved(ci));
-                        end
-                    end
-                end
+                lines = appendCategoryLines(lines, rnd.categories, rndHasVar);
             end
         end
     else
@@ -140,21 +123,6 @@ else
     lines{end+1} = '  ICA not run';
 end
 lines{end+1} = '';
-
-% TEP quality vector
-if isstruct(report.teps) && isfield(report.teps, 'version')
-    q = report.teps;
-    lines{end+1} = sprintf('TEP QUALITY  [metric %s]', q.version);
-    if ~isempty(q.baselineWarning)
-        lines{end+1} = sprintf('  WARNING: %s', q.baselineWarning);
-    end
-    lines = appendAxis(lines, q.retention,         'Retention',          '');
-    lines = appendAxis(lines, q.artifactReduction,  'Artifact reduction', '');
-    lines = appendAxis(lines, q.bgRestoration,      'Background',         '');
-    lines = appendAxis(lines, q.reproducibility,    'Reproducibility',    '');
-    lines = appendAxis(lines, q.aepLikeness,        'AEP-likeness',       '[EXPERIMENTAL]');
-    lines{end+1} = '';
-end
 
 % Steps run
 lines{end+1} = 'STEPS RUN';
@@ -175,7 +143,7 @@ for k = 1:numel(report.steps)
 end
 lines{end+1} = '';
 
-% Methods summary — prose suitable for copy-paste into a methods section
+% Methods summary - prose suitable for copy-paste into a methods section
 lines{end+1} = 'METHODS SUMMARY';
 methLines = {};
 
@@ -278,7 +246,7 @@ end
 if getpref('nestapp', 'overwriteReports', false)
     matFileName = sprintf('%s_report.mat', baseName);
 else
-    timestamp   = datestr(report.processedAt, 'yyyymmdd_HHMMSS');
+    timestamp   = string(report.processedAt, 'yyyyMMdd_HHmmss');
     matFileName = sprintf('%s_report_%s.mat', baseName, timestamp);
 end
 matPath = fullfile(outputDir, matFileName);
@@ -291,24 +259,16 @@ catch
 end
 end
 
-%% ---- helpers ---------------------------------------------------------------
-
-function lines = appendAxis(lines, ax, label, tag)
-% Format one quality axis as a single report line.
-if isempty(tag)
-    prefix = sprintf('  %-22s', label);
-else
-    prefix = sprintf('  %-22s', [label ' ' tag]);
-end
-if isnan(ax.value)
-    lines{end+1} = sprintf('%s  —  (%s)', prefix, ax.status);
-    if ~isempty(ax.status_detail)
-        lines{end+1} = sprintf('    %s', ax.status_detail);
-    end
-else
-    lines{end+1} = sprintf('%s  %.2f  %s', prefix, ax.value, ax.interpretation);
-    if ~strcmp(ax.status, 'ok') && ~isempty(ax.status_detail)
-        lines{end+1} = sprintf('    [%s] %s', upper(ax.status), ax.status_detail);
+function lines = appendCategoryLines(lines, cats, showVar)
+for ci = 1:numel(cats.names)
+    if cats.nRemoved(ci) > 0
+        if showVar
+            lines{end+1} = sprintf('    %-12s %d  (%.1f%% ICA var)', ...
+                [cats.names{ci} ':'], cats.nRemoved(ci), cats.varShare(ci));
+        else
+            lines{end+1} = sprintf('    %-12s %d', ...
+                [cats.names{ci} ':'], cats.nRemoved(ci));
+        end
     end
 end
 end

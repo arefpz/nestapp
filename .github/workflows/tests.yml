@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  unit-tests:
+    # Requires a self-hosted runner with a MATLAB R2024b+ license.
+    # For GitHub-hosted runners, use matlab-actions/setup-matlab@v2 instead
+    # and supply a MathWorks license via repository secrets.
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run fast test suite (unit + regression, no EEGLAB required)
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            cd(fullfile(getenv('GITHUB_WORKSPACE'), 'tests'));
+            results = run_tests('fast');
+            if any([results.Failed])
+              error('run_tests: %d test(s) failed', sum([results.Failed]));
+            end
+
+  # Integration tests require EEGLAB + TESA on disk.
+  # Enable by adding [run-integration] to the commit message or PR title.
+  integration-tests:
+    runs-on: self-hosted
+    if: contains(github.event.head_commit.message, '[run-integration]') ||
+        contains(github.event.pull_request.title, '[run-integration]')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run integration test suite
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            cd(fullfile(getenv('GITHUB_WORKSPACE'), 'tests'));
+            results = run_tests('integration');
+            if any([results.Failed])
+              error('run_tests: %d integration test(s) failed', sum([results.Failed]));
+            end

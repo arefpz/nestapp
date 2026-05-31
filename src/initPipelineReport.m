@@ -7,7 +7,7 @@ function report = initPipelineReport(inputFile)
 %
 %   Fields
 %     inputFile             - full path to the file being processed
-%     processedAt           - datenum when processing started
+%     processedAt           - datetime when processing started
 %     steps                 - cell array of step records (one per completed step)
 %     channels.original     - EEG.nbchan at Load Data
 %     channels.nRejected    - cumulative channels removed (bad channel steps)
@@ -22,15 +22,14 @@ function report = initPipelineReport(inputFile)
 %     ica.varRemoved        - total % data variance removed (NaN if unavailable)
 %     ica.varMin / varMax   - per-component variance range (NaN if unavailable)
 %     ica.categories        - ICLabel breakdown (populated when ICLabel was run)
-%     teps                  - struct returned by computeTEPQuality (five-axis quality vector)
 %
 %   Each element of .steps is a struct with fields:
 %     name, chansBefore, chansAfter, trialsBefore, trialsAfter, duration, timestamp
 %
-%   See also: exportReport, runPipeline
+%   See also: exportReport, runPipelineCore
 
 report.inputFile   = inputFile;
-report.processedAt = now;   % datenum — exportReport uses datestr() which requires datenum
+report.processedAt = datetime('now');
 
 report.steps = {};
 
@@ -55,9 +54,4 @@ ICA_CATEGORIES = {'Brain','Muscle','Eye','Heart','Line Noise','Ch Noise','Other'
 report.ica.categories.names    = ICA_CATEGORIES;
 report.ica.categories.nRemoved = zeros(1, 7);
 report.ica.categories.varShare = zeros(1, 7);
-
-% TEP quality axes — populated after the pipeline by computeTEPQuality.
-% Each field is a struct with .value, .status, .interpretation, etc.
-% See computeTEPQuality for the full output contract.
-report.teps = struct();
 end
