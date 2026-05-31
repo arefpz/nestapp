@@ -102,28 +102,19 @@ Notes for whoever inherits this:
 
 This is the workflow that needs real configuration. It runs `tools/gen_docs.m`
 to generate the API reference from source headers, builds it with Jekyll, and
-deploys to GitHub Pages. It triggers on **push to `develop`**, on **tags `v*`**,
-and on manual dispatch.
+deploys to GitHub Pages. It triggers on **push to `main` or `develop`**, on
+**tags `v*`**, and on manual dispatch.
 
 It is **optional** — the docs site is a convenience, not part of validating code.
 If you do not want a Pages site, simply delete this workflow. If you do, follow
 all of the steps below or deploys will fail.
 
-### 3a. Branch-name dependency (read this first)
+### 3a. Branch trigger
 
-The workflow triggers on `push` to **`develop`** (and `v*` tags). If your repo's
-default/active branch is `main` and you have no `develop` branch, **the Docs
-workflow will never fire** until you either push a `develop` branch, push a
-`v*` tag, or run it manually (workflow_dispatch). If you want it to deploy from
-`main`, change the trigger:
-
-```yaml
-on:
-  push:
-    branches: ["main"]      # was: ["develop"]
-    tags: ["v*"]
-  workflow_dispatch:
-```
+The workflow triggers on `push` to **`main` and `develop`** (and `v*` tags), so it
+runs out of the box on a `main`-default repo — no branch renaming needed. If you
+only want to publish from one branch, trim the `branches:` list (and then you only
+need that branch in the environment policy below, §3d).
 
 ### 3b. Enable Pages with the Actions source
 
@@ -191,7 +182,7 @@ every deploy, the same way the template `.mat` files are regenerated from
 - [ ] Settings → Actions → General → allow all actions.
 - [ ] (Tests, Lint) nothing else — they run on enable.
 - [ ] (Docs, optional) Settings → Pages → Source: **GitHub Actions**.
-- [ ] (Docs) confirm the trigger branch (`develop` vs `main`) matches your repo.
-- [ ] (Docs) add the deploying branch to the `github-pages` environment policy
+- [ ] (Docs) it triggers on `main` and `develop` already — no branch change needed.
+- [ ] (Docs) add the deploying branch(es) to the `github-pages` environment policy
       (`gh api ... deployment-branch-policies -f name=<branch>`).
 - [ ] No secrets. Public repo. Free runners.
