@@ -52,8 +52,15 @@ end
 % ── tests ─────────────────────────────────────────────────────────────────
 
 function test_eeglabInitialises(testCase)
-global EEG ALLEEG CURRENTSET  %#ok<GVMIS>
-testCase.verifyTrue(isstruct(ALLEEG), 'ALLEEG must be a struct after eeglab(''nogui'')');
+% After eeglab('nogui') with no dataset loaded, the EEG/ALLEEG globals are
+% still empty ([]) - they only become structs once a dataset is created.
+% So the meaningful "EEGLAB initialised" signals are that its functions are
+% on the path and the bookkeeping globals exist with the expected types.
+global ALLEEG CURRENTSET  %#ok<GVMIS>
+testCase.verifyNotEmpty(which('pop_loadset'), ...
+    'eeglab(''nogui'') must put EEGLAB functions on the path');
+testCase.verifyTrue(isstruct(ALLEEG) || isempty(ALLEEG), ...
+    'ALLEEG must be a struct or empty after eeglab(''nogui'')');
 testCase.verifyTrue(isnumeric(CURRENTSET), 'CURRENTSET must be numeric');
 end
 

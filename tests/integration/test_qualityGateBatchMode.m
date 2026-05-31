@@ -30,12 +30,13 @@ end
 end
 
 function teardownOnce(testCase)
+if ~isfield(testCase.TestData, 'prevSkipSet')
+    return   % setupOnce assumeFail'd (no EEGLAB) before snapshotting prefs
+end
 if testCase.TestData.prevSkipSet
     setpref('nestapp', 'skipOnQualityFail', testCase.TestData.prevSkip);
-else
-    if ispref('nestapp', 'skipOnQualityFail')
-        rmpref('nestapp', 'skipOnQualityFail');
-    end
+elseif ispref('nestapp', 'skipOnQualityFail')
+    rmpref('nestapp', 'skipOnQualityFail');
 end
 end
 

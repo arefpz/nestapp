@@ -34,6 +34,11 @@ function report = initPipelineReport(inputFile)
 
 report.inputFile   = inputFile;
 report.processedAt = datetime('now');
+% Pipeline / template name (e.g. 'TMS-EEG / AARATEP'); set by processOneFile
+% from opts.pipelineName. Provenance metadata saved with the report. ''
+% for ad-hoc pipelines. (Citations are derived from the steps that ran, not
+% this name - see stepCitations.)
+report.pipelineName = '';
 
 report.steps = {};
 

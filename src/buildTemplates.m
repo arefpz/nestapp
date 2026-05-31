@@ -104,14 +104,19 @@ ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Heart',  [0.9, 1])
 ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'resting');
 saveMat(reg, steps, ovs, 'Resting-State EEG', fullfile(outDir, '2_resting_state.mat'));
 
-%% 3 - Minimal (Delorme 2023)
-% Minimal pipeline per Delorme 2023 ("EEG is better left alone", Sci Rep).
-% HPF 0.5 Hz only; no LPF; no explicit re-reference.
+%% 3 - Minimal ERP (Delorme 2023)
+% Minimal cleaning per Delorme 2023 ("EEG is better left alone", Sci Rep),
+% adapted for ERP research (oddball / go-no-go, no TMS): clean continuous data,
+% fit ICA, then epoch around the task's event markers and baseline-correct.
+% HPF 0.5 Hz only; no LPF; no explicit re-reference. The Epoching step ships
+% with NO event labels on purpose - set them to your stimulus/response codes
+% before running (the pipeline errors otherwise rather than epoching blindly).
 steps = { ...
     'Load Data', 'Load Channel Location', 'Remove un-needed Channels', ...
     'Frequency Filter', 'Automatic Cleaning Data', 'Run ICA', ...
     'Label ICA Components', 'Flag ICA Components for Rejection', ...
-    'Remove Flagged ICA Components', 'Interpolate Channels', 'Save New Set'};
+    'Remove Flagged ICA Components', 'Interpolate Channels', ...
+    'Epoching', 'Remove Baseline', 'Save New Set'};
 ovs = emptyOvs(steps);
 ovs = setOv(ovs, steps, 'Frequency Filter', 'locutoff', 0.5);
 ovs = setOv(ovs, steps, 'Frequency Filter', 'hicutoff', 0);   % 0 = no LPF
@@ -120,8 +125,13 @@ ovs = setOv(ovs, steps, 'Automatic Cleaning Data', 'ChannelCriterion',  0.85);
 ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Muscle', [0.8, 1]);
 ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Eye',    [0.8, 1]);
 ovs = setOv(ovs, steps, 'Flag ICA Components for Rejection', 'Heart',  [0.9, 1]);
+% ERP epoching: event labels left empty on purpose - the user supplies their
+% task triggers. Window -200..800 ms; baseline = full pre-stimulus (the
+% Remove Baseline default).
+ovs = setOv(ovs, steps, 'Epoching', 'types',   {});
+ovs = setOv(ovs, steps, 'Epoching', 'timelim', [-0.2, 0.8]);
 ovs = setOv(ovs, steps, 'Save New Set', 'savenew', 'minimal');
-saveMat(reg, steps, ovs, 'Minimal (Delorme 2023)', fullfile(outDir, '3_minimal.mat'));
+saveMat(reg, steps, ovs, 'Minimal ERP (Delorme 2023)', fullfile(outDir, '3_minimal.mat'));
 
 %% 4 - TMS-EEG / TEP (TESA + Quality Gates)
 % Same step order as template 1, with four Quality Gate checkpoints

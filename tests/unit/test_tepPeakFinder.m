@@ -20,6 +20,7 @@ function setupOnce(testCase) %#ok<INUSD>
 r = repoRoot();
 addpath(r);
 addpath(fullfile(r, 'src'));
+addpath(fullfile(r, 'tests', 'helpers'));
 end
 
 function r = repoRoot()
@@ -29,10 +30,13 @@ end
 % ── error contract when TESA is absent ───────────────────────────────────────
 
 function test_throwsCorrectErrorWhenTESAAbsent(testCase)
-% This test only runs when TESA is NOT on the path.
-% If TESA is present, the test is skipped (incomplete) — not silently passed.
-testCase.assumeTrue(isempty(which('tesa_peakanalysis')), ...
-    'TESA is installed — this test only exercises the no-TESA error path');
+% Exercise the no-TESA error path even when TESA IS installed, by hiding
+% tesa_peakanalysis from the path for the duration of the test (restored on
+% cleanup). Asserts the hide worked so the test fails loudly rather than
+% silently skipping.
+cleanup = hideFromPath('tesa_peakanalysis'); %#ok<NASGU>
+testCase.assertEmpty(which('tesa_peakanalysis'), ...
+    'Could not hide tesa_peakanalysis from the path; cannot test the no-TESA branch.');
 
 times    = -50:2:300;
 waveform = zeros(1, numel(times));

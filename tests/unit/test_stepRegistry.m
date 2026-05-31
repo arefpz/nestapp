@@ -78,21 +78,14 @@ end
 
 % ── info field ────────────────────────────────────────────────────────────
 
-function test_allInfoStringsNonEmpty(testCase)
-steps = stepRegistry();
-for i = 1:numel(steps)
-    info = steps(i).info;
-    testCase.verifyFalse(isempty(strtrim(info)), ...
-        sprintf('Step "%s" has empty info string', steps(i).name));
-end
-end
-
-function test_allInfoStringsAreText(testCase)
+function test_allInfoStringsAreNonEmptyText(testCase)
 steps = stepRegistry();
 for i = 1:numel(steps)
     info = steps(i).info;
     testCase.verifyTrue(ischar(info) || isstring(info), ...
         sprintf('Step "%s" info must be char or string', steps(i).name));
+    testCase.verifyFalse(isempty(strtrim(char(info))), ...
+        sprintf('Step "%s" has empty info string', steps(i).name));
 end
 end
 
@@ -143,20 +136,10 @@ end
 
 % ── key steps present ─────────────────────────────────────────────────────
 
-function test_loadDataStepPresent(testCase)
-steps = stepRegistry();
-names = {steps.name};
-testCase.verifyTrue(ismember('Load Data', names), '"Load Data" must be in registry');
+function test_keyStepsPresent(testCase)
+names = {stepRegistry().name};
+for s = {'Load Data', 'Save New Set', 'Epoching'}
+    testCase.verifyTrue(ismember(s{1}, names), ...
+        sprintf('"%s" must be in registry', s{1}));
 end
-
-function test_saveNewSetStepPresent(testCase)
-steps = stepRegistry();
-names = {steps.name};
-testCase.verifyTrue(ismember('Save New Set', names), '"Save New Set" must be in registry');
-end
-
-function test_epochingStepPresent(testCase)
-steps = stepRegistry();
-names = {steps.name};
-testCase.verifyTrue(ismember('Epoching', names), '"Epoching" must be in registry');
 end

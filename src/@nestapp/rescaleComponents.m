@@ -204,4 +204,7 @@ function rescaleComponents(app, sX, sY)
             app.CopyMethodsButton.Position       = p([715 470 147 24]);
             app.ReportsTextArea.Position         = p([220 10 637 457]);
             app.ReportsTextArea.FontSize         = fs(10);
+            % Dashboard panel shares the text-area region; its children are
+            % repainted to the new size by UIFigureSizeChanged so they reflow.
+            app.ReportsDashboardPanel.Position   = p([220 10 637 457]);
         end

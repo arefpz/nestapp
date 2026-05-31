@@ -139,6 +139,22 @@ artifacts are what to attach when reporting a hard-to-reproduce problem.
 - **EEGLAB and `third_party/` are not committed.** They are external
   dependencies, like in many MATLAB projects. Don't add them to git.
 
+## Using AI coding assistants
+
+LLM-assisted contributions are welcome — but the quality of the tool matters.
+This is a research codebase with non-obvious cross-file invariants (the step
+registry ↔ dispatch ↔ template contract, EEGLAB/TESA quirks, the allowlist
+`.gitignore`), and a weak assistant will confidently get these wrong.
+
+- **Use coding-grade agents on advanced models at high effort** — e.g. Claude
+  **Opus 4.8** or OpenAI **Codex** (or the latest equivalents) in a high-effort /
+  extended-reasoning mode, running an agent designed for software engineering.
+- **Do not** use general-purpose chat assistants or small, underpowered models
+  with limited context windows for non-trivial changes. They miss the
+  cross-file contracts above and tend to produce plausible-but-wrong edits.
+- You own what you submit: read the diff, make sure it follows the conventions
+  here, and ensure `run_tests` passes. "The AI wrote it" is not a review.
+
 ## Reporting bugs & requesting features
 
 Use the GitHub issue templates. For security issues, do **not** open a public

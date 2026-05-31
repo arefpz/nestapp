@@ -136,20 +136,21 @@ testCase.verifyFalse(isempty(summaryText), 'summaryText must be non-empty');
 testCase.verifyTrue(ischar(matPath) || isstring(matPath), 'matPath must be text type');
 end
 
-% ── exportReport — METHODS SUMMARY branch coverage ───────────────────────
-% These tests pin the Apr-2026 fix: methods text now uses nRejected and
-% nInterpolated directly rather than computing finCh/origCh fractions.
+% ── exportReport — METHODS branch coverage ───────────────────────────────
+% The per-file METHODS line is one concise sentence built by methodsParagraph
+% (channels/epochs retained + ICA removed). The full cross-file prose lives in
+% the session summary. These tests pin the per-file wording.
 
 function test_methodsNone(testCase)
-% No rejection, no interpolation → "none rejected"
+% No rejection, no interpolation → "all N channels were retained"
 report = initPipelineReport('test.set');
 report.channels.original      = 32;
 report.channels.nRejected     = 0;
 report.channels.nInterpolated = 0;
 report.channels.final         = 32;
 txt = exportReport(report, '');
-testCase.verifyTrue(contains(txt, 'none rejected'), ...
-    'Methods should say "none rejected" when no channels were rejected');
+testCase.verifyTrue(contains(txt, 'all 32 channels were retained'), ...
+    'Methods should say "all 32 channels were retained" when none were removed');
 end
 
 function test_methodsRejectionOnly(testCase)
@@ -160,9 +161,8 @@ report.channels.nRejected     = 3;
 report.channels.nInterpolated = 0;
 report.channels.final         = 61;
 txt = exportReport(report, '');
-testCase.verifyTrue(contains(txt, '3'), 'Should mention 3 rejected channels');
-testCase.verifyTrue(contains(txt, 'identified as bad'), ...
-    'Should use "identified as bad" phrasing');
+testCase.verifyTrue(contains(txt, '61 of 64 channels were retained (3 removed)'), ...
+    'Should report "61 of 64 channels were retained (3 removed)"');
 % Must NOT claim all channels retained
 testCase.verifyFalse(contains(txt, '100%'), ...
     'Must not claim 100% retained when channels were rejected');
@@ -205,15 +205,15 @@ testCase.verifyTrue(contains(txt, '90') || contains(txt, '72') || contains(txt, 
 end
 
 function test_methodsICANoRejection(testCase)
-% ICA ran but nothing removed → "none rejected"
+% ICA ran but nothing removed → "none removed"
 report = initPipelineReport('test.set');
 report.ica.nComponents = 30;
 report.ica.nRejected   = 0;
 report.ica.nKept       = 30;
 txt = exportReport(report, '');
 testCase.verifyTrue(contains(txt, '30'), 'Should mention 30 components');
-testCase.verifyTrue(contains(txt, 'none rejected'), ...
-    'Should say "none rejected" when no ICA components removed');
+testCase.verifyTrue(contains(txt, 'ICA identified 30 components, none removed'), ...
+    'Methods should say "ICA identified 30 components, none removed"');
 end
 
 function test_methodsICAWithVariance(testCase)
@@ -271,4 +271,61 @@ testCase.verifyTrue(contains(txt, '2') && contains(lower(txt), 'round'), ...
 testCase.verifyFalse(contains(txt, sprintf('%.1f%% ICA variance', ...
     rnd1.varRemoved + rnd2.varRemoved)), ...
     'Must not sum variance across rounds in top-level summary');
+end
+
+% ── citation block (per-file report + session summary) ───────────────────
+
+function rec = stepRecord(name)
+% Minimal complete step record (buildReportText's STEPS RUN reads these fields).
+rec = struct('name', name, 'chansBefore', 0, 'chansAfter', 0, ...
+             'trialsBefore', 0, 'trialsAfter', 0, 'duration', 0);
+end
+
+function test_citationDerivedFromSteps(testCase)
+% Citations come from the steps that ran: an ARTIST step surfaces the ARTIST
+% reference and DOI.
+report = initPipelineReport('test.set');
+report.steps = {stepRecord('Reject Bad Trials (ARTIST)')};
+txt = exportReport(report, '');
+testCase.verifyTrue(contains(txt, 'CITATION'), 'Report must include a CITATION section');
+testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'Citation must name the ARTIST reference');
+testCase.verifyTrue(contains(txt, '10.1002/hbm.23938'), 'Citation must include the DOI');
+end
+
+function test_noCitationForUncitedSteps(testCase)
+% Steps with no associated method citation produce no CITATION block.
+report = initPipelineReport('test.set');
+report.steps = {stepRecord('Remove Baseline'), stepRecord('Re-Reference')};
+txt = exportReport(report, '');
+testCase.verifyFalse(contains(txt, 'CITATION'), ...
+    'No CITATION section when no step maps to a cited method');
+end
+
+function test_noSpuriousSoundCitation(testCase)
+% Regression: a TESA pipeline without a SOUND step must cite TESA but NOT
+% Mutanen/SOUND. Previously the template citation note always mentioned SOUND.
+report = initPipelineReport('test.set');
+report.steps = {stepRecord('Remove ICA Components (TESA)'), ...
+                stepRecord('Reject Bad Trials (ARTIST)')};
+txt = exportReport(report, '');
+testCase.verifyTrue(contains(txt, 'Rogasch'), 'TESA step must cite Rogasch');
+testCase.verifyTrue(contains(txt, 'Wu W. et al. (2018)'), 'ARTIST step must cite Wu');
+testCase.verifyFalse(contains(txt, 'SOUND') || contains(txt, 'Mutanen'), ...
+    'No SOUND/Mutanen citation when no SOUND step was used');
+end
+
+function test_summaryHasMethodsAndCitation(testCase)
+% The session summary carries the aggregate METHODS prose and the union of
+% method citations across files (derived from steps).
+r1 = initPipelineReport('a.set');
+r1.steps = {stepRecord('Remove Decay Artifact')};
+r1.channels.original = 64; r1.channels.nRejected = 2; r1.channels.final = 62;
+r2 = initPipelineReport('b.set');
+r2.steps = {stepRecord('Flag ICA Components (AARATEP Muscle)')};
+r2.channels.original = 64; r2.channels.nRejected = 4; r2.channels.final = 60;
+txt = summarizeReports({r1, r2});
+testCase.verifyTrue(contains(txt, 'METHODS'), 'Summary must include a METHODS section');
+testCase.verifyTrue(contains(txt, 'Across 2 files'), 'Summary methods must be cross-file prose');
+testCase.verifyTrue(contains(txt, 'CITATION'), 'Summary must include a CITATION section');
+testCase.verifyTrue(contains(txt, 'Cline C.C. et al. (2021)'), 'Summary must cite the AARATEP reference');
 end

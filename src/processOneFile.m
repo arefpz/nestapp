@@ -99,6 +99,7 @@ end
 stepLog = struct('step',{},'duration_s',{},'chanBefore',{},'chanAfter',{}, ...
                  'epochBefore',{},'epochAfter',{},'error',{});
 fileReport = initPipelineReport(fullPath);
+fileReport.pipelineName = opts.pipelineName;  % provenance (citations come from steps)
 
 for si = 1:nSteps
     step     = spec(si);
@@ -520,6 +521,12 @@ for si = 1:nSteps
                     pendingICAStats.iclabelProbs = ...
                         EEG.etc.ic_classification.ICLabel.classifications;
                 end
+                % Per-component category labels written by custom classifiers
+                % (AARATEP muscle, ARTIST decay) so removed ICs are attributed
+                % to a category even without ICLabel.
+                if isfield(EEG,'etc') && isfield(EEG.etc,'nestappICClass')
+                    pendingICAStats.classLabels = EEG.etc.nestappICClass;
+                end
 
                 if ~(isnumeric(EEG.reject.gcompreject) || islogical(EEG.reject.gcompreject))
                     EEG.reject.gcompreject = zeros(1, size(EEG.icaweights, 1));
@@ -612,12 +619,23 @@ for si = 1:nSteps
 
             case 'Epoching'
                 vars = convertContainedStringsToChars(varin);
-                vars = stripEmptyVarin(vars);
-                ind1 = find(strcmp(vars,'types'));
-                type = vars{ind1+1};
-                ind2 = find(strcmp(vars,'timelim'));
+                ind1 = find(strcmp(vars,'types'), 1);
+                type = {};
+                if ~isempty(ind1); type = vars{ind1+1}; end
+                % Require explicit event marker label(s). Epoching around an
+                % empty type list silently epochs every event - rarely what is
+                % intended, and wrong for an ERP task (oddball / go-no-go) where
+                % you epoch around specific stimulus/response codes.
+                if isempty(type)
+                    error('nestapp:epochingNoTypes', ...
+                        ['Epoching needs the event marker label(s) to epoch around ' ...
+                         '(e.g. {''S 1'',''S 2''} for an oddball task). Set the ' ...
+                         'Epoching step''s "Event label(s)" field to your task triggers.']);
+                end
+                ind2 = find(strcmp(vars,'timelim'), 1);
                 timelim = vars{ind2+1};
                 vars([ind1, ind1+1, ind2, ind2+1]) = [];
+                vars = stripEmptyVarin(vars);
                 EEG = pop_epoch( EEG, type, timelim, vars{:});
                 EEG = eeg_checkset( EEG );
 
@@ -873,38 +891,28 @@ for si = 1:nSteps
                 end
             end
             if any(strcmp(stepName, {'Run ICA','Run TESA ICA'})) && ~isempty(EEG.icaweights)
-                fileReport.ica.nComponents = size(EEG.icaweights, 1);
+                % Open a round per decomposition so the round count is correct
+                % even for a round that removes nothing (e.g. AARATEP's 2nd ICA).
+                fileReport = openICARound(fileReport, size(EEG.icaweights, 1));
             end
             if strcmp(stepName, 'Remove Flagged ICA Components') && ...
                     isfield(pendingICAStats, 'rejMask')
-                rMask = pendingICAStats.rejMask;
+                rMask = logical(pendingICAStats.rejMask(:)');
                 nRej  = sum(rMask);
-                fileReport.ica.nRejected = fileReport.ica.nRejected + nRej;
-                fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
-                if isfield(pendingICAStats, 'compVarPct') && ...
-                        numel(pendingICAStats.compVarPct) == numel(rMask)
-                    rejPct = pendingICAStats.compVarPct(rMask);
-                    if isnan(fileReport.ica.varRemoved)
-                        fileReport.ica.varRemoved = sum(rejPct);
-                    else
-                        fileReport.ica.varRemoved = fileReport.ica.varRemoved + sum(rejPct);
+                if nRej > 0
+                    removal = struct( ...
+                        'nComponents', numel(rMask), ...
+                        'nRejected',   nRej, ...
+                        'varRemoved',  NaN, 'varMin', NaN, 'varMax', NaN);
+                    if isfield(pendingICAStats, 'compVarPct') && ...
+                            numel(pendingICAStats.compVarPct) == numel(rMask)
+                        rejPct          = pendingICAStats.compVarPct(rMask);
+                        removal.varRemoved = sum(rejPct);
+                        removal.varMin     = min(rejPct);
+                        removal.varMax     = max(rejPct);
                     end
-                    fileReport.ica.varMin = min([fileReport.ica.varMin, rejPct]);
-                    fileReport.ica.varMax = max([fileReport.ica.varMax, rejPct]);
-                end
-                if isfield(pendingICAStats, 'iclabelProbs')
-                    probs = pendingICAStats.iclabelProbs;
-                    [~, bestCat] = max(probs, [], 2);
-                    for ci = 1:7
-                        inCat = (bestCat == ci) & rMask(:);
-                        fileReport.ica.categories.nRemoved(ci) = ...
-                            fileReport.ica.categories.nRemoved(ci) + sum(inCat);
-                        if isfield(pendingICAStats, 'compVarPct')
-                            fileReport.ica.categories.varShare(ci) = ...
-                                fileReport.ica.categories.varShare(ci) + ...
-                                sum(pendingICAStats.compVarPct(inCat));
-                        end
-                    end
+                    removal.categories = icaCategoriesFromFlags(rMask, pendingICAStats);
+                    fileReport         = addICARemoval(fileReport, removal);
                 end
                 pendingICAStats = struct();
             end
@@ -917,45 +925,28 @@ for si = 1:nSteps
                 TESA_CODES = tesaICAClassCodes();
                 rejIdx   = cl.compClass > 1;
                 nRejTESA = sum(rejIdx);
-                rnd.roundNum    = numel(tesaKeys);
-                rnd.nComponents = numel(cl.compClass);
-                rnd.nRejected   = nRejTESA;
-                rnd.varRemoved  = NaN;
-                rnd.varMin      = NaN;
-                rnd.varMax      = NaN;
-                rnd.categories.names    = TESA_CATS;
-                rnd.categories.nRemoved = zeros(1, numel(TESA_CATS));
-                rnd.categories.varShare = zeros(1, numel(TESA_CATS));
+                removal = struct( ...
+                    'nComponents', numel(cl.compClass), ...
+                    'nRejected',   nRejTESA, ...
+                    'varRemoved',  NaN, 'varMin', NaN, 'varMax', NaN);
+                removal.categories.names    = TESA_CATS;
+                removal.categories.nRemoved = zeros(1, numel(TESA_CATS));
+                removal.categories.varShare = zeros(1, numel(TESA_CATS));
                 hasVars = isfield(cl, 'compVars') && numel(cl.compVars) >= numel(cl.compClass);
                 if hasVars && nRejTESA > 0
-                    rejPct         = double(cl.compVars(rejIdx));
-                    rnd.varRemoved = sum(rejPct);
-                    rnd.varMin     = min(rejPct);
-                    rnd.varMax     = max(rejPct);
+                    rejPct             = double(cl.compVars(rejIdx));
+                    removal.varRemoved = sum(rejPct);
+                    removal.varMin     = min(rejPct);
+                    removal.varMax     = max(rejPct);
                 end
                 for ci = 1:numel(TESA_CODES)
                     inCat = (cl.compClass == TESA_CODES(ci));
-                    rnd.categories.nRemoved(ci) = sum(inCat);
+                    removal.categories.nRemoved(ci) = sum(inCat);
                     if hasVars
-                        rnd.categories.varShare(ci) = sum(cl.compVars(inCat));
+                        removal.categories.varShare(ci) = sum(cl.compVars(inCat));
                     end
                 end
-                fileReport.ica.rounds{end+1} = rnd;
-                fileReport.ica.nRejected = fileReport.ica.nRejected + nRejTESA;
-                fileReport.ica.nKept     = fileReport.ica.nComponents - fileReport.ica.nRejected;
-                if ~strcmp(fileReport.ica.categories.names{1}, 'TMS Muscle')
-                    fileReport.ica.categories.names    = TESA_CATS;
-                    fileReport.ica.categories.nRemoved = zeros(1, numel(TESA_CATS));
-                    fileReport.ica.categories.varShare = zeros(1, numel(TESA_CATS));
-                end
-                fileReport.ica.categories.nRemoved = ...
-                    fileReport.ica.categories.nRemoved + rnd.categories.nRemoved;
-                if isscalar(fileReport.ica.rounds)
-                    fileReport.ica.varRemoved = rnd.varRemoved;
-                    fileReport.ica.varMin     = rnd.varMin;
-                    fileReport.ica.varMax     = rnd.varMax;
-                    fileReport.ica.categories.varShare = rnd.categories.varShare;
-                end
+                fileReport = addICARemoval(fileReport, removal);
             end
         else
             nChanAfter  = nChanBefore;
@@ -1173,6 +1164,7 @@ function codes = tesaICAClassCodes()
 % TESA compClass integer codes, matched positionally to tesaICACategories().
 codes = [3, 4, 5, 6, 7, 8, 2];
 end
+
 
 function v = worseVerdict(a, b)
 % Return the worst severity of two verdicts: Fail > Marginal > Pass > NotChecked.

@@ -41,68 +41,33 @@ end
 
 % ── output struct contract ────────────────────────────────────────────────────
 
-function test_outputIsStructArray(testCase)
+function test_outputContract(testCase)
+% Shape contract: a struct array with the documented fields and the right
+% per-entry types. (Merged from the former separate struct/fields/polarity/
+% latency-amplitude/found shape tests.)
 [w, t] = flatWaveform();
 peaks = tepPeakFinder(w, t);
-testCase.verifyTrue(isstruct(peaks),         'Output must be a struct array');
-testCase.verifyGreaterThan(numel(peaks), 0,  'Must return at least one entry');
+testCase.verifyTrue(isstruct(peaks), 'Output must be a struct array');
+testCase.verifyGreaterThan(numel(peaks), 0, 'Must return at least one entry');
+for f = {'name','polarity','latencyMs','amplitudeUV','found'}
+    testCase.verifyTrue(isfield(peaks, f{1}), sprintf('Output missing field: %s', f{1}));
 end
-
-function test_outputHasRequiredFields(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
-for fi = 1:numel({'name','polarity','latencyMs','amplitudeUV','found'})
-    field = {'name','polarity','latencyMs','amplitudeUV','found'};
-    testCase.verifyTrue(isfield(peaks, field{fi}), ...
-        sprintf('Output struct missing field: %s', field{fi}));
-end
-end
-
-function test_defaultWindowsReturn6Components(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
-testCase.verifyEqual(numel(peaks), 6, ...
-    'Default call must return exactly 6 component entries (N15 P30 N45 P60 N100 P180)');
-end
-
-function test_defaultComponentNamesInOrder(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
-expected = {'N15','P30','N45','P60','N100','P180'};
-for i = 1:numel(expected)
-    testCase.verifyEqual(peaks(i).name, expected{i}, ...
-        sprintf('Component %d should be %s, got %s', i, expected{i}, peaks(i).name));
-end
-end
-
-function test_polarityStringsAreNegOrPos(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
 for i = 1:numel(peaks)
     testCase.verifyTrue(ismember(peaks(i).polarity, {'neg','pos'}), ...
-        sprintf('Component %d polarity must be "neg" or "pos", got "%s"', ...
-            i, peaks(i).polarity));
-end
-end
-
-function test_latencyAndAmplitudeAreNumeric(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
-for i = 1:numel(peaks)
-    testCase.verifyTrue(isnumeric(peaks(i).latencyMs), ...
-        sprintf('%s: latencyMs must be numeric', peaks(i).name));
-    testCase.verifyTrue(isnumeric(peaks(i).amplitudeUV), ...
-        sprintf('%s: amplitudeUV must be numeric', peaks(i).name));
-end
-end
-
-function test_foundIsLogicalOrNumeric(testCase)
-[w, t] = flatWaveform();
-peaks = tepPeakFinder(w, t);
-for i = 1:numel(peaks)
+        sprintf('%s: polarity must be neg/pos', peaks(i).name));
+    testCase.verifyTrue(isnumeric(peaks(i).latencyMs) && isnumeric(peaks(i).amplitudeUV), ...
+        sprintf('%s: latency/amplitude must be numeric', peaks(i).name));
     testCase.verifyTrue(islogical(peaks(i).found) || isnumeric(peaks(i).found), ...
         sprintf('%s: found must be logical or numeric', peaks(i).name));
 end
+end
+
+function test_defaultComponentsAreCanonicalSix(testCase)
+% Default call returns the six canonical components, in order.
+[w, t] = flatWaveform();
+peaks = tepPeakFinder(w, t);
+testCase.verifyEqual({peaks.name}, {'N15','P30','N45','P60','N100','P180'}, ...
+    'Default call must return the canonical six components in order');
 end
 
 % ── custom compDefs interface ─────────────────────────────────────────────────

@@ -30,7 +30,9 @@ testCase.TestData.prefSnapshot = snapshotPrefs( ...
 end
 
 function teardownOnce(testCase)
-restorePrefs(testCase.TestData.prefSnapshot);
+if isfield(testCase.TestData, 'prefSnapshot')   % unset if setupOnce assumeFail'd (no EEGLAB)
+    restorePrefs(testCase.TestData.prefSnapshot);
+end
 end
 
 function snap = snapshotPrefs(keys)

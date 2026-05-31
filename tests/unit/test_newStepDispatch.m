@@ -19,6 +19,7 @@ function setupOnce(testCase) %#ok<INUSD>
 r = repoRoot();
 addpath(r);
 addpath(fullfile(r, 'src'));
+addpath(fullfile(r, 'tests', 'helpers'));   % hideFromPath
 end
 
 function r = repoRoot()
@@ -173,6 +174,31 @@ warning(ws);
 
 testCase.verifyEqual(wid, 'nestapp:aaratepFastICAMismatch', ...
     'A FastICA version mismatch must raise nestapp:aaratepFastICAMismatch.');
+end
+
+function test_ensureAaratepOnPath_warnsOnFastICAFallback(testCase)
+% With NO fastica on the path, ensureAaratepOnPath must add the bundled copy
+% and warn nestapp:aaratepFastICAFallback. Hide any installed fastica so this
+% branch runs deterministically even on a machine that has FastICA.
+bundled = fullfile(repoRoot(), 'third_party', 'aaratep', ...
+                  'Common', 'ThirdParty', 'FastICA', 'fastica.m');
+testCase.assumeTrue(isfile(bundled), 'Bundled FastICA absent - cannot test fallback.');
+
+cleanupHide = hideFromPath('fastica'); %#ok<NASGU>
+testCase.assertEmpty(which('fastica'), 'Could not hide fastica from the path.');
+
+clear ensureAaratepOnPath;
+prePath = path;
+restorePath = onCleanup(@() restoreAaratepState(prePath)); %#ok<NASGU>
+
+lastwarn('');
+ws = warning('off', 'all');
+ensureAaratepOnPath();
+[~, wid] = lastwarn();
+warning(ws);
+
+testCase.verifyEqual(wid, 'nestapp:aaratepFastICAFallback', ...
+    'With no fastica installed, the bundled FastICA fallback warning must fire.');
 end
 
 % ── fixtures and helpers ─────────────────────────────────────────────────────

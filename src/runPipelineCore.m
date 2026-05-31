@@ -119,18 +119,17 @@ if autoExportPDF
     nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
 end
 
-% Citation for built-in templates. Logged once per batch so the
-% reference ends up in the run log alongside the data, where the user
-% will look when writing the methods section.
-citation = templateCitation(opts.pipelineName);
-if ~isempty(citation.reference)
-    nestLog('CITE', 'Pipeline: %s', opts.pipelineName);
-    nestLog('CITE', 'Cite as:  %s', citation.reference);
-    if ~isempty(citation.doi)
-        nestLog('CITE', 'DOI:      %s', citation.doi);
-    end
-    if ~isempty(citation.notes)
-        nestLog('CITE', '%s', citation.notes);
+% Citations for the methods this pipeline uses, derived from its steps.
+% Logged once per batch so the references end up in the run log alongside the
+% data, where the user will look when writing the methods section.
+cites = stepCitations({spec.name});
+if ~isempty(cites)
+    nestLog('CITE', 'Methods used in this pipeline - please cite:');
+    for ci = 1:numel(cites)
+        nestLog('CITE', '  %s', cites(ci).reference);
+        if ~isempty(cites(ci).doi)
+            nestLog('CITE', '  DOI: %s', cites(ci).doi);
+        end
     end
     nestLog('CITE', 'See THIRD_PARTY_NOTICES.md for vendored dependencies.');
 end
@@ -464,11 +463,22 @@ else
     figX = (sc(3) - figW) / 2;
     figY = (sc(4) - figH) / 2;
     dlg.overlay = [];
+    % Headless (no embedding app figure: CLI / batch / tests). Build the
+    % progress figure INVISIBLE - progress is reported on the command window
+    % (see dlg.streamConsole below). A visible window here would pop up and
+    % steal focus on every run, and during an automated test sweep it looks
+    % like a frozen dialog. The app path (parentFig present) is unaffected.
     dlg.fig = uifigure('Name', 'Running Pipeline', ...
         'Position', [figX figY figW figH], ...
         'Color',    [0.97 0.97 0.98], ...
-        'Resize',   'off');
+        'Resize',   'off', 'Visible', 'off');
 end
+
+% Headless (no embedding app figure): also stream progress to the command
+% window. When the pipeline runs under tests or a batch CLI there is no human
+% watching the dialog, so a stall leaves no trace - the console echo (with
+% nestLog timestamps) shows the last step reached before a hang.
+dlg.streamConsole = isempty(dlg.overlay);
 
 % slotMap(fi)=slot tracks which bar slot is assigned to each file.
 % slotAvailable marks which slots are free to accept a new file.
@@ -537,6 +547,10 @@ if ~isvalid(dlg.fig); return; end
 % and recolors the bar fill until the next step start message
 % restores the normal step-progress display.
 if isfield(msg, 'gateVerdict') && ~isempty(msg.gateVerdict)
+    if dlg.streamConsole
+        nestLog('PROG', 'File %d \x2014 [%s] %s  (%d/%d)', ...
+            msg.fi, upper(msg.gateVerdict), msg.stepName, msg.si, msg.nSteps);
+    end
     udGate = dlg.fig.UserData;
     slot = udGate.slotMap(msg.fi);
     if slot > 0
@@ -571,6 +585,12 @@ if msg.si == 0
     dlg.fig.UserData = ud;
     nDone = ud.nDone;
     isFailed = isfield(msg, 'failed') && msg.failed;
+    if dlg.streamConsole
+        doneStatus = 'Done';
+        if isFailed; doneStatus = 'FAILED'; end
+        nestLog('PROG', 'File %d \x2014 %s  (%d / %d files complete)', ...
+            msg.fi, doneStatus, nDone, nFiles);
+    end
     if isFailed
         dlg.fills(slot).BackgroundColor = [0.85 0.27 0.27];   % red
         dlg.labels(slot).Text = sprintf('File %d \x2014 FAILED', msg.fi);
@@ -594,6 +614,10 @@ else
         ud.slotMap(msg.fi)     = slot;
         ud.slotAvailable(slot) = false;
         dlg.fig.UserData = ud;
+    end
+    if dlg.streamConsole
+        nestLog('PROG', 'File %d \x2014 %s  (%d/%d)', ...
+            msg.fi, msg.stepName, msg.si, msg.nSteps);
     end
     dlg.fills(slot).BackgroundColor = [0.23 0.51 0.96];
     dlg.fills(slot).Position(3)     = round(barW * msg.si / msg.nSteps);
