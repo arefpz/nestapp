@@ -38,9 +38,18 @@ report.channels.nRejected     = 0;
 report.channels.nInterpolated = 0;
 report.channels.final         = 0;
 
-report.trials.original = 0;
-report.trials.rejected = 0;
-report.trials.final    = 0;
+report.trials.original         = 0;
+report.trials.rejected         = 0;
+report.trials.final            = 0;
+% Cumulative original-trial indices that any bad-epoch step removed.
+% Updated by processOneFile after Remove Bad Epoch / Remove Bad Trials
+% so QC images can mark exactly which positions were dropped.
+report.trials.rejectedIndices  = [];
+% Current-to-original index map. Initialised at the first Epoching
+% step to 1:original and shrunk as trials are rejected. Internal -
+% used to remap locally-indexed rejection results back to original
+% trial numbers.
+report.trials.survivingIdx     = [];
 
 report.ica.nComponents = 0;
 report.ica.nRejected   = 0;
@@ -54,4 +63,10 @@ ICA_CATEGORIES = {'Brain','Muscle','Eye','Heart','Line Noise','Ch Noise','Other'
 report.ica.categories.names    = ICA_CATEGORIES;
 report.ica.categories.nRemoved = zeros(1, 7);
 report.ica.categories.varShare = zeros(1, 7);
+
+% Quality screening: populated when autoQualityReport is on (figures)
+% or when Quality Gate pipeline steps run (gates / worstVerdict).
+report.quality.figures      = {};
+report.quality.gates        = {};
+report.quality.worstVerdict = 'NotChecked';
 end

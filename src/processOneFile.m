@@ -33,6 +33,13 @@ if ~isfield(opts, 'fileIndex'),      opts.fileIndex      = 0; end
 if ~isfield(opts, 'uiFigure'),       opts.uiFigure       = []; end
 if ~isfield(opts, 'logQueue'),       opts.logQueue       = []; end
 if ~isfield(opts, 'nWorkers'),      opts.nWorkers       = 1;  end
+if ~isfield(opts, 'batchCtx'),          opts.batchCtx          = []; end
+if ~isfield(opts, 'autoQualityReport'), opts.autoQualityReport = false; end
+if ~isfield(opts, 'qcAttribute'),       opts.qcAttribute       = 'minmax_no_tms'; end
+if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];          end
+if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
+if ~isfield(opts, 'skipOnQualityFail'), opts.skipOnQualityFail = false;           end
+if ~isfield(opts, 'autoExportPDF'),     opts.autoExportPDF     = false;           end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -181,10 +188,17 @@ for si = 1:nSteps
                 vars([inds, inds+1]) = [];
                 fname = '';
                 if strcmp(IFN,'yes')
-                    [fdir, fbase, ~] = fileparts(fullfile(pathName, fileName));
+                    [~, fbase, ~] = fileparts(fullfile(pathName, fileName));
                     fbase = replace(fbase, ' ', '_');
                     fbase = replace(fbase, '-', '_');
-                    fname = fullfile(fdir, [fbase, '_']);
+                    % .set destination now lives under the batch folder
+                    % (data/ for typeBased, <stem>/ for perInput).
+                    if ~isempty(opts.batchCtx)
+                        targetDir = outputPaths(opts.batchCtx, 'data', fbase);
+                    else
+                        targetDir = pathDir;
+                    end
+                    fname = fullfile(targetDir, [fbase, '_']);
                 end
                 ind1 = find(strcmp(vars,'savenew'));
                 sv1 = vars{ind1+1};
@@ -414,6 +428,7 @@ for si = 1:nSteps
                 vars = stripEmptyVarin(vars);
                 [EEG, rejepochs] = pop_autorej(EEG, vars{:});
                 EEG.rejEpochs = rejepochs;
+                fileReport = recordRejectedTrials(fileReport, rejepochs);
                 EEG = eeg_checkset( EEG );
 
             case 'Run ICA'
@@ -623,6 +638,7 @@ for si = 1:nSteps
                 uiconfirm(opts.uiFigure,'Highlight bad trials in the rejection menu, then press OK to continue.','Remove Bad Trials','Options',{'OK'},'DefaultOption',1);
                 EEG.BadTr = unique([find(EEG.reject.rejjp==1) find(EEG.reject.rejmanual==1)]);
                 EEG = pop_rejepoch( EEG, EEG.BadTr ,0);
+                fileReport = recordRejectedTrials(fileReport, EEG.BadTr);
                 EEG = eeg_checkset( EEG );
 
             case 'Extract TEP (TESA)'
@@ -660,6 +676,55 @@ for si = 1:nSteps
                 vars = stripEmptyVarin(vars);
                 pop_tesa_peakoutput( EEG, vars{:} );
 
+            case 'Quality Gate'
+                % Pass the running rejection tally as context so the
+                % gate's maxRejected*Pct metrics can compare against
+                % the original counts logged at Load Data / Epoching.
+                qgContext = struct( ...
+                    'channels', fileReport.channels, ...
+                    'trials',   fileReport.trials);
+                gate = qualityGate(EEG, step.params, qgContext);
+                gate.stepIndex = si;
+                gate.stepName  = stepName;
+                % Auto-disambiguate unset / default gate labels with the
+                % step index so the dashboard, batch finalizer, and PDF
+                % don't collapse multiple "gate" entries into one row.
+                if isempty(gate.label) || strcmp(gate.label, 'gate')
+                    gate.label = sprintf('gate-%02d', si);
+                end
+                if ~isfield(fileReport, 'quality') ...
+                        || ~isfield(fileReport.quality, 'gates')
+                    if ~isfield(fileReport, 'quality')
+                        fileReport.quality = struct( ...
+                            'figures', {{}}, 'gates', {{}}, 'worstVerdict', 'Pass');
+                    else
+                        fileReport.quality.gates = {};
+                        fileReport.quality.worstVerdict = 'Pass';
+                    end
+                end
+                fileReport.quality.gates{end+1} = gate;
+                fileReport.quality.worstVerdict = worseVerdict( ...
+                    fileReport.quality.worstVerdict, gate.verdict);
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'Quality Gate "%s" -> %s', gate.label, gate.verdict);
+                % Stream the verdict back to the progress dialog so a
+                % long parallel run shows live Pass/Marg/Fail chips per
+                % file instead of only after the run completes.
+                if ~isempty(opts.progressQueue)
+                    send(opts.progressQueue, struct( ...
+                        'fi',          opts.fileIndex, ...
+                        'si',          si, ...
+                        'nSteps',      nSteps, ...
+                        'stepName',    stepName, ...
+                        'gateVerdict', gate.verdict, ...
+                        'gateLabel',   gate.label));
+                end
+                if strcmp(gate.verdict, 'Fail') && opts.skipOnQualityFail
+                    error('nestapp:qualityFail', ...
+                        'Step %d (Quality Gate "%s") failed: %s', ...
+                        si, gate.label, strjoin(gate.reasons, '; '));
+                end
+
         end % switch
 
         %% Post-step metrics and report update
@@ -684,7 +749,9 @@ for si = 1:nSteps
                     (nChanAfter - nChanBefore);
             end
             if strcmp(stepName, 'Epoching') && fileReport.trials.original == 0
-                fileReport.trials.original = size(EEG.data, 3);
+                fileReport.trials.original    = size(EEG.data, 3);
+                fileReport.trials.survivingIdx = 1:fileReport.trials.original;
+                fileReport.trials.rejectedIndices = [];
             end
             if size(EEG.data, 3) > 1
                 fileReport.trials.final = nEpochAfter;
@@ -805,6 +872,45 @@ for si = 1:nSteps
             'epochAfter',  nEpochAfter, ...
             'error',       ''); %#ok<AGROW>
 
+        % Auto Quality Report: render a per-(file, gate) QC PNG after
+        % every successful Quality Gate. Wrapped in try/catch so a
+        % rendering bug never aborts the actual data run.
+        if ~isempty(opts.batchCtx) && opts.autoQualityReport ...
+                && strcmp(stepName, 'Quality Gate')
+            pngName = sprintf('%02d_%s.png', si, sanitizeForPath(stepName));
+            outPath = fullfile(outputPaths(opts.batchCtx, 'qc', fileBase), pngName);
+            try
+                if opts.qcTmsAutoDetect
+                    tmsWin = inferTmsWindow(EEG, opts.qcTmsWindow);
+                else
+                    tmsWin = opts.qcTmsWindow;
+                end
+                qcOpts = struct( ...
+                    'title',     fileBase, ...
+                    'stepLabel', sprintf('Step %d / %s', si, stepName), ...
+                    'attribute', opts.qcAttribute, ...
+                    'tmsWindow', tmsWin, ...
+                    'size',      [1600 1200]);
+                qcOpts.panels = struct('attribMatrix',true,'icaGrid',true, ...
+                                       'butterfly',true,'psd',true);
+                % Hand rejected-trial info to the renderer so the
+                % heatmap can show gaps + red bars at the original
+                % positions of removed epochs.
+                qcOpts.rejectedTrialIdx = fileReport.trials.rejectedIndices;
+                qcOpts.originalTrials   = fileReport.trials.original;
+                renderQualityFigure(EEG, outPath, qcOpts);
+                if ~isfield(fileReport, 'quality') ...
+                        || ~isfield(fileReport.quality, 'figures')
+                    fileReport.quality = struct('figures', {{}});
+                end
+                fileReport.quality.figures{end+1} = outPath;
+                sendWorkerLog(opts.logQueue, wLabel, 'QC %s', outPath);
+            catch qcErr
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'QC render FAILED (continuing): %s', qcErr.message);
+            end
+        end
+
     catch err
         elapsed = toc(t0);
         sendWorkerLog(opts.logQueue, wLabel, 'Step %d/%d ERROR  "%s"  (%.2fs)  %s', ...
@@ -819,6 +925,20 @@ for si = 1:nSteps
             'epochAfter',  nEpochBefore, ...
             'error',       err.message); %#ok<AGROW>
 
+        % Quality Gate fails are user-defined skip points, not pipeline
+        % errors. Don't prompt the user (skipping IS the chosen behavior)
+        % and don't re-wrap the identifier; runPipelineCore.parseFailure
+        % needs the original 'nestapp:qualityFail' message shape to tag
+        % the file as 'skipped' rather than 'errored'.
+        if strcmp(err.identifier, 'nestapp:qualityFail')
+            if ~isempty(opts.progressQueue)
+                send(opts.progressQueue, struct( ...
+                    'fi', opts.fileIndex, 'si', 0, ...
+                    'nSteps', nSteps, 'stepName', 'Skipped', 'failed', true));
+            end
+            rethrow(err);
+        end
+
         warning('An error occurred at file %s at step %d: %s', fileName, si, stepName);
 
         shouldContinue = false;
@@ -828,7 +948,6 @@ for si = 1:nSteps
         end
 
         if ~shouldContinue
-            writeSessionLog(pathName, fileName, stepLog);
             if ~isempty(opts.onStepError)
                 % Serial mode: user chose Abort on the step prompt - cancel whole run.
                 error('nestapp:cancelled', 'Run aborted at step %d (%s): %s', ...
@@ -861,8 +980,22 @@ if isstruct(EEG) && isfield(EEG, 'history')
     ALLCOM = [newLines(:)', ALLCOM];
 end
 
-sendWorkerLog(opts.logQueue, wLabel, 'Writing session log...');
-writeSessionLog(pathName, fileName, stepLog);
+% Auto-export per-file PDF when the pref is on. Failure is logged
+% but never aborts the pipeline.
+if opts.autoExportPDF
+    try
+        if ~isempty(opts.batchCtx)
+            pdfPath = exportFileReportPDF(fileReport, opts.batchCtx);
+        else
+            pdfPath = exportFileReportPDF(fileReport, pathName);
+        end
+        sendWorkerLog(opts.logQueue, wLabel, 'PDF report written: %s', pdfPath);
+    catch pdfErr
+        sendWorkerLog(opts.logQueue, wLabel, ...
+            'PDF export FAILED (continuing): %s', pdfErr.message);
+    end
+end
+
 sendWorkerLog(opts.logQueue, wLabel, 'DONE   %s  (total %.2fs)', fileName, toc(fileTic));
 
 % Sentinel: si=0 signals the file is truly done (after all cleanup).
@@ -879,6 +1012,28 @@ end
 
 % -- local helpers ---------------------------------------------------------
 
+function fileReport = recordRejectedTrials(fileReport, localIdx)
+% Map locally-indexed rejected trials back to original-trial numbers
+% and append to the cumulative list. Maintains a surviving-trial map
+% so chained rejection steps stay correct even when multiple bad-
+% epoch passes run in the same pipeline. No-op when rejection ran
+% before any Epoching step (no surviving map yet) or when localIdx
+% is empty.
+if isempty(localIdx), return, end
+if ~isfield(fileReport.trials, 'survivingIdx') ...
+        || isempty(fileReport.trials.survivingIdx)
+    return
+end
+localIdx = sort(localIdx(:)');
+keep = localIdx >= 1 & localIdx <= numel(fileReport.trials.survivingIdx);
+localIdx = localIdx(keep);
+if isempty(localIdx), return, end
+rejectedOriginal = fileReport.trials.survivingIdx(localIdx);
+fileReport.trials.rejectedIndices = sort([fileReport.trials.rejectedIndices, ...
+                                          rejectedOriginal]);
+fileReport.trials.survivingIdx(localIdx) = [];
+end
+
 function cats = tesaICACategories()
 % TESA component category names, in the order TESA's icaCompClass.compClass codes map to.
 cats = {'TMS Muscle','Blink','Eye Move','Muscle','Elec Noise','Sensory','Reject'};
@@ -887,6 +1042,16 @@ end
 function codes = tesaICAClassCodes()
 % TESA compClass integer codes, matched positionally to tesaICACategories().
 codes = [3, 4, 5, 6, 7, 8, 2];
+end
+
+function v = worseVerdict(a, b)
+% Return the worst severity of two verdicts: Fail > Marginal > Pass > NotChecked.
+order = {'NotChecked', 'Pass', 'Marginal', 'Fail', 'Pending'};
+ia = find(strcmp(a, order));
+ib = find(strcmp(b, order));
+if isempty(ia), ia = 0; end
+if isempty(ib), ib = 0; end
+v = order{max(ia, ib)};
 end
 
 function sendWorkerLog(q, label, fmt, varargin)

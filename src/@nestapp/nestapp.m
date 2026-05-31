@@ -142,7 +142,9 @@ classdef nestapp < matlab.apps.AppBase
         ReportsFolderLabel              matlab.ui.control.Label
         ReportsStatusLabel              matlab.ui.control.Label
         ReportsTextArea                 matlab.ui.control.TextArea
+        ReportsDashboardPanel           matlab.ui.container.Panel
         ExportReportsCSVButton          matlab.ui.control.Button
+        ExportPDFButton                 matlab.ui.control.Button
         CopyMethodsButton               matlab.ui.control.Button
         % Analysis tab - static elements not auto-resized by MATLAB
         AnalysisSelPanel                matlab.ui.container.Panel
@@ -458,6 +460,17 @@ classdef nestapp < matlab.apps.AppBase
             if ~isempty(eeglabPath) && isfolder(eeglabPath)
                 addpath(eeglabPath);
             end
+
+            % One-shot migration: legacy 'reportFolder' pref folds into
+            % the new unified 'outputRoot' pref.
+            if ispref('nestapp', 'reportFolder')
+                rf = getpref('nestapp', 'reportFolder', '');
+                if ~ispref('nestapp', 'outputRoot') && ~isempty(rf) && isfolder(rf)
+                    setpref('nestapp', 'outputRoot', rf);
+                    nestLog('CFG', 'Migrated reportFolder pref -> outputRoot: %s', rf);
+                end
+                rmpref('nestapp', 'reportFolder');
+            end
         end
 
         function pushRecent(app, prefKey, newEntry) %#ok<INUSL>
@@ -474,44 +487,85 @@ classdef nestapp < matlab.apps.AppBase
         %   and behavioural options. Changes are written to getpref/setpref
         %   under the 'nestapp' group and applied immediately on Save.
             dlg = uifigure('Name', 'nestapp Preferences', ...
-                'Position', [200 200 420 430], ...
+                'Position', [200 200 420 640], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
+
+            % --- Quality Screening section (new, at top) ---
+            uilabel(dlg, 'Text', 'Quality Screening', 'FontWeight', 'bold', ...
+                'Position', [15 605 200 20]);
+            cbAutoQC = uicheckbox(dlg, 'Text', 'Auto-generate QC images at each Quality Gate', ...
+                'Position', [15 580 380 22], ...
+                'Value', getpref('nestapp', 'autoQualityReport', false));
+            cbTmsAuto = uicheckbox(dlg, 'Text', 'Auto-detect TMS pulse window from EEG events', ...
+                'Position', [15 558 380 22], ...
+                'Value', getpref('nestapp', 'qualityTmsAutoDetect', true));
+            cbSkipFail = uicheckbox(dlg, 'Text', 'Skip remaining pipeline steps when Quality Gate fails', ...
+                'Position', [15 536 380 22], ...
+                'Value', getpref('nestapp', 'skipOnQualityFail', false));
+            cbAutoPDF = uicheckbox(dlg, 'Text', 'Auto-save PDF report per file (text + checkpoint images)', ...
+                'Position', [15 514 380 22], ...
+                'Value', getpref('nestapp', 'autoExportPDF', false));
+            uilabel(dlg, 'Text', 'Attribute mode:', ...
+                'Position', [15 487 95 22], 'HorizontalAlignment', 'right');
+            qcModes = qualityAttributeModes();
+            ddAttr = uidropdown(dlg, ...
+                'Position', [115 487 150 22], ...
+                'Items', qcModes, ...
+                'Value', resolveAttributePref());
+            uilabel(dlg, 'Text', 'TMS window (ms):', ...
+                'Position', [15 460 105 22], 'HorizontalAlignment', 'right');
+            qcWin = readTmsWindowPref();
+            nfTmsStart = uieditfield(dlg, 'numeric', ...
+                'Position', [125 460 55 22], 'Value', qcWin(1));
+            uilabel(dlg, 'Text', 'to', ...
+                'Position', [185 460 15 22], 'HorizontalAlignment', 'center');
+            nfTmsEnd = uieditfield(dlg, 'numeric', ...
+                'Position', [205 460 55 22], 'Value', qcWin(2));
 
             % --- EEGLAB section ---
             uilabel(dlg, 'Text', 'EEGLAB', 'FontWeight', 'bold', ...
-                'Position', [15 390 200 20]);
+                'Position', [15 420 200 20]);
             uilabel(dlg, 'Text', 'Path:', ...
-                'Position', [15 365 35 22], 'HorizontalAlignment', 'right');
+                'Position', [15 395 35 22], 'HorizontalAlignment', 'right');
             fEeglab = uieditfield(dlg, 'text', ...
-                'Position', [55 365 275 22], 'Editable', 'on', ...
+                'Position', [55 395 275 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','eeglabPath',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 365 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 395 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseEeglab());
 
             % --- Default Locations section ---
             uilabel(dlg, 'Text', 'Default Locations', 'FontWeight', 'bold', ...
-                'Position', [15 335 200 20]);
+                'Position', [15 365 200 20]);
             uilabel(dlg, 'Text', 'Data folder:', ...
-                'Position', [15 310 65 22], 'HorizontalAlignment', 'right');
+                'Position', [15 340 65 22], 'HorizontalAlignment', 'right');
             fData = uieditfield(dlg, 'text', ...
-                'Position', [85 310 245 22], 'Editable', 'on', ...
+                'Position', [85 340 245 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastDataFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 310 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 340 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fData));
             uilabel(dlg, 'Text', 'Pipeline folder:', ...
-                'Position', [15 282 80 22], 'HorizontalAlignment', 'right');
+                'Position', [15 312 80 22], 'HorizontalAlignment', 'right');
             fPipeline = uieditfield(dlg, 'text', ...
-                'Position', [100 282 230 22], 'Editable', 'on', ...
+                'Position', [100 312 230 22], 'Editable', 'on', ...
                 'Value', getpref('nestapp','lastPipelineFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 282 70 22], ...
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 312 70 22], ...
                 'ButtonPushedFcn', @(~,~) browseFolder(fPipeline));
-            uilabel(dlg, 'Text', 'Reports folder:', ...
-                'Position', [15 254 80 22], 'HorizontalAlignment', 'right');
-            fReports = uieditfield(dlg, 'text', ...
-                'Position', [100 254 230 22], 'Editable', 'on', ...
-                'Value', getpref('nestapp','reportFolder',''));
-            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 254 70 22], ...
-                'ButtonPushedFcn', @(~,~) browseFolder(fReports));
+            uilabel(dlg, 'Text', 'Output root:', ...
+                'Position', [15 284 75 22], 'HorizontalAlignment', 'right');
+            fOutputRoot = uieditfield(dlg, 'text', ...
+                'Position', [95 284 235 22], 'Editable', 'on', ...
+                'Value', getpref('nestapp','outputRoot',''));
+            uibutton(dlg, 'Text', 'Browse...', 'Position', [335 284 70 22], ...
+                'ButtonPushedFcn', @(~,~) browseFolder(fOutputRoot));
+            uilabel(dlg, 'Text', 'Layout:', ...
+                'Position', [15 256 75 22], 'HorizontalAlignment', 'right');
+            ddLayout = uidropdown(dlg, ...
+                'Position', [95 256 175 22], ...
+                'Items',     {'By type (data/reports/qc)', 'Per input file'}, ...
+                'ItemsData', {'typeBased',                  'perInput'}, ...
+                'Value',     getpref('nestapp','outputLayout','typeBased'));
+            uilabel(dlg, 'Text', '(blank root = next to inputs)', ...
+                'Position', [275 256 140 22], 'FontColor', [0.4 0.4 0.4], 'FontSize', 10);
 
             % --- Behaviour section ---
             uilabel(dlg, 'Text', 'Behaviour', 'FontWeight', 'bold', ...
@@ -570,19 +624,23 @@ classdef nestapp < matlab.apps.AppBase
                 if ~isequal(p, 0); field.Value = p; end
             end
             function savePrefs()
-                % EEGLAB path
+                % EEGLAB path - warn on invalid value but don't abort
+                % the rest of the save (otherwise the other preferences
+                % the user just toggled would silently be discarded).
                 ep = strtrim(fEeglab.Value);
-                if ~isempty(ep)
-                    if ~isfolder(ep)
-                        uialert(dlg, 'EEGLAB path does not exist.', 'Invalid Path');
-                        return
-                    end
+                eeglabPathValid = isempty(ep) || isfolder(ep);
+                if ~eeglabPathValid
+                    uialert(dlg, ['EEGLAB path does not exist: ' ep ...
+                        '. Other preferences were still saved.'], ...
+                        'Invalid EEGLAB Path', 'Icon', 'warning');
+                elseif ~isempty(ep)
                     addpath(ep);
                 end
                 setpref('nestapp', 'eeglabPath',          ep);
                 setpref('nestapp', 'lastDataFolder',      strtrim(fData.Value));
                 setpref('nestapp', 'lastPipelineFolder',  strtrim(fPipeline.Value));
-                setpref('nestapp', 'reportFolder',        strtrim(fReports.Value));
+                setpref('nestapp', 'outputRoot',          strtrim(fOutputRoot.Value));
+                setpref('nestapp', 'outputLayout',        ddLayout.Value);
                 setpref('nestapp', 'showReport',             cbReport.Value);
                 setpref('nestapp', 'confirmClear',           cbConfirm.Value);
                 setpref('nestapp', 'overwriteReports',       cbOverwrite.Value);
@@ -591,14 +649,50 @@ classdef nestapp < matlab.apps.AppBase
                 if ~isempty(spnWorkers)
                     setpref('nestapp', 'maxParallelWorkers', round(spnWorkers.Value));
                 end
+
+                % Quality Screening prefs - validation mirrors
+                % runPipelineCore: invalid mode -> minmax_no_tms,
+                % inverted window -> [0 25].
+                setpref('nestapp', 'autoQualityReport',    cbAutoQC.Value);
+                setpref('nestapp', 'qualityTmsAutoDetect', cbTmsAuto.Value);
+                setpref('nestapp', 'skipOnQualityFail',    cbSkipFail.Value);
+                setpref('nestapp', 'autoExportPDF',        cbAutoPDF.Value);
+
+                attr = ddAttr.Value;
+                if ~any(strcmp(attr, qualityAttributeModes()))
+                    attr = 'minmax_no_tms';
+                end
+                setpref('nestapp', 'qualityAttribute', attr);
+
+                w = [nfTmsStart.Value, nfTmsEnd.Value];
+                if ~(isnumeric(w) && numel(w) == 2 && w(2) > w(1))
+                    w = [0 25];
+                end
+                setpref('nestapp', 'qualityTmsWindow', w);
+
                 close(dlg);
+            end
+            function v = resolveAttributePref()
+                v = getpref('nestapp', 'qualityAttribute', 'minmax_no_tms');
+                if ~any(strcmp(v, qualityAttributeModes()))
+                    v = 'minmax_no_tms';
+                end
+            end
+            function w = readTmsWindowPref()
+                w = getpref('nestapp', 'qualityTmsWindow', [0 25]);
+                if ~(isnumeric(w) && numel(w) == 2 && w(2) > w(1))
+                    w = [0 25];
+                end
             end
         end
 
         function updateReportsTabImpl(app)
         % UPDATEREPORTSTABIMPL  Refresh the Reports tab listbox from session and loaded reports.
         %   Combines app.allPipelineReports (from current run) with app.loadedReports
-        %   (loaded from disk). Updates listbox labels and status text.
+        %   (loaded from disk). Updates listbox labels and status text. When
+        %   any report has Quality Gate data, appends a synthetic "Session
+        %   Quality Dashboard" entry that swaps the right-side area to the
+        %   dashboard panel on selection.
             allEntries = [app.allPipelineReports, app.loadedReports];
             n = numel(allEntries);
             if n == 0
@@ -606,15 +700,29 @@ classdef nestapp < matlab.apps.AppBase
                 app.ReportsListBox.ItemsData = {};
                 app.ReportsStatusLabel.Text = 'No reports loaded.';
                 app.ReportsTextArea.Value = '';
+                app.ReportsDashboardPanel.Visible = 'off';
+                app.ReportsTextArea.Visible = 'on';
                 app.ExportReportsCSVButton.Enable = 'off';
+                app.ExportPDFButton.Enable = 'off';
                 app.CopyMethodsButton.Enable = 'off';
                 return
+            end
+
+            % Append the Dashboard synthetic entry when any report has
+            % gates - keeps the listbox tidy when nothing was screened.
+            if anyReportHasGates(allEntries)
+                dashEntry = struct('isDashboard', true, ...
+                    'text', '', 'report', struct());
+                allEntries{end+1} = dashEntry;
+                n = numel(allEntries);
             end
 
             labels = cell(1, n);
             for i = 1:n
                 e = allEntries{i};
-                if isfield(e, 'isSummary') && e.isSummary
+                if isfield(e, 'isDashboard') && e.isDashboard
+                    labels{i} = 'Session Quality Dashboard';
+                elseif isfield(e, 'isSummary') && e.isSummary
                     % Extract file count from the summary header line
                     tok = regexp(e.text, 'PIPELINE SUMMARY\s+\((\d+) files\)', 'tokens', 'once');
                     if ~isempty(tok)
@@ -629,7 +737,16 @@ classdef nestapp < matlab.apps.AppBase
                     catch
                         dateLabel = '?';
                     end
-                    labels{i} = sprintf('%s (%s)', baseName, dateLabel);
+                    prefix = '';
+                    if isfield(e.report, 'quality') ...
+                            && isfield(e.report.quality, 'worstVerdict')
+                        switch e.report.quality.worstVerdict
+                            case 'Fail',     prefix = '[FAIL] ';
+                            case 'Marginal', prefix = '[MARG] ';
+                            case 'Pass',     prefix = '[PASS] ';
+                        end
+                    end
+                    labels{i} = sprintf('%s%s (%s)', prefix, baseName, dateLabel);
                 end
             end
 
@@ -640,11 +757,10 @@ classdef nestapp < matlab.apps.AppBase
 
             if isnumeric(prevIdx) && ~isempty(prevIdx) && prevIdx >= 1 && prevIdx <= n
                 app.ReportsListBox.Value = prevIdx;
-                app.ReportsTextArea.Value = allEntries{prevIdx}.text;
             else
                 app.ReportsListBox.Value = n;
-                app.ReportsTextArea.Value = allEntries{n}.text;
             end
+            renderReportsRightPane(app, allEntries);
 
             nSess   = numel(app.allPipelineReports);
             nLoaded = numel(app.loadedReports);
@@ -653,16 +769,80 @@ classdef nestapp < matlab.apps.AppBase
             if nLoaded > 0; parts{end+1} = sprintf('%d from disk', nLoaded); end
             app.ReportsStatusLabel.Text = strjoin(parts, ', ');
             app.ExportReportsCSVButton.Enable = 'on';
+            app.ExportPDFButton.Enable = 'on';
             app.CopyMethodsButton.Enable = 'on';
         end
 
         function ReportsListBoxValueChanged(app, ~)
-        % Callback - show the report text for the newly selected entry.
-            idx = app.ReportsListBox.Value;
-            if isempty(idx); return; end
+        % Callback - swap the right-side pane based on the selected entry.
             allEntries = [app.allPipelineReports, app.loadedReports];
-            if isnumeric(idx) && idx >= 1 && idx <= numel(allEntries)
-                app.ReportsTextArea.Value = allEntries{idx}.text;
+            if anyReportHasGates(allEntries)
+                allEntries{end+1} = struct('isDashboard', true, ...
+                    'text', '', 'report', struct());
+            end
+            renderReportsRightPane(app, allEntries);
+        end
+
+        function renderReportsRightPane(app, allEntries)
+        % Show the dashboard panel for the Dashboard entry; otherwise show
+        % the report text in the text area. Called by both
+        % updateReportsTabImpl (after a refresh) and the listbox callback.
+            idx = app.ReportsListBox.Value;
+            if isempty(idx) || ~isnumeric(idx) ...
+                    || idx < 1 || idx > numel(allEntries)
+                return
+            end
+            e = allEntries{idx};
+            if isfield(e, 'isDashboard') && e.isDashboard
+                app.ReportsTextArea.Visible       = 'off';
+                app.ReportsDashboardPanel.Visible = 'on';
+                renderDashboardPanel(app.ReportsDashboardPanel, ...
+                    collectReportStructs(allEntries), ...
+                    struct( ...
+                        'onRefresh',        @() updateReportsTabImpl(app), ...
+                        'onExport',         @() exportDashboardPNG(app, allEntries), ...
+                        'onFailedRowClick', @(name) jumpToFileEntry(app, allEntries, name)));
+            else
+                app.ReportsDashboardPanel.Visible = 'off';
+                app.ReportsTextArea.Visible       = 'on';
+                if isfield(e, 'text')
+                    app.ReportsTextArea.Value = e.text;
+                end
+            end
+        end
+
+        function exportDashboardPNG(app, allEntries)
+        % Render the dashboard into an offscreen uifigure and save as PNG.
+            [fname, fpath] = uiputfile('*.png', 'Export Quality Dashboard', ...
+                'quality_dashboard.png');
+            if isequal(fname, 0); return; end
+            outPath = fullfile(fpath, fname);
+            fig = uifigure('Visible', 'off', 'Position', [100 100 1200 800]);
+            cleanup = onCleanup(@() close(fig, 'force'));
+            renderDashboardPanel(fig, collectReportStructs(allEntries));
+            try
+                exportgraphics(fig, outPath, 'Resolution', 150);
+                app.ReportsStatusLabel.Text = sprintf('Dashboard saved: %s', fname);
+            catch err
+                uialert(app.UIFigure, ...
+                    sprintf('Export failed: %s', err.message), ...
+                    'Export Dashboard PNG', 'Icon', 'error');
+            end
+        end
+
+        function jumpToFileEntry(app, allEntries, fileName)
+        % Failed-files table row click handler - select the listbox
+        % entry for the given file basename so the user sees its text.
+            for i = 1:numel(allEntries)
+                e = allEntries{i};
+                if isfield(e, 'isSummary') || isfield(e, 'isDashboard'), continue, end
+                if ~isfield(e, 'report') || ~isfield(e.report, 'inputFile'), continue, end
+                [~, name] = fileparts(e.report.inputFile);
+                if strcmp(name, fileName)
+                    app.ReportsListBox.Value = i;
+                    renderReportsRightPane(app, allEntries);
+                    return
+                end
             end
         end
 
@@ -754,7 +934,9 @@ classdef nestapp < matlab.apps.AppBase
             end
 
             % Header
-            fprintf(fid, 'File,Processed,Channels (orig),Channels (final),Trials (orig),Trials (final),ICA removed\n');
+            fprintf(fid, ['File,Processed,Channels (orig),Channels (final),' ...
+                'Trials (orig),Trials (final),ICA removed,' ...
+                'Quality_Verdict,Quality_Reasons\n']);
 
             for i = 1:numel(allEntries)
                 e = allEntries{i};
@@ -767,14 +949,73 @@ classdef nestapp < matlab.apps.AppBase
                     dStr = '?';
                 end
 
-                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d\n', ...
+                verdict = 'NotChecked';
+                reasons = '';
+                if isfield(r, 'quality')
+                    if isfield(r.quality, 'worstVerdict') ...
+                            && ~isempty(r.quality.worstVerdict)
+                        verdict = r.quality.worstVerdict;
+                    end
+                    if isfield(r.quality, 'gates') && ~isempty(r.quality.gates)
+                        allReasons = {};
+                        for gi = 1:numel(r.quality.gates)
+                            g = r.quality.gates{gi};
+                            if isfield(g, 'reasons') && ~isempty(g.reasons)
+                                allReasons = [allReasons, g.reasons]; %#ok<AGROW>
+                            end
+                        end
+                        reasons = strjoin(allReasons, '; ');
+                        reasons = strrep(reasons, ',', ';'); % keep CSV-safe
+                    end
+                end
+
+                fprintf(fid, '%s,%s,%d,%d,%d,%d,%d,%s,%s\n', ...
                     baseName, dStr, ...
                     r.channels.original, r.channels.final, ...
                     r.trials.original, r.trials.final, ...
-                    r.ica.nRejected);
+                    r.ica.nRejected, verdict, reasons);
             end
             fclose(fid);
             app.ReportsStatusLabel.Text = sprintf('CSV saved: %s', fname);
+        end
+
+        function ExportPDFButtonPushed(app, ~)
+        % Export the currently selected file's report + checkpoint PNGs
+        % as a single PDF. Synthetic Summary / Dashboard entries skip.
+            idx = app.ReportsListBox.Value;
+            if isempty(idx)
+                uialert(app.UIFigure, 'No report selected.', 'Export PDF');
+                return
+            end
+            allEntries = [app.allPipelineReports, app.loadedReports];
+            if anyReportHasGates(allEntries)
+                allEntries{end+1} = struct('isDashboard', true, ...
+                    'text', '', 'report', struct());
+            end
+            if ~isnumeric(idx) || idx < 1 || idx > numel(allEntries)
+                uialert(app.UIFigure, 'No report selected.', 'Export PDF');
+                return
+            end
+            e = allEntries{idx};
+            if (isfield(e, 'isSummary') && e.isSummary) ...
+                    || (isfield(e, 'isDashboard') && e.isDashboard)
+                uialert(app.UIFigure, ...
+                    'Pick a single file report (not the Summary or Dashboard entry) before exporting PDF.', ...
+                    'Export PDF');
+                return
+            end
+            [~, baseName] = fileparts(e.report.inputFile);
+            [fname, fpath] = uiputfile('*.pdf', 'Export Report as PDF', ...
+                [baseName, '_report.pdf']);
+            if isequal(fname, 0); return; end
+            try
+                exportFileReportPDF(e.report, fullfile(fpath, fname));
+                app.ReportsStatusLabel.Text = sprintf('PDF saved: %s', fname);
+            catch err
+                uialert(app.UIFigure, ...
+                    sprintf('PDF export failed: %s', err.message), ...
+                    'Export PDF', 'Icon', 'error');
+            end
         end
 
         function CopyMethodsButtonPushed(app, ~)

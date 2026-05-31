@@ -21,7 +21,7 @@ end
 testRoot = fileparts(mfilename('fullpath'));
 repoRoot = fileparts(testRoot);
 addpath(repoRoot);
-addpath(fullfile(repoRoot, 'src'));
+addpath(genpath(fullfile(repoRoot, 'src')));
 addpath(fullfile(testRoot, 'helpers'));
 
 switch lower(suite)

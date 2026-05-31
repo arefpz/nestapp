@@ -18,6 +18,7 @@ if ~isfield(opts, 'pipelineName'), opts.pipelineName = ''; end
 if ~isfield(opts, 'statusBar'),    opts.statusBar    = []; end
 if ~isfield(opts, 'parallel'),     opts.parallel     = false; end
 if ~isfield(opts, 'chanLocFile'),  opts.chanLocFile  = ''; end
+if ~isfield(opts, 'outputRoot'),   opts.outputRoot   = ''; end
 
 persistent cachedNestappSrc cachedEeglabGenpath
 
@@ -37,9 +38,69 @@ if ~depsOk
     return
 end
 
+% One-time deprecation log: warn the user about Quality Gate params
+% renamed in this version. The gate itself silently aliases them.
+warnDeprecatedGateParams(spec);
+
+% Unified batch output: every run gets one timestamped folder.
+% Destination priority: opts.outputRoot (programmatic override, used
+% by tests) > nestapp.outputRoot pref > common parent of inputs.
+% Layout pref picks between 'typeBased' and 'perInput'. All writers
+% resolve their destinations through outputPaths(batchCtx, kind, stem).
+layout   = getpref('nestapp', 'outputLayout', 'typeBased');
+batchCtx = buildBatchContext(filePaths, opts.pipelineName, layout, opts.outputRoot);
+nestLog('CFG', 'Output root: %s', batchCtx.outputRoot);
+nestLog('CFG', 'Batch folder (%s layout): %s', batchCtx.layout, batchCtx.batchRoot);
+
 % Pre-flight overwrite check.
 if getpref('nestapp', 'suppressEEGLABDialogs', true)
-    warnIfOverwriteFiles(spec, filePaths, opts);
+    warnIfOverwriteFiles(spec, filePaths, opts, batchCtx);
+end
+
+% Auto Quality Report: render a QC PNG after every Quality Gate step
+% when the pref is on. Prefs are read on the client once and threaded
+% through to workers via opts.
+autoQualityReport = getpref('nestapp', 'autoQualityReport', false);
+qcAttribute       = 'minmax_no_tms';
+qcTmsWindow       = [0 25];
+qcTmsAutoDetect   = true;
+if autoQualityReport
+    qcAttribute = getpref('nestapp', 'qualityAttribute', 'minmax_no_tms');
+    if ~any(strcmp(qcAttribute, qualityAttributeModes()))
+        nestLog('QC', ['Invalid qualityAttribute pref "%s"; ' ...
+            'falling back to minmax_no_tms'], qcAttribute);
+        qcAttribute = 'minmax_no_tms';
+    end
+
+    qcTmsWindow = getpref('nestapp', 'qualityTmsWindow', [0 25]);
+    if ~(isnumeric(qcTmsWindow) && numel(qcTmsWindow) == 2 ...
+            && qcTmsWindow(2) > qcTmsWindow(1))
+        nestLog('QC', 'Invalid qualityTmsWindow pref; falling back to [0 25] ms');
+        qcTmsWindow = [0 25];
+    end
+
+    qcTmsAutoDetect = logical(getpref('nestapp', 'qualityTmsAutoDetect', true));
+
+    nestLog('QC', ['Auto Quality Report enabled (attribute=%s, ' ...
+        'tmsWindow=[%g %g] ms). A QC PNG is captured after every ' ...
+        'Quality Gate step.'], ...
+        qcAttribute, qcTmsWindow(1), qcTmsWindow(2));
+end
+
+% Quality Gate skip-on-fail preference. Off by default; when on, any
+% Quality Gate step that emits 'Fail' short-circuits the rest of that
+% file's pipeline (other files keep going). Incompatible with batch
+% mode (batch verdicts are not known until after the run completes);
+% we warn at the post-run step if both are seen together.
+skipOnQualityFail = getpref('nestapp', 'skipOnQualityFail', false);
+if skipOnQualityFail
+    nestLog('QC', 'skipOnQualityFail = true (Quality Gate Fail short-circuits the file)');
+end
+
+% Per-file PDF report auto-export pref (Phase 4).
+autoExportPDF = getpref('nestapp', 'autoExportPDF', false);
+if autoExportPDF
+    nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
 end
 
 % Parallel guard: requires PCT, no interactive steps, and >1 file.
@@ -99,8 +160,17 @@ if useParallel
     nestLog('PAR', 'Propagating paths to workers...');
     t0 = tic;
     spmd
+        % Suppress MATLAB:dispatcher:nameConflict on each worker for
+        % the duration of the addpath. EEGLAB plugins ship functions
+        % named gather / labindex / numlabs (same as MATLAB's
+        % parallel built-ins); the shadowing is expected and noisy
+        % when it fires once per worker per run.
+        % NB: spmd disallows anonymous functions, so we can't use
+        % onCleanup here - manually re-enable on the way out.
+        warning('off', 'MATLAB:dispatcher:nameConflict');
         if ~isempty(nestappSrc),    addpath(nestappSrc);    end
         if ~isempty(eeglabGenpath), addpath(eeglabGenpath); end
+        warning('on', 'MATLAB:dispatcher:nameConflict');
     end
     nestLog('PAR', 'spmd done (%.2fs)', toc(t0));
     nCores           = feature('numcores');
@@ -119,7 +189,8 @@ dlgCleanup = onCleanup(@() closeDlg(dlg));
 
 reports   = cell(nFiles, 1);
 cancelled = false;
-failed    = struct('fi', {}, 'name', {}, 'step', {}, 'stepName', {}, 'message', {});
+failed    = struct('fi', {}, 'name', {}, 'step', {}, 'stepName', {}, ...
+                   'message', {}, 'kind', {});
 
 if useParallel
     % DataQueue carries per-step progress, log messages, and file-done
@@ -137,6 +208,7 @@ if useParallel
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
     wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
+    wOpts = applyQCOpts(wOpts, batchCtx, autoQualityReport, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);
     for fi = 1:nFiles
@@ -145,6 +217,9 @@ if useParallel
         futures(fi) = parfeval(@processOneFile, 2, spec, filePaths{fi}, fOpts); %#ok<AGROW>
     end
 
+    % Track which failed futures we've already captured + drained.
+    drained = false(1, nFiles);
+
     % Poll until all futures finish or user cancels.
     while true
         pause(0.25); drawnow;
@@ -152,9 +227,6 @@ if useParallel
             nestLog('PAR', 'Cancel requested - cancelling futures');
             cancel(futures);
             cancelled = true;
-            % Wait for workers to reach a terminal state before closing the
-            % dialog.  cancel() is asynchronous - workers may still be
-            % mid-EEGLAB-call and need time to wind down.
             t0 = tic;
             while toc(t0) < 30
                 termStates = {futures.State};
@@ -168,22 +240,40 @@ if useParallel
             break
         end
         states = {futures.State};
+        % Drain any newly-errored future immediately so we can record
+        % its message via parseFailure and so the unfetched error
+        % doesn't keep tripping fetchOutputs later. NB: a parfeval
+        % future whose worker threw lands in State == 'finished' with
+        % non-empty .Error - NOT State == 'failed'.
+        for fi = 1:nFiles
+            if ~drained(fi) && futureErrored(futures(fi))
+                rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
+                if ~isempty(rec)
+                    failed(end+1) = rec; %#ok<AGROW>
+                end
+                drained(fi) = true;
+            end
+        end
         if all(strcmp(states, 'finished') | strcmp(states, 'failed')); break; end
     end
     nestLog('PAR', 'Poll loop exited (cancelled=%d)', cancelled);
 
-    finalStates = {futures.State};
+    % Errored futures and successful futures both end up in
+    % State == 'finished'; the only safe way to fetch outputs is to
+    % check for an error first and skip fetchOutputs on those (it
+    % rethrows the worker's error on every call).
     for fi = 1:nFiles
-        if strcmp(finalStates{fi}, 'finished')
+        if futureErrored(futures(fi))
+            if ~drained(fi)
+                rec = drainFailedFuture(fi, futures(fi), filePaths{fi}, ~cancelled);
+                if ~isempty(rec), failed(end+1) = rec; end %#ok<AGROW>
+                drained(fi) = true;
+            end
+        elseif strcmp(futures(fi).State, 'finished')
             [reports{fi}, ~] = fetchOutputs(futures(fi));
-        elseif strcmp(finalStates{fi}, 'failed') && ~cancelled
-            % Only record genuine pre-cancel failures; cancel-induced ones are expected.
-            [~, fname, fext] = fileparts(filePaths{fi});
-            rec = parseFailure(fi, [fname fext], futures(fi).Error.message);
-            failed(end+1) = rec; %#ok<AGROW>
-            logFileFailure('PAR', rec);
         end
     end
+    delete(futures);
 
 else
     for fi = 1:nFiles
@@ -202,6 +292,7 @@ else
         fOpts.onPickChanFile = @() pickChanFile(opts.uiFigure);
         fOpts.progressQueue  = [];   % serial uses progressFcn, not DataQueue
         fOpts.fileIndex      = fi;
+        fOpts = applyQCOpts(fOpts, batchCtx, autoQualityReport, qcAttribute, qcTmsWindow, skipOnQualityFail, qcTmsAutoDetect, autoExportPDF);
 
         try
             [reports{fi}, ~] = processOneFile(spec, filePaths{fi}, fOpts);
@@ -230,6 +321,32 @@ end
 
 closeDlg(dlg);
 
+nestLog('CFG', 'Batch artifacts saved to: %s', batchCtx.batchRoot);
+
+% Batch-mode Quality Gate verdicts: resolved across all completed
+% reports using median + N * MAD cutoffs. Pending verdicts inside
+% successful reports become Pass / Marginal / Fail; reports with no
+% batch-mode gates are unaffected.
+if ~cancelled
+    successReports = reports(~cellfun(@isempty, reports));
+    if hasPendingBatchGates(successReports)
+        if skipOnQualityFail
+            nestLog('QC', ['Batch-mode Quality Gates ignore skipOnQualityFail ' ...
+                '(verdicts are not known until after the run completes)']);
+        end
+        successReports = finalizeBatchVerdicts(successReports);
+        % Write resolved reports back into the per-file slots so the
+        % downstream summary / CSV / save sees the final verdicts.
+        slot = 0;
+        for fi = 1:nFiles
+            if ~isempty(reports{fi})
+                slot = slot + 1;
+                reports{fi} = successReports{slot};
+            end
+        end
+    end
+end
+
 % Post-run failure recovery: if some (but not all) files failed, give the
 % user a chance to abandon the whole run before reports are generated.
 if ~cancelled && ~isempty(failed)
@@ -246,12 +363,17 @@ end
 summaries = cell(nFiles, 1);
 for fi = 1:nFiles
     if ~isempty(reports{fi})
-        [pd, ~, ~]    = fileparts(filePaths{fi});
-        [summaries{fi}, ~] = exportReport(reports{fi}, [pd, filesep]);
+        [summaries{fi}, ~] = exportReport(reports{fi}, batchCtx);
     end
 end
 allReports   = reports(~cellfun(@isempty, reports));
 allSummaries = summaries(~cellfun(@isempty, summaries));
+
+% Batch-level artifacts: spec snapshot, dashboard PNG, summary CSV.
+% Each wrapped in its own try so one failure can't take down the run.
+if ~cancelled && ~isempty(allReports)
+    writeBatchArtifacts(batchCtx, spec, opts.pipelineName, allReports, failed);
+end
 
 if cancelled
     % Discard any partially-completed reports - a cancelled run is not a result.
@@ -379,6 +501,22 @@ end
 
 if ~isvalid(dlg.fig); return; end
 
+% Streaming Quality Gate verdict (Phase 4). Repaints the slot label
+% and recolors the bar fill until the next step start message
+% restores the normal step-progress display.
+if isfield(msg, 'gateVerdict') && ~isempty(msg.gateVerdict)
+    udGate = dlg.fig.UserData;
+    slot = udGate.slotMap(msg.fi);
+    if slot > 0
+        dlg.labels(slot).Text = sprintf( ...
+            'File %d \x2014 [%s] %s  (%d/%d)', ...
+            msg.fi, upper(msg.gateVerdict), msg.stepName, ...
+            msg.si, msg.nSteps);
+        dlg.fills(slot).BackgroundColor = verdictFill(msg.gateVerdict);
+    end
+    return
+end
+
 % In serial mode, flush queued UI events so a Cancel click is registered
 % before we read the flag.  Not safe to call drawnow from afterEach handlers.
 if throwOnCancel
@@ -451,6 +589,46 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Shared helpers
 
+function c = verdictFill(verdict)
+% Color the per-slot bar fill briefly while a Quality Gate verdict is
+% on display in the progress dialog. Reset by the next step-start
+% message back to the normal blue. Absolute-mode gates only ever
+% return Pass/Marginal/Fail; batch-mode Pending is resolved
+% post-batch and never streamed.
+switch verdict
+    case 'Pass',     c = [0.20 0.70 0.30];   % green
+    case 'Marginal', c = [0.95 0.80 0.20];   % yellow
+    case 'Fail',     c = [0.85 0.20 0.20];   % red
+    otherwise,       c = [0.70 0.70 0.70];   % gray
+end
+end
+
+function tf = hasPendingBatchGates(reports)
+% Scan completed reports for any Quality Gate left in 'Pending' state.
+tf = false;
+for k = 1:numel(reports)
+    r = reports{k};
+    if ~isfield(r, 'quality') || ~isfield(r.quality, 'gates'), continue, end
+    for gi = 1:numel(r.quality.gates)
+        if strcmpi(r.quality.gates{gi}.verdict, 'Pending')
+            tf = true; return
+        end
+    end
+end
+end
+
+function opts = applyQCOpts(opts, batchCtx, autoQualityReport, attribute, tmsWindow, ...
+        skipOnQualityFail, tmsAutoDetect, autoExportPDF)
+% Assign the QC opts onto a worker/serial options struct.
+opts.batchCtx          = batchCtx;
+opts.autoQualityReport = autoQualityReport;
+opts.qcAttribute       = attribute;
+opts.qcTmsWindow       = tmsWindow;
+opts.skipOnQualityFail = skipOnQualityFail;
+opts.qcTmsAutoDetect   = tmsAutoDetect;
+opts.autoExportPDF     = autoExportPDF;
+end
+
 function parallelSkipMsg(statusBar, msg)
 fprintf('[nestapp] %s\n', msg);
 if ~isempty(statusBar) && isvalid(statusBar)
@@ -467,12 +645,79 @@ end
 chFile = fullfile(chPath, chName);
 end
 
+function tf = futureErrored(f)
+% A parfeval future whose worker threw has State == 'finished' with
+% non-empty .Error in current MATLAB releases. Older releases used
+% State == 'failed'. Check both shapes so we don't rely on the
+% release-specific behaviour.
+if strcmp(f.State, 'failed')
+    tf = true;
+    return
+end
+if strcmp(f.State, 'finished')
+    try
+        tf = ~isempty(f.Error);
+    catch
+        tf = false;
+    end
+    return
+end
+tf = false;
+end
+
+function rec = drainFailedFuture(fi, future, filePath, recordIt)
+% Consume a failed parfeval future's error so MATLAB does not surface
+% "One or more futures resulted in an error" later. Returns a
+% parseFailure record when recordIt is true (genuine pre-cancel
+% failure); returns [] when recordIt is false (cancel-induced).
+rec = [];
+errMsg = '';
+try
+    errMsg = future.Error.message;
+catch
+    % rare: future has no .Error - drain anyway.
+end
+try
+    fetchOutputs(future);
+catch
+    % expected - error is now considered consumed
+end
+if recordIt
+    [~, fname, fext] = fileparts(filePath);
+    rec = parseFailure(fi, [fname fext], errMsg);
+    logFileFailure('PAR', rec);
+end
+end
+
 function rec = parseFailure(fi, name, msg)
 % Parse a processOneFile error message into a structured failure record.
-% Messages from nestapp:stepFailed look like:
-%   "Step 21 (Remove ICA Components (TESA)) failed: <root cause>"
+% Two known shapes (both emitted via error() from processOneFile):
+%
+%   nestapp:stepFailed
+%     "Step 21 (Remove ICA Components (TESA)) failed: <root cause>"
+%     -> rec.kind = 'errored'
+%
+%   nestapp:qualityFail
+%     "Step 3 (Quality Gate "post-load") failed: <reason>; <reason>"
+%     -> rec.kind = 'skipped' (the file was healthy enough to load
+%        but failed user-defined quality thresholds; not really an error)
+%
 % Greedy capture on the step name because it can itself contain parens.
-rec = struct('fi', fi, 'name', name, 'step', '', 'stepName', '', 'message', msg);
+rec = struct('fi', fi, 'name', name, 'step', '', 'stepName', '', ...
+    'message', msg, 'kind', 'errored');
+
+% Try the Quality Gate shape first so its quoted-label form does not
+% get mis-parsed by the generic regex below.
+qg = regexp(msg, '^Step (\d+) \(Quality Gate "([^"]+)"\) failed:\s*(.*)$', ...
+    'tokens', 'once', 'dotall');
+if ~isempty(qg)
+    rec.step     = qg{1};
+    rec.stepName = sprintf('Quality Gate "%s"', qg{2});
+    rec.message  = qg{3};
+    rec.kind     = 'skipped';
+    return
+end
+
 tok = regexp(msg, '^Step (\d+) \((.+)\) failed:\s*(.*)$', 'tokens', 'once', 'dotall');
 if ~isempty(tok)
     rec.step     = tok{1};
@@ -498,28 +743,28 @@ s = regexprep(msg, '\s*[\r\n]+\s*', ' | ');
 end
 
 function decision = promptFailureRecovery(uiFig, failed, nFiles)
-% Post-run dialog: list failed files and let the user decide whether to
-% accept the partial results or abandon the whole run.
+% Post-run dialog: list failed files (grouped by kind) and let the user
+% decide whether to accept the partial results or abandon the whole run.
 nFailed = numel(failed);
 nOk     = nFiles - nFailed;
-MAX_SHOW = 10;
-nShow   = min(nFailed, MAX_SHOW);
-lines   = cell(1, nShow);
-for k = 1:nShow
-    f = failed(k);
-    if isempty(f.step)
-        lines{k} = sprintf('  %s -- %s', f.name, oneline(f.message));
-    else
-        lines{k} = sprintf('  %s -- step %s (%s)', f.name, f.step, f.stepName);
-    end
+
+kinds = arrayfun(@(f) failureKind(f), failed, 'UniformOutput', false);
+skipped = failed(strcmp(kinds, 'skipped'));
+errored = failed(~strcmp(kinds, 'skipped'));
+
+sections = {};
+if ~isempty(skipped)
+    sections{end+1} = renderGroup('Skipped at Quality Gate:', skipped);
 end
-listText = strjoin(lines, newline);
-if nFailed > MAX_SHOW
-    listText = [listText, sprintf('\n  ... and %d more', nFailed - MAX_SHOW)];
+if ~isempty(errored)
+    sections{end+1} = renderGroup('Errored:', errored);
 end
+listText = strjoin(sections, [newline newline]);
+
 msg = sprintf(['%d of %d files failed:\n\n%s\n\n' ...
     'Continue with %d successful files, or abandon the whole run?'], ...
     nFailed, nFiles, listText, nOk);
+
 if isempty(uiFig) || ~isvalid(uiFig)
     fprintf(2, '\n%s\n[No UI figure - continuing with successful files]\n\n', msg);
     decision = 'Continue';
@@ -529,6 +774,35 @@ decision = uiconfirm(uiFig, msg, 'Some Files Failed', ...
     'Options', {'Continue', 'Abandon Run'}, ...
     'DefaultOption', 1, 'CancelOption', 2, ...
     'Icon', 'warning');
+end
+
+function k = failureKind(f)
+if isfield(f, 'kind') && ~isempty(f.kind)
+    k = f.kind;
+else
+    k = 'errored';
+end
+end
+
+function txt = renderGroup(header, group)
+MAX_SHOW = 10;
+nShow = min(numel(group), MAX_SHOW);
+lines = cell(1, nShow);
+for k = 1:nShow
+    f = group(k);
+    if isempty(f.step)
+        lines{k} = sprintf('  %s -- %s', f.name, oneline(f.message));
+    elseif strcmp(failureKind(f), 'skipped')
+        lines{k} = sprintf('  %s -- %s: %s', f.name, f.stepName, oneline(f.message));
+    else
+        lines{k} = sprintf('  %s -- step %s (%s)', f.name, f.step, f.stepName);
+    end
+end
+body = strjoin(lines, newline);
+if numel(group) > MAX_SHOW
+    body = [body, sprintf('\n  ... and %d more', numel(group) - MAX_SHOW)];
+end
+txt = [header, newline, body];
 end
 
 function steps = findInteractiveSteps(spec, opts)
@@ -557,8 +831,12 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Pre-flight helpers
 
-function warnIfOverwriteFiles(spec, filePaths, opts)
+function warnIfOverwriteFiles(spec, filePaths, opts, batchCtx)
 % Throws 'nestapp:cancelled' if the user declines to overwrite.
+% Output files now land under <batchRoot>/data/ (typeBased) or
+% <batchRoot>/<stem>/ (perInput); the batch folder is freshly named
+% per-run, so legitimate collisions are rare. We still warn when the
+% destination .set exists (e.g. if outputRoot was just reused).
 saveIdx = find(strcmp({spec.name}, 'Save New Set'), 1);
 if isempty(saveIdx); return; end
 
@@ -576,12 +854,13 @@ if isempty(savenew); return; end
 nFiles   = numel(filePaths);
 existing = {};
 for fi = 1:nFiles
-    [fdir, fbase] = fileparts(filePaths{fi});
+    [~, fbase] = fileparts(filePaths{fi});
+    fbase = replace(replace(fbase, ' ', '_'), '-', '_');
+    dataDir = outputPaths(batchCtx, 'data', fbase);
     if strcmpi(ifn, 'yes')
-        stem    = replace(replace(fullfile(fdir, fbase), ' ', '_'), '-', '_');
-        outName = [stem, '_', savenew, '.set'];
+        outName = fullfile(dataDir, [fbase, '_', savenew, '.set']);
     else
-        outName = fullfile(fdir, [savenew, '.set']);
+        outName = fullfile(dataDir, [savenew, '.set']);
     end
     if exist(outName, 'file')
         [~, dispName] = fileparts(outName);
@@ -601,11 +880,110 @@ if strcmp(answer, 'Cancel')
 end
 end
 
+function warnDeprecatedGateParams(spec)
+% Scan a pipeline spec for Quality Gate steps using renamed params and
+% emit one CFG log line per unique mapping so users update their saved
+% pipelines. Silent when nothing deprecated is found.
+aliases = deprecatedGateAliases();
+seen = false(size(aliases, 1), 1);
+for si = 1:numel(spec)
+    if ~strcmp(spec(si).name, 'Quality Gate'), continue, end
+    p = spec(si).params;
+    for k = 1:size(aliases, 1)
+        if seen(k), continue, end
+        old = aliases{k, 1};
+        if isfield(p, old) && ~isempty(p.(old)) && p.(old) ~= 0
+            nestLog('CFG', ['Quality Gate param "%s" is deprecated. ' ...
+                'Rename to "%s" in your saved pipeline (the run will ' ...
+                'still honor the old name).'], old, aliases{k, 2});
+            seen(k) = true;
+        end
+    end
+end
+end
+
 function closeDlg(dlg)
 if isfield(dlg, 'overlay') && ~isempty(dlg.overlay) && isvalid(dlg.overlay)
     delete(dlg.overlay);
 elseif isfield(dlg, 'fig') && ~isempty(dlg.fig) && isvalid(dlg.fig)
     close(dlg.fig);
 end
+end
+
+function writeBatchArtifacts(batchCtx, spec, pipelineName, reports, failed)
+% Drop the run-level artifacts in <batchRoot>/batch (or _batch for
+% perInput layout). Every section is independently try/catched so a
+% rendering bug never costs the user their per-file outputs.
+batchDir = outputPaths(batchCtx, 'batch');
+
+% 1) Pipeline spec snapshot, so this run is reproducible from the
+%    artifacts alone.
+try
+    specPath = fullfile(batchDir, 'spec.mat');
+    save(specPath, 'spec', 'pipelineName');
+catch err
+    nestLog('CFG', 'Could not save spec.mat: %s', err.message);
+end
+
+% 2) Per-file summary CSV.
+try
+    csvPath = fullfile(batchDir, 'session_summary.csv');
+    writeSessionSummaryCsv(csvPath, reports, failed);
+catch err
+    nestLog('CFG', 'Could not write session_summary.csv: %s', err.message);
+end
+
+% 3) Dashboard PNG - only when at least one report carries a Quality
+%    Gate (otherwise the dashboard is empty and we save nothing).
+try
+    if anyReportHasGates(reports)
+        pngPath = fullfile(batchDir, 'dashboard.png');
+        renderDashboardToFile(reports, pngPath);
+    end
+catch err
+    nestLog('CFG', 'Could not render dashboard PNG: %s', err.message);
+end
+end
+
+function writeSessionSummaryCsv(csvPath, reports, failed)
+% One row per processed file. Failed files are pulled from the
+% structured failure log.
+rows = cell(0, 6);
+for k = 1:numel(reports)
+    r = reports{k};
+    [~, stem] = fileparts(r.inputFile);
+    nSteps = numel(r.steps);
+    nErr = 0;
+    durS = 0;
+    for si = 1:nSteps
+        s = r.steps{si};
+        if isfield(s, 'duration'), durS = durS + s.duration; end
+    end
+    verdict = '';
+    if isfield(r, 'quality') && isfield(r.quality, 'worstVerdict')
+        verdict = r.quality.worstVerdict;
+    end
+    rows(end+1, :) = {stem, 'ok', nSteps, nErr, durS, verdict}; %#ok<AGROW>
+end
+for k = 1:numel(failed)
+    f = failed(k);
+    [~, stem] = fileparts(f.name);
+    kind = 'errored';
+    if isfield(f, 'kind') && ~isempty(f.kind), kind = f.kind; end
+    rows(end+1, :) = {stem, kind, NaN, 1, NaN, ''}; %#ok<AGROW>
+end
+T = cell2table(rows, 'VariableNames', ...
+    {'stem','status','n_steps','n_errors','duration_s','quality_verdict'});
+writetable(T, csvPath);
+end
+
+function renderDashboardToFile(reports, pngPath)
+% Render the Session Quality Dashboard to an offscreen uifigure and
+% export it as a PNG using exportapp (uifigure-safe).
+fig = uifigure('Visible', 'off', 'Position', [100 100 1400 900]);
+cleanup = onCleanup(@() delete(fig));
+renderDashboardPanel(fig, reports);
+drawnow;
+exportapp(fig, pngPath);
 end
 
