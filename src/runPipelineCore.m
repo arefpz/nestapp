@@ -1,4 +1,8 @@
-﻿function [allReports, allSummaries] = runPipelineCore(spec, filePaths, opts)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [allReports, allSummaries] = runPipelineCore(spec, filePaths, opts)
 % RUNPIPELINECORE Execute a typed pipeline spec against a list of files.
 %   [allReports, allSummaries] = RUNPIPELINECORE(spec, filePaths, opts)
 %
@@ -49,6 +53,18 @@ warnDeprecatedGateParams(spec);
 % resolve their destinations through outputPaths(batchCtx, kind, stem).
 layout   = getpref('nestapp', 'outputLayout', 'typeBased');
 batchCtx = buildBatchContext(filePaths, opts.pipelineName, layout, opts.outputRoot);
+
+% Debug log: when the 'debugLog' pref is on, tee the full run trace to a
+% file in the batch folder (closed on cleanup, even if the run errors).
+if getpref('nestapp', 'debugLog', false)
+    lp = nestDebugLog('start', batchCtx.batchRoot);
+    debugLogCleanup = onCleanup(@() nestDebugLog('stop'));
+    nestLog('CFG', 'Debug log: %s', lp);
+end
+
+% Save-on-error bundle (metadata only) - read here, threaded to workers.
+opts.saveErrorBundle = getpref('nestapp', 'saveErrorBundle', true);
+
 nestLog('CFG', 'Output root: %s', batchCtx.outputRoot);
 nestLog('CFG', 'Batch folder (%s layout): %s', batchCtx.layout, batchCtx.batchRoot);
 
@@ -101,6 +117,22 @@ end
 autoExportPDF = getpref('nestapp', 'autoExportPDF', false);
 if autoExportPDF
     nestLog('QC', 'autoExportPDF = true (one PDF per file alongside the .mat report)');
+end
+
+% Citation for built-in templates. Logged once per batch so the
+% reference ends up in the run log alongside the data, where the user
+% will look when writing the methods section.
+citation = templateCitation(opts.pipelineName);
+if ~isempty(citation.reference)
+    nestLog('CITE', 'Pipeline: %s', opts.pipelineName);
+    nestLog('CITE', 'Cite as:  %s', citation.reference);
+    if ~isempty(citation.doi)
+        nestLog('CITE', 'DOI:      %s', citation.doi);
+    end
+    if ~isempty(citation.notes)
+        nestLog('CITE', '%s', citation.notes);
+    end
+    nestLog('CITE', 'See THIRD_PARTY_NOTICES.md for vendored dependencies.');
 end
 
 % Parallel guard: requires PCT, no interactive steps, and >1 file.

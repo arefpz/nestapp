@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function defs = defaultTEPComponentDefs()
 % DEFAULTTEPCOMPONENTDEFS  Return canonical TEP component window definitions.
 %   Windows follow Beck et al. 2024 (Hum Brain Mapp, 45:e70048).

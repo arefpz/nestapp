@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_batchTEPExtract
 % TEST_BATCHTEPEXTRACT  Integration tests for batchTEPExtract.
 %
@@ -20,8 +24,8 @@ addpath(fullfile(r, 'src'));
 % Hard requirement — missing TESA must be a visible failure, not a silent pass.
 if isempty(which('tesa_peakanalysis'))
     testCase.assumeFail( ...
-        'TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
-        'Install TESA via the EEGLAB Plugin Manager before running these tests.');
+        ['TESA (tesa_peakanalysis) is not on the MATLAB path. ' ...
+         'Install TESA via the EEGLAB Plugin Manager before running these tests.']);
 end
 end
 

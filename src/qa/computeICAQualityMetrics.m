@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function metrics = computeICAQualityMetrics(EEG)
 % COMPUTEICAQUALITYMETRICS  Per-component ICA classification + features.
 %   metrics = COMPUTEICAQUALITYMETRICS(EEG) returns a struct array, one

@@ -1,6 +1,10 @@
-﻿% WARNING: Do not open nestapp_designer.mlapp and save - App Designer will
+% WARNING: Do not open nestapp_designer.mlapp and save - App Designer will
 % regenerate this file and overwrite startupFcn and other hand-edited methods.
 % All edits must be made directly to nestapp.m.
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 classdef nestapp < matlab.apps.AppBase
 
     % Properties that correspond to app components
@@ -449,6 +453,130 @@ classdef nestapp < matlab.apps.AppBase
 
         function showAboutMenu(app, ~)
             showAbout(app);
+        end
+
+        function copyDiagnosticsMenu(app, ~)
+        % COPYDIAGNOSTICSMENU  Help-menu action: copy environment diagnostics.
+        %   Runs nestappDoctor, copies the Markdown report to the clipboard,
+        %   and shows the problems summary so the user can paste it into a
+        %   bug report (see .github/ISSUE_TEMPLATE/bug_report.yml).
+            try
+                [~, diagInfo] = nestappDoctor('Copy', true, 'Quiet', true);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not collect diagnostics:\n%s', ME.message), ...
+                    'Diagnostics Failed', 'Icon', 'error');
+                return
+            end
+            if isempty(diagInfo.problems)
+                msg  = 'Diagnostics copied to the clipboard. No problems detected.';
+                icon = 'success';
+            else
+                msg  = sprintf(['Diagnostics copied to the clipboard.\n\n' ...
+                    '%d problem(s) detected:\n  - %s'], ...
+                    numel(diagInfo.problems), strjoin(diagInfo.problems, sprintf('\n  - ')));
+                icon = 'warning';
+            end
+            uialert(app.UIFigure, msg, 'nestapp Diagnostics', 'Icon', icon);
+        end
+
+        function copyPipelineDescriptionMenu(app, ~)
+        % COPYPIPELINEDESCRIPTIONMENU  File-menu action: copy a readable
+        %   description of the current pipeline (steps + customised params)
+        %   to the clipboard, for methods sections and bug reports.
+            if isempty(app.spec)
+                uialert(app.UIFigure, 'The pipeline is empty - add steps first.', ...
+                    'No Pipeline', 'Icon', 'warning');
+                return
+            end
+            try
+                describePipeline(app.spec, 'Copy', true, 'Quiet', true);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not describe the pipeline:\n%s', ME.message), ...
+                    'Export Failed', 'Icon', 'error');
+                return
+            end
+            uialert(app.UIFigure, sprintf( ...
+                'Pipeline description (%d steps) copied to the clipboard.', ...
+                numel(app.spec)), 'Pipeline Copied', 'Icon', 'success');
+        end
+
+        function revealFolder(~, folder)
+        % REVEALFOLDER  Open a folder in the OS file browser (best-effort).
+            try
+                if ispc
+                    winopen(folder);
+                elseif ismac
+                    system(sprintf('open "%s" &', folder));
+                else
+                    system(sprintf('xdg-open "%s" &', folder));
+                end
+            catch
+                % Non-fatal: the path is shown in the dialog regardless.
+            end
+        end
+
+        function collectSupportBundleMenu(app, ~)
+        % COLLECTSUPPORTBUNDLEMENU  Help action: write a metadata-only support
+        %   bundle (environment + current pipeline) and reveal the folder.
+            outRoot = getpref('nestapp', 'outputRoot', '');
+            if isempty(outRoot) || ~isfolder(outRoot)
+                outRoot = tempdir;
+            end
+            try
+                bundleDir = collectSupportBundle(outRoot, app.spec);
+            catch ME
+                uialert(app.UIFigure, ...
+                    sprintf('Could not collect support bundle:\n%s', ME.message), ...
+                    'Support Bundle Failed', 'Icon', 'error');
+                return
+            end
+            revealFolder(app, bundleDir);
+            uialert(app.UIFigure, sprintf(['Support bundle written to:\n%s\n\n' ...
+                'It contains environment + pipeline details only (no recordings). ' ...
+                'Attach the folder to your bug report.'], bundleDir), ...
+                'Support Bundle', 'Icon', 'success');
+        end
+
+        function selfTestMenu(app, ~)
+        % SELFTESTMENU  Help action: run the fast test suite to verify the
+        %   install, reporting pass/fail. Best-effort: needs tests/ present.
+            repo = fileparts(fileparts(which('nestappVersion')));
+            runner = fullfile(repo, 'tests', 'run_tests.m');
+            if ~isfile(runner)
+                uialert(app.UIFigure, ['The test suite (tests/) is not present ' ...
+                    'in this installation, so the self-test cannot run.'], ...
+                    'Self-test Unavailable', 'Icon', 'warning');
+                return
+            end
+            dlg = uiprogressdlg(app.UIFigure, 'Title', 'Checking install', ...
+                'Message', 'Running the fast test suite...', 'Indeterminate', 'on');
+            closeDlg = onCleanup(@() close(dlg));
+            try
+                addpath(fullfile(repo, 'tests'));
+                addpath(fullfile(repo, 'tests', 'helpers'));
+                results = [];
+                evalc('results = run_tests(''fast'')');   % capture verbose output
+            catch ME
+                clear closeDlg;
+                uialert(app.UIFigure, sprintf('Self-test could not run:\n%s', ...
+                    ME.message), 'Self-test Error', 'Icon', 'error');
+                return
+            end
+            clear closeDlg;
+            nPass = sum([results.Passed]);
+            nFail = sum([results.Failed]);
+            nInc  = sum([results.Incomplete]);
+            if nFail == 0
+                uialert(app.UIFigure, sprintf(['Install looks healthy.\n' ...
+                    '%d passed, %d skipped (optional plugins).'], nPass, nInc), ...
+                    'Self-test Passed', 'Icon', 'success');
+            else
+                uialert(app.UIFigure, sprintf(['%d test(s) FAILED (%d passed).\n' ...
+                    'Run Help > Copy Diagnostics and check your setup.'], nFail, nPass), ...
+                    'Self-test Failed', 'Icon', 'error');
+            end
         end
 
         function loadPrefs(~)
@@ -1080,12 +1208,13 @@ classdef nestapp < matlab.apps.AppBase
             end
             msg = sprintf([ ...
                 'nestapp - TMS-EEG Processing\n\n' ...
+                'nestapp: %s\n' ...
                 'EEGLAB:  %s\n' ...
                 'MATLAB:  %s\n\n' ...
                 'Please cite:\n' ...
                 'Rogasch et al. (2017) NeuroImage - TESA toolbox\n' ...
                 'Delorme & Makeig (2004) J Neurosci Methods - EEGLAB'], ...
-                eeglabVer, version);
+                nestappVersion(), eeglabVer, version);
             uialert(app.UIFigure, msg, 'About nestapp', 'Icon', 'info');
         end
 
@@ -1276,9 +1405,14 @@ classdef nestapp < matlab.apps.AppBase
 
             legend(app.UIAxes, 'show', 'Location', 'best');
 
-            % Component detection on grand mean (runs regardless of toggle to cache peaks)
+            % Component detection runs on the SMOOTHED grand mean - the same
+            % waveform that is plotted (meanx) and the same smoothing the batch
+            % CSV path applies in batchTEPExtract. Feeding TESA the raw grandMean
+            % let baseline noise wiggles register as spurious local extrema
+            % (e.g. a "negative peak" on a flat baseline or a shoulder on a
+            % monotonic rise), which defeats tesa_peakanalysis's own peak guard.
             try
-                app.tepPeaks = tepPeakFinder(grandMean, app.EEGtime, app.tepComponentDefs);
+                app.tepPeaks = tepPeakFinder(meanx, app.EEGtime, app.tepComponentDefs);
                 if app.ShowComponentsButton.Value
                     overlayTEPComponents(app);
                 end

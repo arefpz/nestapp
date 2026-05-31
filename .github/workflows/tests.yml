@@ -5,42 +5,40 @@ on:
     branches: [main, develop]
   pull_request:
 
+# Run JavaScript actions on Node 24 (silences the Node 20 deprecation warning).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  unit-tests:
-    # Requires a self-hosted runner with a MATLAB R2024b+ license.
-    # For GitHub-hosted runners, use matlab-actions/setup-matlab@v2 instead
-    # and supply a MathWorks license via repository secrets.
-    runs-on: self-hosted
+  fast-tests:
+    # Runs on a free GitHub-hosted runner. matlab-actions installs MATLAB
+    # with no license required for public repositories. The fast suite
+    # (unit + regression) is designed to need no EEGLAB, so it runs here.
+    # Integration tests require EEGLAB/TESA on disk and are run locally
+    # (see .github/CONTRIBUTING.md): run_tests('all').
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run fast test suite (unit + regression, no EEGLAB required)
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          # Signal Processing is required (qa/ uses butter/filtfilt/pwelch,
+          # exercised by the fast suite). Statistics is a declared requirement.
+          # Parallel Computing backs runPipelineCore's parallel run path; the
+          # serial fast suite does not exercise it, but it is installed so CI
+          # matches the software's real dependency set. (Image Processing /
+          # Wavelet / Optimization are NOT used by nestapp and are omitted.)
+          products: >
+            Signal_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Parallel_Computing_Toolbox
+
+      - name: Run fast test suite (unit + regression)
         uses: matlab-actions/run-command@v2
         with:
           command: |
             cd(fullfile(getenv('GITHUB_WORKSPACE'), 'tests'));
             results = run_tests('fast');
-            if any([results.Failed])
-              error('run_tests: %d test(s) failed', sum([results.Failed]));
-            end
-
-  # Integration tests require EEGLAB + TESA on disk.
-  # Enable by adding [run-integration] to the commit message or PR title.
-  integration-tests:
-    runs-on: self-hosted
-    if: contains(github.event.head_commit.message, '[run-integration]') ||
-        contains(github.event.pull_request.title, '[run-integration]')
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run integration test suite
-        uses: matlab-actions/run-command@v2
-        with:
-          command: |
-            cd(fullfile(getenv('GITHUB_WORKSPACE'), 'tests'));
-            results = run_tests('integration');
-            if any([results.Failed])
-              error('run_tests: %d integration test(s) failed', sum([results.Failed]));
-            end
+            assert(~any([results.Failed]), 'run_tests: %d test(s) failed', sum([results.Failed]));

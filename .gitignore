@@ -2,11 +2,25 @@
 *
 */
 
-# Explicitly track these files
+# Explicitly track these files. (Health files - CONTRIBUTING,
+# CODE_OF_CONDUCT, SECURITY - live under .github/; STYLE.md lives under docs/.)
 !.gitignore
+!.editorconfig
 !LICENSE
 !README.md
+!THIRD_PARTY_NOTICES.md
+!CHANGELOG.md
+!CITATION.cff
 !run_nestapp.m
+
+# Documentation (hand-written only; the generated API site is built into
+# ./site by tools/gen_docs.m and deployed in CI - it is NOT committed)
+!docs/
+!docs/*.md
+
+# Developer tooling
+!tools/
+!tools/*.m
 
 # Source files
 !src/
@@ -34,7 +48,13 @@
 !tests/helpers/*.m
 !tests/*.m
 
-# CI
+# CI & community health (CONTRIBUTING / CODE_OF_CONDUCT / SECURITY +
+# pull_request_template live here as .github/*.md)
 !.github/
+!.github/*.md
+!.github/CODEOWNERS
 !.github/workflows/
 !.github/workflows/*.yml
+!.github/ISSUE_TEMPLATE/
+!.github/ISSUE_TEMPLATE/*.yml
+!.github/ISSUE_TEMPLATE/*.md

@@ -1,6 +1,12 @@
 # nestapp
 
+![version](https://img.shields.io/badge/version-1.0.0-blue)
+![MATLAB](https://img.shields.io/badge/MATLAB-R2023b%2B-orange)
+![license](https://img.shields.io/badge/license-GPL--3.0-green)
+
 **nestapp** is a MATLAB GUI for cleaning and analysing TMS-EEG recordings. It wraps [EEGLAB](https://eeglab.org/), [TESA](https://nigelrogasch.gitbook.io/tesa-user-manual/), and [FastICA](http://research.ics.aalto.fi/ica/fastica/) into a point-and-click pipeline builder that lets researchers process data without writing code.
+
+**Contributing** → [CONTRIBUTING.md](.github/CONTRIBUTING.md) · **Changes** → [CHANGELOG.md](CHANGELOG.md) · **Cite** → [CITATION.cff](CITATION.cff) · **Architecture** → [docs/architecture.md](docs/architecture.md)
 
 ---
 
@@ -14,12 +20,20 @@
 | FastICA | 2.5 |
 | Signal Processing Toolbox | any recent |
 | Statistics and Machine Learning Toolbox | any recent |
+| Curve Fitting Toolbox | required only for the `TMS-EEG / AARATEP` template (`Remove Decay Artifact` step) |
 
 **EEGLAB** — download from [eeglab.org](https://eeglab.org/) and unzip anywhere on your machine. nestapp will add it to the MATLAB path automatically once you set the folder in Preferences (see below).
 
 **TESA** — install from inside EEGLAB via **File → Manage EEGLAB extensions**. Search for TESA and install. TESA lives inside the EEGLAB plugins folder, so no separate path setup is needed after that.
 
 **FastICA** — download from [research.ics.aalto.fi/ica/fastica](http://research.ics.aalto.fi/ica/fastica/) and add the folder to your MATLAB path (Home tab → Set Path → Add Folder). FastICA must be on the path before launching nestapp.
+
+**AARATEP** *(only needed for the `TMS-EEG / AARATEP` template)* — the AARATEP pipeline's helper functions are not bundled with this repository. Clone them into `third_party/aaratep/` from the project root:
+```bash
+cd third_party
+git clone --depth 1 https://github.com/chriscline/AARATEPPipeline.git aaratep
+```
+nestapp adds this tree to the MATLAB path automatically when an AARATEP step runs. The AARATEP template also requires the **Curve Fitting Toolbox** (for the `Remove Decay Artifact` step). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the pinned commit and licensing.
 
 ---
 
@@ -58,13 +72,30 @@
 
 ### Pipeline templates
 
-**File → Load Template** provides three ready-to-use starting points:
+**File → Load Template** provides ready-to-use starting points:
 
 | Template | Description |
 |---|---|
-| TMS-EEG (TESA) | Full TESA artifact-removal workflow for single-pulse TMS |
-| Resting-State EEG | Standard resting-state cleaning with ICA |
-| Minimal (HPF + bad channels) | High-pass filter and bad channel removal only |
+| TMS-EEG / TEP (TESA) | Full TESA two-round-ICA artifact removal for single-pulse TMS (Rogasch 2017) |
+| TMS-EEG / TEP (TESA + Quality Gates) | TESA workflow with four Quality Gate checkpoints |
+| TMS-EEG / ARTIST | Paper-faithful Wu 2018 pipeline; TESA compselect substitutes for the unreleased FLDA classifier |
+| TMS-EEG / AARATEP | Cline 2021 pipeline (SOUND + decay-fit removal + AR-blend interp + TMS-aware muscle classifier); helpers vendored under `third_party/aaratep/` |
+| Resting-State EEG | PREP + Delorme 2023 cleaning with ICLabel |
+| Minimal (Delorme 2023) | HPF + bad channels + ICA, minimum-handling philosophy |
+
+### Citing nestapp
+
+When you publish results produced with a built-in template, cite the corresponding paper. The template name itself is logged at the start of every batch run alongside the DOI and full reference, so the citation ends up in the run log next to your data.
+
+| Template | Primary citation | Additional |
+|---|---|---|
+| TMS-EEG / TEP (TESA) | Rogasch et al. (2017). NeuroImage 147:934-951. doi:10.1016/j.neuroimage.2017.06.014 | — |
+| TMS-EEG / TEP (TESA + Quality Gates) | Rogasch et al. (2017). doi:10.1016/j.neuroimage.2017.06.014 | — |
+| TMS-EEG / ARTIST | Wu et al. (2018). Hum Brain Mapp 39(4):1607-1625. doi:10.1002/hbm.23938 | Rogasch et al. (2017) — TESA compselect substitutes for ARTIST's unpublished FLDA classifier |
+| TMS-EEG / AARATEP | Cline et al. (2021). IEEE NER. doi:10.1109/NER49283.2021.9441147 | Mutanen et al. (2018) NeuroImage 166:135-151 doi:10.1016/j.neuroimage.2017.10.021 — SOUND algorithm. Rogasch et al. (2017) — TESA helpers vendored from AARATEPPipeline depend on TESA. |
+| Resting-State / Minimal | Delorme (2023). Sci Rep 13:2372. doi:10.1038/s41598-023-27528-0 | — |
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the complete attribution of vendored and bundled dependencies, including the EEGLAB stack (Delorme & Makeig 2004), ICLabel (Pion-Tonachini et al. 2019), CleanLine, firfilt, clean_rawdata, and FastICA citations.
 
 ### Saving and loading pipelines
 
@@ -139,8 +170,16 @@ Open **Settings → Preferences** to configure:
 
 ---
 
-## Contributors
+## Contributing
 
-**Aref Pariz** — original application (v1.0, 2023), developed at the Royal Institute for Mental Health in Dr. Sara Tremblay's lab ([NESTLAB](https://www.nest-lab.ca/)) and Dr. Jeremie Lefebvre's Lab, University of Ottawa.
+Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the development setup, how to run the test suite, the pipeline-step extension recipe, and the pull-request process. New to the codebase? Start with [docs/architecture.md](docs/architecture.md) for a map of what each module does and where to make changes.
 
-**Wesley Dunne** — v2.0 (2025): pipeline engine, progress reporting and provenance, automated reports with ICA tracking, TEP visualisation and batch peak extraction, pipeline templates, test suite.
+## Citing nestapp
+
+If you use nestapp in published work, please cite it using the metadata in [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button generates APA/BibTeX for you). Also cite the pipeline papers for any built-in template you run — these are listed per template under **Pipeline templates → Citing nestapp** above and are logged to the run output. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for all bundled and vendored dependencies.
+
+## Authors
+
+**Aref Pariz** — original application (2023), developed at the Royal Institute for Mental Health in Dr. Sara Tremblay's lab ([NESTLAB](https://www.nest-lab.ca/)) and Dr. Jeremie Lefebvre's Lab, University of Ottawa.
+
+**Wesley Dunne** — pipeline engine, progress reporting and provenance, automated reports with ICA tracking, TEP visualisation and batch peak extraction, pipeline templates, quality-control gates, and test suite. Led the 1.0.0 open-source release.

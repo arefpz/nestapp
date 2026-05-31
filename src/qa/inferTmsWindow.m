@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function win = inferTmsWindow(EEG, fallback, opts)
 % INFERTMSWINDOW  Pick a TMS-pulse exclusion window from EEG.event.
 %   win = INFERTMSWINDOW(EEG, fallback)

@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_qualityGateSkip
 % TEST_QUALITYGATESKIP  End-to-end test of the skip-on-fail short circuit.
 %   Recipe: Load Data -> Quality Gate(expectedChans=999) -> Save New Set

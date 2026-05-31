@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use nestapp in your research, please cite it as below."
+title: "nestapp: a MATLAB GUI for cleaning and analysing TMS-EEG recordings"
+abstract: >-
+  nestapp is an open-source MATLAB application that wraps EEGLAB, TESA, and
+  FastICA into a point-and-click pipeline builder for EEG and TMS-EEG
+  preprocessing, quality control, and TMS-evoked potential analysis.
+type: software
+version: 1.0.0
+date-released: "2026-05-29"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/goingloud/nestapp"
+url: "https://github.com/goingloud/nestapp"
+keywords:
+  - EEG
+  - TMS-EEG
+  - TEP
+  - preprocessing
+  - EEGLAB
+  - MATLAB
+authors:
+  - family-names: Pariz
+    given-names: Aref
+  - family-names: Dunne
+    given-names: Wesley

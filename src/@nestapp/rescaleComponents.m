@@ -1,4 +1,8 @@
-﻿function rescaleComponents(app, sX, sY)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function rescaleComponents(app, sX, sY)
 % RESCALECOMPONENTS  Rescale all nestapp UI components proportionally.
 %   Called from UIFigureSizeChanged. This file lives in src/@nestapp/ - a
 %   proper class method with access to protected App Designer methods.

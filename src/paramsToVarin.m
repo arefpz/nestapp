@@ -1,4 +1,8 @@
-﻿function varin = paramsToVarin(params)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function varin = paramsToVarin(params)
 % PARAMSTOVARIN Convert a typed params struct to a flat key-value cell.
 %   varin = PARAMSTOVARIN(params) returns a 1x2N cell where element 2k-1
 %   is the field name and element 2k is the corresponding value, in the

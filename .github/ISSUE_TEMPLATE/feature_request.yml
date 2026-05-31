@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that nestapp doesn't support today?
+      placeholder: "I'm analysing ... and I need ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like nestapp to do? A new step, template, plot, etc.?
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Papers, methods, or other tools this should follow (helps keep methods faithful).
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pipeline step
+        - Built-in template
+        - Quality control
+        - Visualisation / TEP analysis
+        - Reports / export
+        - Other
+    validations:
+      required: false

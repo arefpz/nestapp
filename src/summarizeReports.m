@@ -1,4 +1,8 @@
-﻿function summaryText = summarizeReports(reports)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function summaryText = summarizeReports(reports)
 % SUMMARIZEREPORTS  Build a cross-file summary from a cell array of PipelineReport structs.
 %
 %   summaryText = SUMMARIZEREPORTS(reports)

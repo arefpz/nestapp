@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tf = anyReportHasGates(entries)
 % ANYREPORTHASGATES  True if any Reports-tab entry carries Quality Gate data.
 %   entries : cell array of Reports-tab entries (mix of session-report,

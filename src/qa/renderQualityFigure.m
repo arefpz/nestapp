@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function figPath = renderQualityFigure(EEG, outPath, opts)
 % RENDERQUALITYFIGURE  4-panel QC montage for a single EEG snapshot.
 %   figPath = RENDERQUALITYFIGURE(EEG, outPath, opts) writes a PNG to

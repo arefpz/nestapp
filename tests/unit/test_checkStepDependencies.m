@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_checkStepDependencies
 % TEST_CHECKSTEPDEPENDENCIES  Unit tests for checkStepDependencies.
 %
@@ -171,4 +175,36 @@ testCase.verifyTrue(contains(msg, 'Run TESA ICA'), ...
     'Message must list Run TESA ICA under the TESA plugin entry');
 testCase.verifyTrue(contains(msg, 'Remove ICA'), ...
     'Message must list Remove ICA Components under the TESA plugin entry');
+end
+
+% ── vendored AARATEP helpers are auto-pathed before the check ─────────────────
+
+function test_vendoredAaratepHelpersNotReportedMissing(testCase)
+% The AARATEP helpers ship bundled under third_party/ and are only added
+% to the path lazily during dispatch. checkStepDependencies must add them
+% itself (via ensureAaratepOnPath) so it does not falsely report the
+% bundled functions as "missing plugins". Reproduce the original bug by
+% scrubbing the vendored tree off the path first.
+shadowRoot = fullfile(repoRoot(), 'third_party', 'aaratep');
+prePath = path;
+restorePath = onCleanup(@() path(prePath));
+clear ensureAaratepOnPath;   % reset its persistent "ready" flag
+pathParts = strsplit(path, pathsep);
+toDrop = pathParts(startsWith(pathParts, shadowRoot));
+for k = 1:numel(toDrop)
+    rmpath(toDrop{k});
+end
+
+% These two steps depend only on vendored helpers (no external plugin),
+% so a correct check returns ok=true once the tree is auto-pathed.
+[ok, msg] = checkStepDependencies( ...
+    {'Interpolate Missing Data (AR-Blend)', 'Remove Decay Artifact'}, {});
+
+% Curve Fitting Toolbox may or may not be installed on the test machine;
+% the thing we are asserting is that the *vendored* helper requirement is
+% not what fails. So the AARATEP-vendored plugin line must be absent.
+testCase.verifyFalse(contains(char(msg), 'AARATEP (vendored)'), sprintf( ...
+    ['checkStepDependencies falsely reported bundled AARATEP helpers as ' ...
+     'missing. It must call ensureAaratepOnPath before probing which(). ' ...
+     'Message was:%s%s'], newline, char(msg)));
 end

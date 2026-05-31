@@ -1,4 +1,8 @@
-﻿function [fileReport, stepLog] = processOneFile(spec, fullPath, opts)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [fileReport, stepLog] = processOneFile(spec, fullPath, opts)
 % PROCESSONEFILE  Execute a typed pipeline spec against a single EEG file.
 %   [fileReport, stepLog] = PROCESSONEFILE(spec, fullPath, opts)
 %
@@ -40,6 +44,7 @@ if ~isfield(opts, 'qcTmsWindow'),       opts.qcTmsWindow       = [0 25];        
 if ~isfield(opts, 'qcTmsAutoDetect'),   opts.qcTmsAutoDetect   = true;            end
 if ~isfield(opts, 'skipOnQualityFail'), opts.skipOnQualityFail = false;           end
 if ~isfield(opts, 'autoExportPDF'),     opts.autoExportPDF     = false;           end
+if ~isfield(opts, 'saveErrorBundle'),   opts.saveErrorBundle   = false;           end
 
 % eeglab('nogui') is expensive (plugin scan, path setup); run it once per
 % worker then just reset globals for subsequent files on the same worker.
@@ -367,7 +372,18 @@ for si = 1:nSteps
                 vars = convertContainedStringsToChars(varin);
                 ind = find(strcmp(vars,'ref'));
                 ref = vars{ind+1};
-                if ~ismember(ref,{EEG.chanlocs.labels}) && ~strcmp(ref,'[]')
+                % Average reference (ref = '[]') needs no channel labels.
+                % A named reference does, so fail with a legible message if
+                % chanlocs are missing rather than dereferencing a double.
+                hasLocs = isstruct(EEG.chanlocs) && ~isempty(EEG.chanlocs) ...
+                    && isfield(EEG.chanlocs,'labels');
+                if ~strcmp(ref,'[]') && ~hasLocs
+                    error('nestapp:noChanlocs', ...
+                        ['Re-Reference: channel locations are missing, so ' ...
+                         'reference ''%s'' cannot be resolved. An earlier ' ...
+                         'step likely dropped EEG.chanlocs.'], ref);
+                end
+                if hasLocs && ~ismember(ref,{EEG.chanlocs.labels}) && ~strcmp(ref,'[]')
                     answer = inputdlg('The reference channel is not in the data. Enter a new reference channel label:','Re-Reference',[1 50],{''});
                     if isempty(answer) || isempty(answer{1})
                         error('Re-Reference cancelled: no reference channel provided.');
@@ -434,13 +450,29 @@ for si = 1:nSteps
             case 'Run ICA'
                 EEG.data = double(EEG.data);
                 vars = convertContainedStringsToChars(varin);
-                EEG = pop_runica(EEG,vars{:});
+                % FastICA-specific params crash runica's internal parser
+                % ("Output argument 'sphere' not assigned"). Strip them
+                % when the user picked icatype = runica (extended Infomax).
+                idx = find(strcmpi(vars, 'icatype'), 1);
+                if ~isempty(idx) && strcmpi(vars{idx+1}, 'runica')
+                    vars = stripVarinKeys(vars, ...
+                        {'approach', 'g', 'stabilization'});
+                end
+                EEG = pop_runica(EEG, vars{:});
                 EEG = eeg_checkset( EEG );
 
             case 'Label ICA Components'
                 vars = convertContainedStringsToChars(varin);
-                ind = find(strcmpi(vars, 'iclabelVersion'));
-                iclabelVersion = vars{ind+1};
+                % Registry key is 'version' (the underlying pop_iclabel
+                % argument). Older dispatch looked up 'iclabelVersion'
+                % and crashed with "Unable to perform assignment with 0
+                % elements" when the lookup returned empty.
+                ind = find(strcmpi(vars, 'version'), 1);
+                if isempty(ind)
+                    iclabelVersion = 'default';
+                else
+                    iclabelVersion = vars{ind+1};
+                end
                 EEG = pop_iclabel(EEG, iclabelVersion);
                 EEG = eeg_checkset( EEG );
 
@@ -499,13 +531,44 @@ for si = 1:nSteps
             case 'Interpolate Channels'
                 method = step.params.method;
                 trange = step.params.trange;
-                EEG = pop_interp(EEG, EEG.chaninfo.removedchans(1:size(EEG.chaninfo.removedchans,2)), method, trange);
-                interpElecs = [interpElecs; num2cell(EEG.chaninfo.removedchans)]; %#ok<AGROW>
-                EEG.interpElecs = interpElecs;
+                % Only interpolate genuine removed channels: those that are
+                % (a) absent from the current montage and (b) carry valid
+                % coordinates. Stale or placeholder removedchans entries
+                % (empty X, numeric-string labels) otherwise get appended to
+                % chanlocs by pop_interp with no matching data row, after
+                % which eeg_checkset discards the entire chanlocs struct on
+                % the size mismatch. The next step that dereferences
+                % EEG.chanlocs then crashes with a cryptic dot-indexing
+                % error. See test_interpolateChannelsBadRemovedchans.
+                rc = EEG.chaninfo.removedchans;
+                if ~isempty(rc)
+                    liveLabels = {EEG.chanlocs.labels};
+                    isValid = arrayfun(@(c) ~isempty(c.X) && ...
+                        ~ismember(c.labels, liveLabels), rc);
+                    rc = rc(isValid);
+                end
+                if isempty(rc)
+                    fprintf(['Interpolate Channels: no valid removed ' ...
+                        'channels to restore; skipping interpolation.\n']);
+                else
+                    EEG = pop_interp(EEG, rc, method, trange);
+                    interpElecs = [interpElecs; num2cell(rc)]; %#ok<AGROW>
+                    EEG.interpElecs = interpElecs;
+                end
                 EEG.setname = [EEG.setname '_interp'];
                 EEG.filename = [EEG.setname '.set'];
                 EEG.datfile  = [EEG.setname '.fdt'];
                 EEG = eeg_checkset( EEG );
+                % Safety net: surface a legible error at the offending step
+                % if chanlocs were dropped, instead of letting a downstream
+                % step fail on an empty (double) EEG.chanlocs.
+                if ~isstruct(EEG.chanlocs) || isempty(EEG.chanlocs)
+                    error('nestapp:chanlocsDropped', ...
+                        ['Interpolate Channels discarded channel locations ' ...
+                         '(chanlocs/data size mismatch). Check ' ...
+                         'EEG.chaninfo.removedchans for stale or ' ...
+                         'coordinate-less entries.']);
+                end
 
             case 'Find TMS Pulses (TESA)'
                 vars = convertContainedStringsToChars(varin);
@@ -617,6 +680,55 @@ for si = 1:nSteps
             case 'Remove Recording Noise (SOUND)'
                 vars = convertContainedStringsToChars(varin);
                 EEG = pop_tesa_sound(EEG, vars{:} );
+                EEG = eeg_checkset( EEG );
+
+            case 'Interpolate Missing Data (AR-Blend)'
+                ensureAaratepOnPath();
+                opts2 = varinToStruct(varin);
+                artifactTimespan = [opts2.artifactStartMs, opts2.artifactEndMs] * 1e-3;
+                fitDur = opts2.prePostFitMs * 1e-3;
+                EEG = c_EEG_ReplaceEpochTimeSegment(EEG, ...
+                    'timespanToReplace',   artifactTimespan, ...
+                    'method',              'ARExtrapolation', ...
+                    'prePostFitDurations', [fitDur, fitDur]);
+                EEG = eeg_checkset( EEG );
+
+            case 'Remove Decay Artifact'
+                ensureAaratepOnPath();
+                opts2 = varinToStruct(varin);
+                artifactTimespan = [opts2.artifactStartMs, opts2.artifactEndMs] * 1e-3;
+                % Upstream c_TMSEEG_Preprocess_AARATEPPipeline.m line 336:
+                %   doDecayRemovalPerTrial = true  -> 'none'
+                %   doDecayRemovalPerTrial = false -> 'mean'
+                if strcmpi(opts2.perTrial, 'on')
+                    trialAggMethod = 'none';
+                else
+                    trialAggMethod = 'mean';
+                end
+                EEG = c_TMSEEG_fitAndRemoveDecayArtifact(EEG, ...
+                    'artifactTimespan',                 artifactTimespan, ...
+                    'trialAggMethod_timeCourseRemoval', trialAggMethod, ...
+                    'aggTrimPercent',                   10);
+                EEG = eeg_checkset( EEG );
+
+            case 'Flag ICA Components (AARATEP Muscle)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = aaratepMuscleClassifier(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Reject Bad Trials (ARTIST)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistRejectBadTrials(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Remove Bad Channels (ARTIST)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistBadChannelsRansac(EEG, vars{:});
+                EEG = eeg_checkset( EEG );
+
+            case 'Flag ICA Components (ARTIST Decay)'
+                vars = convertContainedStringsToChars(varin);
+                EEG = artistFlagDecayICs(EEG, vars{:});
                 EEG = eeg_checkset( EEG );
 
             case 'Median Filter 1D'
@@ -940,6 +1052,24 @@ for si = 1:nSteps
         end
 
         warning('An error occurred at file %s at step %d: %s', fileName, si, stepName);
+
+        % Save a metadata-only debug bundle (never raw data) for bug reports.
+        if opts.saveErrorBundle
+            try
+                if ~isempty(opts.batchCtx) && isfield(opts.batchCtx, 'batchRoot')
+                    bundleParent = fullfile(opts.batchCtx.batchRoot, 'debug');
+                else
+                    bundleParent = '';
+                end
+                saveErrorBundle(bundleParent, struct( ...
+                    'err', err, 'EEG', EEG, 'spec', spec, ...
+                    'stepName', stepName, 'stepIndex', si, ...
+                    'fileName', fileName, 'pipelineName', opts.pipelineName));
+            catch bundleErr
+                sendWorkerLog(opts.logQueue, wLabel, ...
+                    'Error bundle save FAILED (continuing): %s', bundleErr.message);
+            end
+        end
 
         shouldContinue = false;
         if ~isempty(opts.onStepError)

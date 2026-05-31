@@ -1,4 +1,8 @@
-﻿function [results, warnings] = batchTEPExtract(filePaths, roiElectrodes, varargin)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [results, warnings] = batchTEPExtract(filePaths, roiElectrodes, varargin)
 % BATCHTEPEXTRACT  Extract TEP peaks across multiple .set files.
 %
 %   [results, warnings] = batchTEPExtract(filePaths, roiElectrodes)

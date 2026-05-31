@@ -1,4 +1,8 @@
-﻿function createComponents(app)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function createComponents(app)
 % CREATECOMPONENTS  Create all UI components for nestapp.
 %   Sets every property on app.UIFigure and all child controls.
 %   Called from the nestapp constructor via App Designer's createComponents hook.
@@ -32,6 +36,8 @@
                 'MenuSelectedFcn', createCallbackFcn(app, @LoadPipelineButtonPushed, true));
             uimenu(mFile, 'Text', 'Save Pipeline', 'Accelerator', 'S', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @SavePipelineButtonPushed, true));
+            uimenu(mFile, 'Text', 'Copy Pipeline Description', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @copyPipelineDescriptionMenu, true));
             app.MenuRecentPipelines = uimenu(mFile, 'Text', 'Recent Pipelines');
             uimenu(mFile, 'Text', 'Load Template...', 'Separator', 'on', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @LoadTemplateMenuSelected, true));
@@ -49,6 +55,12 @@
             mHelp = uimenu(app.UIFigure, 'Text', 'Help');
             uimenu(mHelp, 'Text', 'About nestapp', ...
                 'MenuSelectedFcn', createCallbackFcn(app, @showAboutMenu, true));
+            uimenu(mHelp, 'Text', 'Copy Diagnostics to Clipboard', 'Separator', 'on', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @copyDiagnosticsMenu, true));
+            uimenu(mHelp, 'Text', 'Collect Support Bundle...', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @collectSupportBundleMenu, true));
+            uimenu(mHelp, 'Text', 'Check My Install', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @selfTestMenu, true));
 
             % Create status bar - pinned to bottom of UIFigure, visible on both tabs
             app.StatusBar = uilabel(app.UIFigure);

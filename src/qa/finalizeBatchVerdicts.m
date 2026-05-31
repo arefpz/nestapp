@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function reports = finalizeBatchVerdicts(reports)
 % FINALIZEBATCHVERDICTS  Resolve Pending gates with batch-relative thresholds.
 %   reports = FINALIZEBATCHVERDICTS(reports)

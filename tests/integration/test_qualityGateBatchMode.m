@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 function tests = test_qualityGateBatchMode
 % TEST_QUALITYGATEBATCHMODE  End-to-end test of batch-relative verdicts.
 %   Five synthetic files run through a Quality Gate in 'batch' mode.

@@ -1,4 +1,8 @@
-﻿function [ok, msg] = checkStepDependencies(stepNames, filePaths)
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [ok, msg] = checkStepDependencies(stepNames, filePaths)
 % CHECKSTEPDEPENDENCIES  Verify required plugins are on the MATLAB path.
 %
 %   [ok, msg] = checkStepDependencies(stepNames, filePaths)
@@ -18,6 +22,23 @@
 
 if nargin < 2
     filePaths = {};
+end
+
+% Vendored AARATEP helpers ship with nestapp under third_party/ but are
+% only added to the path lazily during step dispatch. Add them now - only
+% when an AARATEP step is actually selected - so the which() probes below
+% see the bundled functions instead of reporting them as missing plugins.
+% Gating avoids a ~280-file genpath walk on every non-AARATEP pre-flight.
+aaratepSteps = {'Interpolate Missing Data (AR-Blend)', ...
+                'Remove Decay Artifact', ...
+                'Flag ICA Components (AARATEP Muscle)'};
+if any(ismember(stepNames, aaratepSteps))
+    try
+        ensureAaratepOnPath();
+    catch
+        % If the vendored tree is genuinely absent, the which() checks
+        % below report the AARATEP steps as missing with the bundled note.
+    end
 end
 
 % Build extension set from file paths for format-specific dep filtering.

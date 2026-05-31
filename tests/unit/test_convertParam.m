@@ -1,3 +1,7 @@
+
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
 classdef test_convertParam < matlab.unittest.TestCase
 % TEST_CONVERTPARAM  Unit tests for src/convertParam.m.
 %   Tests every type branch with representative inputs including edge cases.
