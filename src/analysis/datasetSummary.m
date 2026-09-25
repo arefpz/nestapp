@@ -31,7 +31,7 @@ function [groups, overall] = datasetSummary(entries)
 %   Entries with an empty group are counted in overall.nUngrouped and excluded
 %   from every group - they are not yet part of any comparison.
 %
-%   See also: assignGroupByFilter, inferSubjectIds, groupCurves
+%   See also: assignGroupByFilter, subjectIdsFromRule, groupCurves
 
 groups  = struct('name', {}, 'nFiles', {}, 'nSubjects', {}, 'subjects', {});
 overall = struct('nFiles', 0, 'nGroups', 0, 'nSubjects', 0, ...

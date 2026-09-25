@@ -1,7 +1,7 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
 % Part of nestapp; see the LICENSE file for full terms.
-function entries = exploreFilesTable(entries, opts)
+function [entries, subjectRule] = exploreFilesTable(entries, opts)
 % EXPLOREFILESTABLE  Show and edit which file belongs to whom and to which group.
 %   entries = EXPLOREFILESTABLE(entries) opens a modal table of
 %   file | subject | group, with subject and group editable, and returns the
@@ -17,24 +17,32 @@ function entries = exploreFilesTable(entries, opts)
 %     One subject per file        every recording is its own person, so n is the
 %                                 number of files. The default, and correct
 %                                 whenever each file IS a different participant.
-%     Guess from filenames        runs inferSubjectIds, which collapses repeat
-%                                 recordings. PREVIEWED before it applies - on a
-%                                 real cohort this turns 148 files into 95
-%                                 subjects, and a change that large to n should
-%                                 never happen without being seen first.
+%     Subjects from filenames     opens subjectRuleDialog, where the user
+%                                 clicks which part of the filename is the
+%                                 person and sees the result live before it
+%                                 applies - on a real cohort this turns 148
+%                                 files into 95 subjects, and a change that
+%                                 large to n should never happen unseen.
 %
 %   The count line is the point of the whole dialog: it states files, subjects
 %   and groups at all times, so "why is n 92 and not 148" is answerable by
 %   looking rather than by reading source.
 %
 %   opts:
-%     .parent   figure to centre over
-%     .title    window title
+%     .parent       figure to centre over
+%     .title        window title
+%     .subjectRule  rule the filename dialog starts from (last one used)
 %
-%   See also: exploreDataset, inferSubjectIds, datasetSummary
+%   [entries, subjectRule] = EXPLOREFILESTABLE(...) also returns the rule the
+%   filename dialog should reopen on next time: the last one applied, else
+%   the one passed in.
+%
+%   See also: exploreDataset, subjectRuleDialog, datasetSummary
 
 if nargin < 2; opts = struct(); end
-opts = fillDefaults(opts, struct('parent', [], 'title', 'Files, subjects and groups'));
+opts = fillDefaults(opts, struct('parent', [], 'title', 'Files, subjects and groups', ...
+                                 'subjectRule', []));
+subjectRule = [];
 
 if isempty(entries)
     entries = [];
@@ -43,6 +51,7 @@ end
 
 work     = entries;
 accepted = false;
+lastRule = opts.subjectRule;
 
 W = 760; H = 520;
 PAD = 12;
@@ -75,8 +84,8 @@ countLabel = uilabel(fig, 'Position', [PAD, H - 34, W - 2*PAD, 22], ...
 
 uibutton(fig, 'Text', 'One subject per file', 'Position', [PAD, 62, 170, 26], ...
     'ButtonPushedFcn', @(~, ~) subjectsPerFile());
-uibutton(fig, 'Text', 'Guess from filenames...', 'Position', [PAD + 178, 62, 190, 26], ...
-    'ButtonPushedFcn', @(~, ~) guessSubjects());
+uibutton(fig, 'Text', 'Subjects from filenames...', 'Position', [PAD + 178, 62, 190, 26], ...
+    'ButtonPushedFcn', @(~, ~) subjectsFromFilenames());
 
 uilabel(fig, 'Position', [PAD, 34, W - 2*PAD, 22], 'FontSize', 11, ...
     'FontColor', [0.35 0.38 0.43], ...
@@ -99,7 +108,8 @@ end
 % `accepted` and `work` live in this workspace, which outlives the figure, so
 % the answer survives the deletion that released waitfor.
 if accepted
-    entries = work;
+    entries     = work;
+    subjectRule = lastRule;
 else
     entries = [];
 end
@@ -139,31 +149,25 @@ if isvalid(fig); delete(fig); end
     end
 
     function subjectsPerFile()
-        paths = {work.path};
-        ids   = exploreDataset(paths, {});      % 'file' mode is the default
+        ids = uniqueFileLabels({work.path});
         for i = 1:numel(work)
-            work(i).subject          = ids(i).subject;
+            work(i).subject          = ids{i};
             work(i).subjectConfident = true;
         end
         refresh();
     end
 
-    function guessSubjects()
-        paths  = {work.path};
-        [ids, confident] = inferSubjectIds(paths);
-        nSub   = numel(unique(ids));
-        % Preview first. Collapsing files into subjects changes n for every
-        % interval, so the size of that change is shown before it happens.
-        msg = sprintf(['Guessing subjects from filenames would give %d ' ...
-            'subject(s) from %d file(s).\n\n%s'], nSub, numel(paths), ...
-            collapseNote(nSub, numel(paths), sum(~confident)));
-        choice = uiconfirm(fig, msg, 'Guess subjects', ...
-            'Options', {'Apply', 'Cancel'}, 'DefaultOption', 2, 'CancelOption', 2);
-        if ~strcmp(choice, 'Apply'); return; end
+    function subjectsFromFilenames()
+        % The dialog is its own preview: it shows the file -> subject table and
+        % the change in n on every click, so nothing here asks again.
+        [ids, rule] = subjectRuleDialog({work.path}, ...
+            struct('parent', fig, 'rule', lastRule));
+        if isempty(ids); return; end
         for i = 1:numel(work)
             work(i).subject          = ids{i};
-            work(i).subjectConfident = confident(i);
+            work(i).subjectConfident = true;   % the user chose the rule
         end
+        lastRule = rule;
         refresh();
     end
 
@@ -185,32 +189,5 @@ if overall.nUngrouped > 0
 end
 if nSub < numel(work)
     s = sprintf('%s   |   %d files share a subject', s, numel(work) - nSub);
-end
-end
-
-function s = collapseNote(nSub, nFiles, nUnsure)
-if nSub == nFiles
-    s = 'No files would be merged, so n would not change.';
-    return
-end
-s = sprintf(['%d file(s) would be merged into a shared subject, so n falls ' ...
-     'from %d to %d and every confidence interval widens. Correct if those ' ...
-     'files are repeat recordings of the same person; wrong if they are ' ...
-     'different people.'], nFiles - nSub, nFiles, nSub);
-if nUnsure > 0
-    s = sprintf(['%s\n\n%d id(s) came from a name with no digits, which is ' ...
-        'more often a condition than a person - check those rows.'], s, nUnsure);
-end
-end
-
-function s = shortPath(p)
-% Enough of the tail to identify the file without a 200-character cell.
-p   = strrep(char(p), '\', '/');
-seg = strsplit(p, '/');
-seg = seg(~cellfun(@isempty, seg));
-if numel(seg) <= 3
-    s = strjoin(seg, '/');
-else
-    s = ['.../' strjoin(seg(end-2:end), '/')];
 end
 end

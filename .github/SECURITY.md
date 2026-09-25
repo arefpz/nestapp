@@ -7,12 +7,11 @@ minor version only; there is no long-term support for older lines.
 
 | Version | Supported |
 |---------|-----------|
-| 2.1.x   | yes       |
-| 2.0 and earlier | no |
-| 1.0.0   | no — superseded by 2.1.0, see [CHANGELOG](../CHANGELOG.md) |
+| The latest release (see [CHANGELOG](../CHANGELOG.md)) | yes |
+| Anything older | no |
 
 `1.0.0` is not a lower version than `2.0` despite the number: it was a separate
-release line, superseded by `2.1.0`. Always take the highest version.
+release line, superseded by the 2.x releases. Always take the highest version.
 
 ## Scope
 

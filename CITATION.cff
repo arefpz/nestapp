@@ -6,8 +6,8 @@ abstract: >-
   FastICA into a point-and-click pipeline builder for EEG and TMS-EEG
   preprocessing, quality control, and TMS-evoked potential analysis.
 type: software
-version: 2.1.0
-date-released: "2026-09-03"
+version: 2.2.0
+date-released: "2026-09-24"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/arefpz/nestapp"
 url: "https://github.com/arefpz/nestapp"

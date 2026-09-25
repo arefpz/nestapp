@@ -80,10 +80,9 @@ if isempty(entries)
     out.files = struct('path', {}, 'subject', {}, 'group', {}, ...
                        'subjectConfident', {});
 else
-    % subjectConfident travels too. It marks an id that was GUESSED from a
-    % filename rather than confirmed, which is what makes the files table
-    % highlight it for review - drop it and reopening an analysis quietly
-    % presents guesses as decisions.
+    % subjectConfident travels too. It is false where a subject rule could
+    % not be applied because the file lacked the chosen filename part - drop
+    % it and reopening an analysis loses which ids were never really read.
     out.files = struct('path', {entries.path}, 'subject', {entries.subject}, ...
                        'group', {entries.group}, ...
                        'subjectConfident', {entries.subjectConfident});

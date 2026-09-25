@@ -272,7 +272,7 @@ if useParallel
     wOpts.onPickChanFile = [];
     wOpts.progressQueue  = q;              % per-step progress + file-done sentinel
     wOpts.logQueue       = q;              % log msgs share the same queue
-    wOpts.nWorkers       = pool.NumWorkers; % actual count for BLAS thread cap
+    wOpts.nWorkers       = pool.NumWorkers; % actual count for the BLAS thread share
     wOpts = applyQCOpts(wOpts, qcCtx);
 
     nestLog('PAR', 'Submitting %d futures...', nFiles);

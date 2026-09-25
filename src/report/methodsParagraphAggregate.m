@@ -112,12 +112,19 @@ end
 
 function s = meanSd(v)
 % Compact "mean" or "mean +/- SD" depending on spread.
+%
+% One decimal whenever the values vary. Each figure in a sentence is rounded
+% on its own, and rounding to integers let the parts visibly disagree:
+% original 76.4 and final 71.6 printed as "72 of 76 ... (5 rejected)" although
+% every file's counts agreed exactly (means preserve original - final =
+% rejected; independent rounding does not). One decimal keeps the parts
+% within 0.1 of adding up. Identical values are counts, so they stay integers.
     v = double(v(:));
     if isempty(v)
         s = '0';
     elseif isscalar(v) || std(v) < 1e-9
         s = sprintf('%.0f', mean(v));
     else
-        s = sprintf('%.0f +/- %.0f', mean(v), std(v));
+        s = sprintf('%.1f +/- %.1f', mean(v), std(v));
     end
 end

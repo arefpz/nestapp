@@ -8,6 +8,60 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-24
+
+### Added
+
+- **Subjects from filenames** (Explore > Files, subjects and groups). Replaces
+  "Guess from filenames", which ran a fixed per-file heuristic and could not be
+  told which part of a name is the person. The new dialog shows one example
+  filename cut into clickable parts, plus up to three folders above it, and
+  under each part how many distinct values it takes across the cohort. You click
+  the part that is the person. The file -> subject table and the change in n
+  update on every click, so nothing applies unseen. The rule is positional and
+  deterministic: count from the start or the end, optionally split letters from
+  digits, and combine several parts. `S1`, `S01` and `s01` count as one subject,
+  and a file lacking the chosen part stays its own subject rather than being
+  merged. The preselection reads the whole cohort, skips dates and prefers the
+  part with the most distinct values; on 40 generated naming schemes it
+  recovers the subject in 38. Scripts reproduce the GUI's subjects with
+  `exploreDataset(..., struct('subjectRule', rule))`.
+
+### Fixed
+
+- **Paired design was locked off by any missing session.** It required every
+  subject in every group, although the analysis already handles the incomplete
+  case: it keeps the complete subjects and names the rest. Paired is now offered
+  with two or more groups and at least two subjects in every group, and the
+  note says how many subjects it will use.
+- **Methods paragraph omitted most data-changing steps.** 23 of the 29 steps
+  that change the data produced no sentence (RANSAC, Robust Detrend, Remove
+  Flagged ICA Components, SSP-SIR, EDM, Manual Command, ...). Every step is now
+  either described, declared as never changing the data, or given a plain
+  generic sentence, and a test fails for any registry step without a case.
+  Clauses now state the thresholds and windows that decide what is removed
+  (RANSAC criteria, ICLabel probability ranges, epoch-rejection limits,
+  compselect criteria, ASR settings). Where upstream picks the value, the value
+  it actually uses is stated. The paragraph ends by pointing to the run's
+  `spec.mat`.
+- **Repeated steps in the methods paragraph** follow one rule: the same settings
+  read "... again" (a second ICA or the final re-reference used to vanish), and
+  changed settings read "later, ...". The TMS window change is judged from both
+  ends of the window. A notch filter is no longer described as a band-pass.
+- **Aggregate counts could visibly fail to add up** ("72 of 76 epochs retained
+  (5 rejected)"). Each mean was rounded to an integer on its own; they are now
+  given to one decimal. The per-file counts were always consistent.
+- **Explore results showed one group's measures without saying whose.** The
+  group is now a column, one row per group x window.
+- **Scalp maps turned the whole figure pale blue**, on screen and in exported
+  figures, because topoplot applies EEGLAB's background colour to the figure.
+  The figure colour is now restored.
+- **Step Info text credited plugins' functions to EEGLAB** (clean_rawdata,
+  ICLabel, firfilt, ...). Every Info string now names the toolbox that supplies
+  the implementation.
+- **AARATEP install hints said "Bundled with nestapp".** They are fetched, and
+  the hint now names the menu item that installs them.
+
 ## [2.1.0] - 2026-09-03
 
 ### Note on the version number
@@ -317,5 +371,6 @@ First public open-source release.
   additionally requires the Curve Fitting Toolbox and the AARATEP helpers
   cloned into `third_party/aaratep/` (see README).
 
-[Unreleased]: https://github.com/goingloud/nestapp/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/goingloud/nestapp/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/goingloud/nestapp/releases/tag/v2.2.0
 [2.1.0]: https://github.com/goingloud/nestapp/releases/tag/v2.1.0

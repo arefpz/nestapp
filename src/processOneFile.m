@@ -63,8 +63,17 @@ fileName = [fileBase, fileExt];
 wLabel   = sprintf('FILE-%d %s', opts.fileIndex, fileBase);
 fileTic  = tic;
 
-% Limit each worker to its fair share of BLAS threads to prevent
-% over-subscription when N workers each default to all cores.
+% Give each worker its fair share of BLAS threads. Process workers START at
+% maxNumCompThreads == 1 (the Processes profile's NumThreads default is 1), so
+% this RAISES the allowance rather than capping it - there is no default
+% over-subscription to prevent. floor(numcores/nWorkers) can never exceed the
+% core budget in aggregate, and the raise is worth having: 1 -> 4 threads took a
+% 3000x3000 matmul from ~1.2s to ~0.35s per worker (R2026a, 16 cores).
+% NB feature('numcores') reports the machine's cores even on a worker, not the
+% worker's own allowance, which is why the share is computed against it.
+% Done here, per worker, rather than by setting the cluster's NumThreads: that
+% property is saved profile state, and a pipeline run should not edit the user's
+% MATLAB configuration as a side effect.
 % Pool reuse can change nWorkers between pipeline runs, so re-check each call
 % but skip the BLAS call when the value is already correct.
 if ~isempty(opts.progressQueue) && opts.nWorkers > 1

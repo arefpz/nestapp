@@ -11,10 +11,12 @@ function v = nestappVersion()
 %   Outputs
 %     v  char - the semantic version of nestapp, e.g. '2.1.0'.
 %
-%   This is the single source of truth for the application version. The
-%   About dialog, README, CHANGELOG, and the release git tag must all
-%   agree with the value returned here (the version-consistency CI check
-%   enforces this). Follows Semantic Versioning 2.0.0 (https://semver.org):
+%   This is the single source of truth for the application version. Everything
+%   that runs calls it. The three documents that restate it as text -
+%   CHANGELOG.md, CITATION.cff and the README badge - are written from it by
+%   tools/setVersion.m, and VersionTest fails if any of them disagree. Change
+%   the version with setVersion('major'|'minor'|'patch'), not by editing this
+%   line. Follows Semantic Versioning 2.0.0 (https://semver.org):
 %   MAJOR.MINOR.PATCH.
 %
 %   NOTE: deliberately NOT named version.m - that would shadow MATLAB's
@@ -22,5 +24,5 @@ function v = nestappVersion()
 %
 %   See also: version, CHANGELOG.md
 
-v = '2.1.0';
+v = '2.2.0';
 end

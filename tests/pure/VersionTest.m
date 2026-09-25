@@ -6,8 +6,10 @@ classdef VersionTest < NestappTestCase
 %
 %   nestappVersion is what the app reports, what a report header stamps, what
 %   an error bundle records, and what tools/package_toolbox.m names the .mltbx.
-%   CHANGELOG.md, CITATION.cff and the README badge each restate it. Four
-%   copies of one fact, and the only thing keeping them in step is this test.
+%   CHANGELOG.md, CITATION.cff and the README badge each restate it, because
+%   GitHub and citation tools read them as text. tools/setVersion.m is the
+%   one writer of all four; this test is what catches a hand edit that
+%   bypassed it.
 %
 %   RESTORED AT THE 2.1.0 RELEASE, and its absence is worth recording. The old
 %   suite had this check; the rewrite's cutover deleted it and nothing replaced
@@ -99,7 +101,58 @@ classdef VersionTest < NestappTestCase
         end
     end
 
+    methods (Test)
+        % tools/setVersion is the one writer of all four; these run it on a
+        % scratch copy, never on the repository.
+
+        function setVersionStampsEveryCopy(tc)
+            root = tc.releaseFixture('- Something new.');
+            v = setVersion('minor', 'Date', '2026-01-02', 'Root', root);
+            tc.verifyEqual(v, '2.2.0');
+            tc.verifySubstring(fileread(fullfile(root, 'src', 'nestappVersion.m')), 'v = ''2.2.0'';');
+            cl = fileread(fullfile(root, 'CHANGELOG.md'));
+            tc.verifySubstring(cl, sprintf('## [Unreleased]\n\n## [2.2.0] - 2026-01-02\n\n- Something new.'));
+            tc.verifySubstring(cl, '[Unreleased]: https://x/y/compare/v2.2.0...HEAD');
+            tc.verifySubstring(cl, '[2.2.0]: https://x/y/releases/tag/v2.2.0');
+            tc.verifySubstring(cl, '[2.1.0]: https://x/y/releases/tag/v2.1.0');
+            cff = fileread(fullfile(root, 'CITATION.cff'));
+            tc.verifySubstring(cff, 'version: 2.2.0');
+            tc.verifySubstring(cff, 'date-released: "2026-01-02"');
+            tc.verifySubstring(fileread(fullfile(root, 'README.md')), 'badge/version-2.2.0-');
+        end
+
+        function setVersionRefusesAReleaseWithoutNotes(tc)
+            root = tc.releaseFixture('');
+            before = fileread(fullfile(root, 'src', 'nestappVersion.m'));
+            tc.verifyError(@() setVersion('patch', 'Root', root), 'nestapp:setVersion:noNotes');
+            tc.verifyEqual(fileread(fullfile(root, 'src', 'nestappVersion.m')), before, ...
+                'a refused release must write nothing');
+        end
+
+        function setVersionRefusesGoingBackwards(tc)
+            root = tc.releaseFixture('- x');
+            tc.verifyError(@() setVersion('2.1.0', 'Root', root), 'nestapp:setVersion:notHigher');
+            tc.verifyError(@() setVersion('2.0.9', 'Root', root), 'nestapp:setVersion:notHigher');
+        end
+    end
+
     methods (Access = private)
+        function root = releaseFixture(tc, notes)
+        % A minimal repository at 2.1.0 with the four files setVersion edits.
+            tc.applyFixture(matlab.unittest.fixtures.PathFixture( ...
+                fullfile(addNestappPath(), 'tools')));
+            root = scratchDir(tc);
+            mkdir(fullfile(root, 'src'));
+            put(fullfile(root, 'src', 'nestappVersion.m'), ...
+                sprintf('function v = nestappVersion()\nv = ''2.1.0'';\nend\n'));
+            put(fullfile(root, 'CHANGELOG.md'), sprintf(['# Changelog\n\n## [Unreleased]\n\n%s\n\n' ...
+                '## [2.1.0] - 2025-12-01\n\n- Old.\n\n' ...
+                '[Unreleased]: https://x/y/compare/v2.1.0...HEAD\n' ...
+                '[2.1.0]: https://x/y/releases/tag/v2.1.0\n'], notes));
+            put(fullfile(root, 'CITATION.cff'), sprintf('version: 2.1.0\ndate-released: "2025-12-01"\n'));
+            put(fullfile(root, 'README.md'), sprintf('![v](https://img.shields.io/badge/version-2.1.0-blue)\n'));
+        end
+
         function [ver, dateStr] = topChangelogRelease(tc)
         % The first `## [x.y.z] - date` heading in the file.
             changelog = fileread(fullfile(addNestappPath(), 'CHANGELOG.md'));
@@ -121,4 +174,10 @@ tf = false;
 for i = 1:3
     if a(i) ~= b(i); tf = a(i) < b(i); return; end
 end
+end
+
+function put(p, s)
+fid = fopen(p, 'w', 'n', 'UTF-8');
+fwrite(fid, s, 'char');
+fclose(fid);
 end

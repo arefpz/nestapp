@@ -427,7 +427,6 @@ function createComponents(app)
             app.ExploreGroupsListBox = uilistbox(app.ExploreTab);
             app.ExploreGroupsListBox.Items = {};
             app.ExploreGroupsListBox.ItemsData = {};
-            app.ExploreGroupsListBox.ValueChangedFcn = createCallbackFcn(app, @ExploreGroupsListBoxValueChanged, true);
             app.ExploreGroupsListBox.Position = [RAIL_X 404 RAIL_W 66];
             app.ExploreGroupsListBox.Tooltip = {'Each group is a set of recordings compared as one condition. n counts SUBJECTS - see Files... for which file belongs to whom.'};
 

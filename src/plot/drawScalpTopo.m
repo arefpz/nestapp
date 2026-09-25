@@ -76,14 +76,24 @@ else
     % so the frame is put back afterwards - otherwise the maps grow out of their
     % cells and overlap whatever is below the grid. The uiaxes path never showed
     % this because it draws offscreen and copies only the children back.
+    %
+    % topoplot also paints the whole FIGURE its own colour: icadefs sets
+    % BACKCOLOR = [.93 .96 1], the pale blue EEGLAB uses, and topoplot applies
+    % it to the enclosing figure rather than to its own axes. Any figure holding
+    % a scalp map therefore turned blue, on screen and in every exported file,
+    % including publication figures asked for on a white page. The colour is put
+    % back for the same reason the position is.
     keepUnits = ax.Units;
     keepPos   = ax.Position;
+    fig       = ancestor(ax, 'figure');
+    keepColor = fig.Color;
     cla(ax, 'reset');
     axes(ax);
     topoplot(values, chanlocs, topoArgs{:});
     cLim = symmetricLimits(ax);
     ax.Units    = keepUnits;
     ax.Position = keepPos;
+    fig.Color   = keepColor;
 end
 
 % A caller comparing several maps supplies one scale for all of them; it wins

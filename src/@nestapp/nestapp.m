@@ -134,6 +134,7 @@ classdef nestapp < matlab.apps.AppBase
         exploreCache   = struct('path', {}, 'trialAvg', {}, 'labels', {}, ...
                                 'chanlocs', {}, 'time', {}, 'nTrials', {}, 'ok', {})
         exploreRoi     = {}      % ROI electrode labels (canonical spelling)
+        exploreSubjectRule = []  % last filename rule applied, to reopen the dialog on it
         exploreWindows = struct([])
         exploreRes     = struct([])   % last groupCurves result, for the exits
         % Per-plot settings, as a name/params struct array rather than a
@@ -1885,13 +1886,22 @@ classdef nestapp < matlab.apps.AppBase
             end
         end
 
-        function w = exploreWindowColWidths(~)
-        % One set of widths for both views of the windows table. They show the
-        % same list in the same place, so columns that jump when the mode
-        % changes read as a different table rather than another view of one -
-        % and the first column IS the same thing in both, so it is 'Name' in
-        % both rather than 'Name' here and 'Win' there.
-            w = {56, 46, 65, 65};
+        function w = exploreWindowColWidths(~, mode)
+        % Widths per view. Both views show the same window list in the same
+        % place, so the window column is 'Name' in both rather than 'Name'
+        % here and 'Win' there - but results carries a Group column that
+        % define does not, so one set of widths cannot serve both.
+        %
+        % Both sum to 232, which is what the 250 px table holds once the
+        % vertical scrollbar is allowed for. Anything wider brings a
+        % horizontal scrollbar, and then data is hidden rather than merely
+        % scrolled to. Measured against the widest data the table holds:
+        % N100/P180, a three-digit latency, a negative amplitude.
+            if nargin > 1 && strcmp(mode, 'results')
+                w = {50, 48, 46, 44, 44};   % Group Name Mean Peak-ms Peak-uV
+            else
+                w = {56, 46, 65, 65};       % Name T1 T2 Peak
+            end
         end
 
         function refreshExploreWindows(app)
@@ -1917,81 +1927,93 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function showExploreWindowResults(app, w)
-        % Measures for the group SELECTED in the groups list - with n groups
-        % there is no single "the mean", so the table names whose it is.
-            app.ExploreWindowsTable.ColumnName     = {'Name'; 'Mean'; 'Peak ms'; 'Peak uV'};
-            app.ExploreWindowsTable.ColumnWidth    = exploreWindowColWidths(app);
-            app.ExploreWindowsTable.ColumnEditable = [false false false false];
-            app.ExploreWindowsTable.ColumnFormat   = {'char', 'char', 'char', 'char'};
+        % Every group's measures, the groups paired under each window.
+        %
+        % This showed one group's numbers with nothing on screen saying whose:
+        % the group went into the section label, which is allotted 70 px and
+        % truncated to 'WINDOWS: ...', and an unselected groups list fell back
+        % to the first group rather than showing nothing. In a tab whose
+        % purpose is comparing groups, one group's measures presented as "the"
+        % measures is the worst available answer. The group is a column now,
+        % so nothing depends on a selection and nothing can be hidden by a
+        % label that does not fit.
+            app.ExploreWindowsTable.ColumnName     = {'Group'; 'Name'; 'Mean'; ...
+                sprintf('Peak\nms'); sprintf('Peak\nuV')};
+            app.ExploreWindowsTable.ColumnWidth    = exploreWindowColWidths(app, 'results');
+            app.ExploreWindowsTable.ColumnEditable = false(1, 5);
+            app.ExploreWindowsTable.ColumnFormat   = repmat({'char'}, 1, 5);
+            app.ExploreWindowsLabel.Text = 'WINDOWS';
 
-            [curve, gname] = exploreSelectedCurve(app);
-            if isempty(curve)
-                app.ExploreWindowsTable.Data = ...
-                    [{w.name}', repmat({'-'}, numel(w), 3)];
-                app.ExploreWindowsLabel.Text = 'WINDOWS';
+            if isempty(app.exploreRes) || isempty(app.exploreRes.groups)
+                app.ExploreWindowsTable.Data = [repmat({'-'}, numel(w), 1), ...
+                    {w.name}', repmat({'-'}, numel(w), 3)];
                 return
             end
-            app.ExploreWindowsLabel.Text = sprintf('WINDOWS: %s', gname);
+            names = {app.exploreRes.groups.name};
+            nG    = numel(names);
 
-            % TESA's own detector, so this table and any peak overlay drawn
-            % from the same curve cannot disagree.
-            peaks   = [];
-            haveTesa = false;
+            % TESA's own detector, once per group, so this table and any peak
+            % overlay drawn from the same curve cannot disagree.
+            peaks    = cell(1, nG);
+            haveTesa = false(1, nG);
             if strcmpi(currentMode(app), 'TEP')
-                try
-                    % evalc: TESA prints a line per component per call, and this
-                    % runs on every window edit and group selection - six lines
-                    % of chatter each time would bury the app's own logging.
-                    evalc('peaks = tepPeakFinder(curve, app.exploreRes.time, w);');
-                    haveTesa = ~isempty(peaks);
-                catch
-                    peaks = [];   % TESA absent
+                for k = 1:nG
+                    % Read by the evalc below, which checkcode cannot see into.
+                    curve = app.exploreRes.est(k).mean; %#ok<NASGU>
+                    try
+                        % evalc: TESA prints a line per component per call, and
+                        % this runs on every window edit - nG times that would
+                        % bury the app's own logging.
+                        pk = [];
+                        evalc('pk = tepPeakFinder(curve, app.exploreRes.time, w);');
+                        peaks{k}    = pk;
+                        haveTesa(k) = ~isempty(pk);
+                    catch
+                        peaks{k} = [];   % TESA absent
+                    end
                 end
             end
 
-            data = cell(numel(w), 4);
+            % Windows outermost, groups within: the comparison this tab exists
+            % for is between groups at one window, so those rows sit adjacent.
+            data = cell(numel(w) * nG, 5);
+            r = 0;
             for i = 1:numel(w)
-                m = computeWindowMeasures(curve, app.exploreRes.time, ...
-                        w(i).winStart, w(i).winEnd, windowPolarity(w(i)));
-                data{i, 1} = w(i).name;
-                data{i, 2} = num2str(m.mean, '%.2f');
-                % tepPeakFinder reports latencyMs/amplitudeUV with a `found`
-                % flag; computeWindowMeasures reports peakLatency/peakAmp.
-                % Prefer TESA's detection so the table agrees with the overlay,
-                % and show '-' rather than a number where no peak was found.
-                if haveTesa && i <= numel(peaks)
-                    % When TESA ran, its verdict stands - including "no peak
-                    % here", shown as '-' rather than quietly substituting the
-                    % window extremum: a number where there is no peak is
-                    % worse than a dash.
-                    if peaks(i).found
-                        data{i, 3} = num2str(peaks(i).latencyMs, '%.0f');
-                        data{i, 4} = num2str(peaks(i).amplitudeUV, '%.2f');
+                for k = 1:nG
+                    r = r + 1;
+                    m = computeWindowMeasures(app.exploreRes.est(k).mean, ...
+                            app.exploreRes.time, w(i).winStart, w(i).winEnd, ...
+                            windowPolarity(w(i)));
+                    data{r, 1} = names{k};
+                    data{r, 2} = w(i).name;
+                    data{r, 3} = num2str(m.mean, '%.2f');
+                    % tepPeakFinder reports latencyMs/amplitudeUV with a
+                    % `found` flag; computeWindowMeasures reports
+                    % peakLatency/peakAmp. Prefer TESA's detection so the
+                    % table agrees with the overlay, and show '-' rather than
+                    % a number where no peak was found.
+                    if haveTesa(k) && i <= numel(peaks{k})
+                        % When TESA ran, its verdict stands - including "no
+                        % peak here", shown as '-' rather than quietly
+                        % substituting the window extremum: a number where
+                        % there is no peak is worse than a dash.
+                        if peaks{k}(i).found
+                            data{r, 4} = num2str(peaks{k}(i).latencyMs, '%.0f');
+                            data{r, 5} = num2str(peaks{k}(i).amplitudeUV, '%.2f');
+                        else
+                            data{r, 4} = '-';
+                            data{r, 5} = '-';
+                        end
+                    elseif m.found
+                        data{r, 4} = num2str(m.peakLatency, '%.0f');
+                        data{r, 5} = num2str(m.peakAmp, '%.2f');
                     else
-                        data{i, 3} = '-';
-                        data{i, 4} = '-';
+                        data{r, 4} = '-';
+                        data{r, 5} = '-';
                     end
-                elseif m.found
-                    data{i, 3} = num2str(m.peakLatency, '%.0f');
-                    data{i, 4} = num2str(m.peakAmp, '%.2f');
-                else
-                    data{i, 3} = '-';
-                    data{i, 4} = '-';
                 end
             end
             app.ExploreWindowsTable.Data = data;
-        end
-
-        function [curve, gname] = exploreSelectedCurve(app)
-        % The group mean curve for whichever group is selected in the rail,
-        % falling back to the first group when nothing is selected.
-            curve = []; gname = '';
-            if isempty(app.exploreRes) || isempty(app.exploreRes.groups); return; end
-            names = {app.exploreRes.groups.name};
-            k = find(strcmp(names, selectedExploreGroup(app)), 1);
-            if isempty(k); k = 1; end
-            curve = app.exploreRes.est(k).mean;
-            gname = names{k};
         end
 
         function name = selectedExploreGroup(app)
@@ -2064,12 +2086,19 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function refreshExploreDesign(app)
-        % Offer paired only when it is defined - every group holding the same
-        % subjects - and say how many complete sets there are either way.
+        % Offer paired whenever it is defined: two or more groups, and at least
+        % two subjects present in every one of them - a paired interval is the
+        % spread of within-subject differences, which one subject cannot give.
+        %
+        % Not "every subject in every group". Real cohorts are rarely that
+        % symmetric - one participant misses a post session - and groupCurves
+        % already handles it: a paired estimate keeps the complete subjects,
+        % in the same order in every group, and names the rest in res.dropped,
+        % which the status line reports. Demanding perfect symmetry here locked
+        % paired off for the ordinary cohort while the analysis supported it.
             [~, overall] = datasetSummary(app.exploreEntries);
             names   = exploreGroupNames(app);
-            canPair = numel(names) >= 2 && overall.nComplete > 0 && ...
-                      overall.nComplete == overall.nSubjects;
+            canPair = numel(names) >= 2 && overall.nComplete >= 2;
 
             app.ExplorePairedButton.Enable = onOffState(canPair);
             if ~canPair && app.ExplorePairedButton.Value
@@ -2078,14 +2107,16 @@ classdef nestapp < matlab.apps.AppBase
 
             if numel(names) < 2
                 app.ExploreDesignNoteLabel.Text = 'paired needs two or more groups';
+            elseif canPair && overall.nComplete == overall.nSubjects
+                app.ExploreDesignNoteLabel.Text = sprintf( ...
+                    'paired available: %d complete sets', overall.nComplete);
             elseif canPair
                 app.ExploreDesignNoteLabel.Text = sprintf( ...
-                    'paired available: %d complete set%s', ...
-                    overall.nComplete, plural(overall.nComplete));
-            elseif overall.nComplete > 0
-                app.ExploreDesignNoteLabel.Text = sprintf( ...
-                    'only %d of %d subjects are in every group', ...
+                    'paired uses the %d of %d subjects in every group', ...
                     overall.nComplete, overall.nSubjects);
+            elseif overall.nComplete == 1
+                app.ExploreDesignNoteLabel.Text = ...
+                    'paired needs 2+ subjects in every group (only 1)';
             else
                 app.ExploreDesignNoteLabel.Text = 'no subject is in every group';
             end
@@ -2394,19 +2425,13 @@ classdef nestapp < matlab.apps.AppBase
 
         function ExploreFilesButtonPushed(app, ~)
         % The whole subject story is settled here: what n is, and why.
-            edited = exploreFilesTable(app.exploreEntries, ...
-                struct('parent', app.UIFigure));
+            [edited, rule] = exploreFilesTable(app.exploreEntries, ...
+                struct('parent', app.UIFigure, 'subjectRule', app.exploreSubjectRule));
             if isempty(edited); return; end     % cancelled
             app.exploreEntries = edited;
+            app.exploreSubjectRule = rule;
             refreshExplorePlots(app);
             recomputeExplore(app);
-        end
-
-        function ExploreGroupsListBoxValueChanged(app, ~)
-        % Selecting a group changes whose numbers the windows table shows.
-            if strcmp(app.ExploreWindowsModeDropDown.Value, 'results')
-                refreshExploreWindows(app);
-            end
         end
 
         function ExploreWindowsModeChanged(app, ~)
@@ -2427,6 +2452,14 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function ExploreWindowsRemoveButtonPushed(app, ~)
+            % Results mode lists group x window, so a row index is not a
+            % window index there. Switch to the view where it is rather than
+            % deleting whichever window the arithmetic happens to land on.
+            if strcmp(app.ExploreWindowsModeDropDown.Value, 'results')
+                app.ExploreWindowsModeDropDown.Value = 'define';
+                refreshExploreWindows(app);
+                return
+            end
             sel = app.ExploreWindowsTable.Selection;
             if isempty(sel) || isempty(app.exploreWindows); return; end
             r = sel(1, 1);

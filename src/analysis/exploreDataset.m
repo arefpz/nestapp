@@ -22,13 +22,16 @@ function [entries, summary] = exploreDataset(paths, rules, opts)
 %                   cannot match the directories above the data (a cohort under
 %                   C:\preprocessed must not make every file match 'pre')
 %     .subjectMode  'file' (default) or 'guess'
-%     .subjects     cellstr of subject ids, one per path; wins over both
+%     .subjectRule  which filename parts are the subject (see
+%                   subjectIdsFromRule) - the rule subjectRuleDialog returns, so
+%                   a script reproduces the GUI's subjects; wins over subjectMode
+%     .subjects     cellstr of subject ids, one per path; wins over all of these
 %
 %   SUBJECT IDENTITY IS NOT GUESSED BY DEFAULT. subjectMode 'file' gives every
 %   recording its own subject id, so n is the number of files: predictable, and
-%   whatever it is, it is visible. 'guess' runs inferSubjectIds instead, which
-%   collapses repeat recordings of one person - on a real cohort that turned 148
-%   files into 95 subjects, silently changing n for every interval.
+%   whatever it is, it is visible. 'guess' applies suggestSubjectRule instead,
+%   which collapses repeat recordings of one person - on a real cohort that
+%   turned 148 files into 95 subjects, silently changing n for every interval.
 %
 %   Neither default is safe. One-per-file inflates n when repeats really exist
 %   (the pseudo-replication this whole layer was built to fix); guessing
@@ -37,32 +40,35 @@ function [entries, summary] = exploreDataset(paths, rules, opts)
 %   takes deliberately, having seen what it would do.
 %
 %   entries is the struct array the rest of the Explore layer takes:
-%   .path .subject .group, plus .subjectConfident so a caller can show which
-%   subject ids were guessed rather than given.
+%   .path .subject .group, plus .subjectConfident, false where a subject rule
+%   could not be applied because the file lacked the chosen filename part.
 %
 %   This is the headless entry point for building a comparison. The GUI will
 %   call exactly this, which is the point: a script can reproduce any figure
 %   the app draws without the app, and a saved session is consumable by the
 %   same functions.
 %
-%   See also: inferSubjectIds, assignGroupByFilter, datasetSummary, groupCurves
+%   See also: subjectIdsFromRule, suggestSubjectRule, assignGroupByFilter,
+%             datasetSummary, groupCurves
 
 if nargin < 2; rules = {}; end
 if nargin < 3; opts = struct(); end
 opts = fillDefaults(opts, struct('root', '', 'subjectMode', 'file', ...
-                                 'subjects', {{}}));
+                                 'subjectRule', [], 'subjects', {{}}));
 
 if ischar(paths) || isstring(paths); paths = cellstr(paths); end
 paths = paths(:)';
 
-if strcmpi(opts.subjectMode, 'guess')
-    [ids, confident] = inferSubjectIds(paths);
+if ~isempty(opts.subjectRule)
+    [ids, matched] = subjectIdsFromRule(paths, opts.subjectRule);
+elseif strcmpi(opts.subjectMode, 'guess')
+    [ids, matched] = subjectIdsFromRule(paths, suggestSubjectRule(paths));
 else
     % One subject per file. Labels must be unique or two files would silently
     % merge into one "subject" - and these labels are what the files table
     % shows, so they have to be readable too.
     ids       = uniqueFileLabels(paths);
-    confident = true(1, numel(paths));
+    matched   = true(1, numel(paths));
 end
 if ~isempty(opts.subjects)
     if numel(opts.subjects) ~= numel(paths)
@@ -70,12 +76,12 @@ if ~isempty(opts.subjects)
             'Given %d subject ids for %d files.', numel(opts.subjects), numel(paths));
     end
     ids       = cellstr(opts.subjects);
-    confident = true(1, numel(ids));
+    matched   = true(1, numel(ids));
 end
 
 entries = struct('path', paths, 'subject', ids, ...
                  'group', repmat({''}, 1, numel(paths)), ...
-                 'subjectConfident', num2cell(confident));
+                 'subjectConfident', num2cell(matched));
 
 rules = normaliseRules(rules);
 for r = 1:numel(rules)
@@ -96,34 +102,6 @@ summary.groups = groups;
 end
 
 % ── helpers ─────────────────────────────────────────────────────────────────
-
-function labels = uniqueFileLabels(paths)
-% Basename, with as much of the parent path prepended as it takes to be
-% unique. The cohort has the same basename in two pipeline output folders, so
-% basename alone is not an identity.
-n      = numel(paths);
-labels = cell(1, n);
-parts  = cell(1, n);
-for i = 1:n
-    p = strrep(char(paths{i}), filesep, '/');
-    p = strrep(p, '\', '/');
-    seg = strsplit(p, '/');
-    seg = seg(~cellfun(@isempty, seg));
-    [~, base] = fileparts(seg{end});
-    seg{end}  = base;
-    parts{i}  = seg;
-    labels{i} = base;
-end
-
-depth = 1;
-while numel(unique(labels)) < n && depth < 8
-    depth = depth + 1;
-    for i = 1:n
-        take      = parts{i}(max(1, end - depth + 1):end);
-        labels{i} = strjoin(take, '/');
-    end
-end
-end
 
 function rules = normaliseRules(rules)
 if isempty(rules)

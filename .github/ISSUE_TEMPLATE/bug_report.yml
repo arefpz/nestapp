@@ -53,7 +53,7 @@ body:
     attributes:
       label: nestapp version
       description: From Help → About, or run nestappVersion(). (Skip if you pasted diagnostics above.)
-      placeholder: "2.1.0"
+      placeholder: "x.y.z"
     validations:
       required: false
   - type: input

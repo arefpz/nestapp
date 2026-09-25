@@ -33,7 +33,7 @@ function [entries, nMatched] = assignGroupByFilter(entries, pattern, groupName, 
 %     entries  - the input with .group set on matching elements.
 %     nMatched - number of entries assigned.
 %
-%   See also: selectDataTree, inferSubjectIds, datasetSummary
+%   See also: selectDataTree, subjectIdsFromRule, datasetSummary
 
 if nargin < 4, rootFolder = ''; end
 nMatched = 0;
