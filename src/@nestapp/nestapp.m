@@ -85,6 +85,7 @@ classdef nestapp < matlab.apps.AppBase
         ExploreGroupsLabel              matlab.ui.control.Label
         ExploreGroupsListBox            matlab.ui.control.ListBox
         ExploreAddGroupButton           matlab.ui.control.Button
+        ExploreColoursButton            matlab.ui.control.Button
         ExploreRemoveGroupButton        matlab.ui.control.Button
         ExploreRoiLabel                 matlab.ui.control.Label
         ExploreRoiDropDown              matlab.ui.control.DropDown
@@ -142,6 +143,12 @@ classdef nestapp < matlab.apps.AppBase
         % '' until the user has chosen. Deliberately no default - neither rule
         % is neutral, so the first mixed-cap load asks (see ensureExploreCapRule).
         exploreCapRule = ''
+        % Plot colours: the theme name and per-group colour overrides (user
+        % preferences, read at startup), and which slot each group name holds
+        % this session so its colour never moves (see groupStyles).
+        exploreTheme            = ''
+        exploreColourOverrides  = struct('name', {}, 'rgb', {})
+        exploreGroupStyleMemory = struct('name', {}, 'slot', {})
         % Per-plot settings, as a name/params struct array rather than a
         % struct keyed by plot name - "TEP (ROI mean)" is not a valid field
         % name, and renaming plots to suit the storage would be backwards.
@@ -1769,6 +1776,11 @@ classdef nestapp < matlab.apps.AppBase
         % ROI presets, and the default windows.
             app.exploreWindows = defaultTEPComponentDefs();
             app.exploreRoi     = firstRoiPreset();
+            app.exploreTheme   = getpref('nestapp', 'plotTheme', '');
+            over = getpref('nestapp', 'groupColorOverrides', []);
+            if isstruct(over) && all(isfield(over, {'name', 'rgb'}))
+                app.exploreColourOverrides = over;
+            end
             refreshExploreRoi(app);
             refreshExploreWindows(app);
             refreshExplorePlots(app);
@@ -1854,6 +1866,7 @@ classdef nestapp < matlab.apps.AppBase
             app.ExploreGroupsListBox.Items     = items;
             app.ExploreGroupsListBox.ItemsData = data;
             app.ExploreRemoveGroupButton.Enable = onOffState(~isempty(data));
+            app.ExploreColoursButton.Enable     = onOffState(~isempty(data));
             hasData = ~isempty(data);
             app.ExploreFilesButton.Enable   = onOffState(~isempty(app.exploreEntries));
             app.ExploreFigureButton.Enable  = onOffState(hasData);
@@ -2328,13 +2341,20 @@ classdef nestapp < matlab.apps.AppBase
             % default to apply. Every drawer ignores the context fields it does
             % not declare, so the fill is uniform and each branch below states
             % only how many axes to mint.
+            % Group colours, line styles and bar textures come from the theme,
+            % here and nowhere else, so every plot and every export agrees.
+            sty  = exploreGroupStyles(app);
             opts = fillDefaults( ...
                 plotDrawOpts(entry, explorePlotParamsFor(app, entry.name)), ...
                 struct( ...
-                'mode',    entry.mode, ...
-                'windows', app.exploreWindows, ...
-                'window',  exploreTopoWindow(app), ...
-                'axesFcn', axesFcn));
+                'mode',        entry.mode, ...
+                'windows',     app.exploreWindows, ...
+                'window',      exploreTopoWindow(app), ...
+                'colors',      sty.colors, ...
+                'lineStyles',  {sty.lineStyles}, ...
+                'barPatterns', {sty.barPatterns}, ...
+                'lineWidth',   sty.lineWidth, ...
+                'axesFcn',     axesFcn));
 
             switch exploreLayoutOf(app, entry)
                 case 'panel'
@@ -2383,6 +2403,42 @@ classdef nestapp < matlab.apps.AppBase
             if isfield(entry, 'layout') && ~isempty(entry.layout)
                 layout = entry.layout;
             end
+        end
+
+        function sty = exploreGroupStyles(app)
+        % Styles for the current groups. The slot memory lives on the app, so
+        % a group keeps its colour for the whole session however the group
+        % list changes.
+            names = {};
+            if ~isempty(app.exploreRes); names = {app.exploreRes.groups.name}; end
+            [sty, app.exploreGroupStyleMemory] = groupStyles(names, ...
+                app.exploreTheme, app.exploreColourOverrides, app.exploreGroupStyleMemory);
+        end
+
+        function ExploreColoursButtonPushed(app, ~)
+        % Theme and per-group colours, previewed live; saved as preferences on
+        % OK, put back on Cancel.
+            if isempty(app.exploreRes) || isempty(app.exploreRes.groups); return; end
+            state = struct('theme', app.exploreTheme, ...
+                           'overrides', app.exploreColourOverrides);
+            [state, accepted] = groupColoursDialog({app.exploreRes.groups.name}, state, ...
+                app.UIFigure, @(st) groupStyles({app.exploreRes.groups.name}, st.theme, ...
+                    st.overrides, app.exploreGroupStyleMemory), ...
+                @(st) previewExploreColours(app, st));
+            app.exploreTheme           = state.theme;
+            app.exploreColourOverrides = state.overrides;
+            if accepted
+                setpref('nestapp', 'plotTheme', state.theme);
+                setpref('nestapp', 'groupColorOverrides', state.overrides);
+            end
+            cancelExploreRepaint(app);
+            repaintExploreNow(app);
+        end
+
+        function previewExploreColours(app, state)
+            app.exploreTheme           = state.theme;
+            app.exploreColourOverrides = state.overrides;
+            reRenderExploreOnResize(app);
         end
 
         function params = explorePlotParamsFor(app, name)

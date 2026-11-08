@@ -28,6 +28,16 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   differ, and saved analyses reopen under the rule they were computed with.
   Scripts pass `groupCurves(..., struct('capRule', 'shared'))`; the scripted
   default stays `'exclude'`.
+- **Plot colour themes and group colours** (Explore > Colours...). Pick a theme
+  for every plot - Okabe-Ito (default), Vibrant, Muted, Soft, Jewel, Earth,
+  Slate or Greyscale - and optionally a colour for any single group. The plot
+  previews as you choose; Cancel puts it back. Greyscale gives every group its
+  own line style and bar texture (diagonal, crosshatch, stripes, dots...) so
+  figures survive black-and-white printing, and every theme falls back to line
+  styles and textures past its last colour. A group keeps its colour for the
+  whole session however groups are added, removed or reordered. The theme and
+  picked colours are saved as preferences, keyed by group name, and exported
+  figures use the same colours as the screen.
 
 ### Changed
 

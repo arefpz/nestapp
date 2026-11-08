@@ -416,7 +416,6 @@ function createComponents(app)
             MAIN_X = 268;
             MAIN_W = 592;
 
-            HALF_W = floor((RAIL_W - 6) / 2);   % two buttons across the rail
             THIRD_W = floor((RAIL_W - 12) / 3); % three buttons across it
 
             % -- groups --------------------------------------------------
@@ -432,14 +431,24 @@ function createComponents(app)
 
             app.ExploreAddGroupButton = uibutton(app.ExploreTab, 'push');
             app.ExploreAddGroupButton.ButtonPushedFcn = createCallbackFcn(app, @ExploreAddGroupButtonPushed, true);
-            app.ExploreAddGroupButton.Text = 'Add group...';
-            app.ExploreAddGroupButton.Position = [RAIL_X 374 HALF_W 26];
+            app.ExploreAddGroupButton.Text = 'Add...';
+            app.ExploreAddGroupButton.Tooltip = {'Add a group of recordings.'};
+            app.ExploreAddGroupButton.Position = [RAIL_X 374 THIRD_W 26];
 
             app.ExploreRemoveGroupButton = uibutton(app.ExploreTab, 'push');
             app.ExploreRemoveGroupButton.ButtonPushedFcn = createCallbackFcn(app, @ExploreRemoveGroupButtonPushed, true);
             app.ExploreRemoveGroupButton.Enable = 'off';
             app.ExploreRemoveGroupButton.Text = 'Remove';
-            app.ExploreRemoveGroupButton.Position = [RAIL_X + HALF_W + 6 374 HALF_W 26];
+            app.ExploreRemoveGroupButton.Position = [RAIL_X + THIRD_W + 6 374 THIRD_W 26];
+
+            % Colours apply to every plot at once, so they sit with the groups
+            % rather than in a plot's Options.
+            app.ExploreColoursButton = uibutton(app.ExploreTab, 'push');
+            app.ExploreColoursButton.ButtonPushedFcn = createCallbackFcn(app, @ExploreColoursButtonPushed, true);
+            app.ExploreColoursButton.Enable = 'off';
+            app.ExploreColoursButton.Text = 'Colours...';
+            app.ExploreColoursButton.Position = [RAIL_X + 2*THIRD_W + 12 374 THIRD_W 26];
+            app.ExploreColoursButton.Tooltip = {'Choose a colour theme for every plot, or pick a colour for one group.'};
 
             app.ExploreFilesButton = uibutton(app.ExploreTab, 'push');
             app.ExploreFilesButton.ButtonPushedFcn = createCallbackFcn(app, @ExploreFilesButtonPushed, true);
