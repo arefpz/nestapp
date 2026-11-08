@@ -58,9 +58,7 @@ example `cd(fullfile(userpath, 'eeglab2026.1.0'))`) and type `eeglab`. Then:
   [`FastICA_2.5.zip`](https://research.ics.aalto.fi/ica/fastica/code/FastICA_2.5.zip)
   and unzip it into EEGLAB's `plugins` folder.
 
-ICLabel, clean_rawdata and firfilt come with EEGLAB, so there is nothing to
-install for them. Installing them again from the extension manager creates
-duplicate copies.
+ICLabel, clean_rawdata and firfilt come with EEGLAB.
 
 ### 4. Launch nestapp
 
@@ -104,7 +102,9 @@ GitHub repository:
 3. Delete the old `TESA1.1.1` folder beside it, so only one TESA is found.
 4. Restart nestapp. The six steps now appear in the picker.
 
-This is unreleased code, so it can change from one download to the next.
+**Use at your own risk.** TESA 1.2 is unreleased development code: it may
+contain bugs, it can change from one download to the next, and we have not
+verified its results. For published or production analyses, stay on TESA 1.1.1.
 
 ### From source (for development, or to track `develop`)
 
