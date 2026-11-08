@@ -61,6 +61,14 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   pass after the grid covered only the shared scale. The scalp-map drawer now
   restores the other axes' colormaps itself after each topoplot, so every scale
   mode, and any figure that holds a map, keeps its colours.
+- **Half-dark windows under OS dark mode** (MATLAB R2025a+, e.g. macOS set to
+  dark). MATLAB re-coloured only the parts of nestapp whose colours were not
+  fixed, so windows mixed light and dark: a light status bar with unreadable
+  grey text, white text on light disabled buttons, a white scrollbar. Every
+  nestapp window and every exported figure (publication figures, QC figures,
+  PDF reports) is now kept in the light theme whatever the desktop or OS uses,
+  so exports look the same on every machine. Classic MATLAB dialogs and
+  EEGLAB's own windows still follow MATLAB's theme.
 - **QC figure heatmap drawn in the wrong colours.** The channel x trial quality
   map is meant to be parula, but the ICA scalp maps drawn after it in the same
   figure reset it to EEGLAB's turbo, colour bar included, and turned the

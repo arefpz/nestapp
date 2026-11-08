@@ -56,7 +56,11 @@ classdef SuiteHygieneTest < NestappTestCase
         % honest rather than loosening it: every text read in the suite is
         % accounted for by name.
         MayReadSource = {'RegistryContractTest', 'MethodsClauseTest', ...
-                         'StepGoldenTest', 'AaratepInstallTest', 'VersionTest'}
+                         'StepGoldenTest', 'AaratepInstallTest', 'VersionTest', ...
+                         ... WindowThemeTest: a window created without appWindow or
+                         ... outputFigure brings back the dark-mode mix, and there is
+                         ... no behavioural way to enumerate every dialog.
+                         'WindowThemeTest'}
     end
 
     properties (Access = private)
