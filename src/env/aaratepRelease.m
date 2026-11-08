@@ -12,6 +12,7 @@ function info = aaratepRelease()
 %     .zipUrl       archive URL for .tag
 %     .sentinel     a function that must exist once installed
 %     .searchDirs   where to look for an installed tree, in order
+%     .writeDirs    where installAaratep may put a new tree, in order
 %
 %   A PINNED RELEASE, NOT "LATEST", and this is the important decision in the
 %   whole feature. AARATEP defines the behaviour of a published pipeline, so
@@ -35,6 +36,13 @@ info.zipUrl   = sprintf('https://github.com/%s/archive/refs/tags/%s.zip', ...
                         info.repo, info.tag);
 info.sentinel = 'c_TMSEEG_Preprocess_AARATEPPipeline';
 info.searchDirs = searchDirs();
+% Writing goes to prefdir BEFORE third_party/. An installed toolbox's own
+% folder is writable, so trying third_party/ first put the download inside the
+% toolbox, and the next nestapp update deleted it (seen installing 2.1.0 and
+% reinstalling it). A developer's own clone in third_party/ is still found
+% first by searchDirs; only where a NEW download lands changes.
+toolboxDir = fullfile(nestappRoot(), 'third_party', 'aaratep');
+info.writeDirs = [setdiff(info.searchDirs, {toolboxDir}, 'stable'), {toolboxDir}];
 end
 
 function dirs = searchDirs()

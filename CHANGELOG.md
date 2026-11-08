@@ -53,6 +53,12 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ### Fixed
 
+- **Updating nestapp deleted the AARATEP helpers.** Help > Install AARATEP
+  Helpers put them inside nestapp's own toolbox folder, which MATLAB replaces
+  on every update or reinstall, so the AARATEP template stopped working until
+  they were installed again. They now go under MATLAB's preferences folder
+  (`prefdir/nestapp/aaratep`). A developer's own clone in `third_party/aaratep`
+  is still used first.
 - **Exported topographies kept only one map red-blue.** With per-window
   (TEP-topo) or per-map (Topography) scaling, the MATLAB/PNG/PDF export drew
   every map except the last in EEGLAB's rainbow colours, while the app showed
