@@ -19,19 +19,20 @@ function [groupSets, divergingSets] = candidatePalettes()
 
 groupSets = struct('name', {}, 'family', {}, 'colors', {});
 
-% -- accessible ---------------------------------------------------------------
-groupSets(end+1) = entry('Okabe-Ito (2.2.0)', 'accessible', hex( ...
+% -- shipped themes, read from plotThemes so the gallery and the audit judge
+% exactly what the app draws (Soft, Jewel, Earth and Slate were picked by a
+% greedy OKLCH search, 2026-11-08: each next colour maximises its worst
+% CIEDE2000 distance under normal and simulated colour-blind vision) --------
+for t = plotThemes()'
+    groupSets(end+1) = entry(t.name, 'shipped', t.colors); %#ok<AGROW>
+end
+
+% -- candidates not shipped --------------------------------------------------
+groupSets(end+1) = entry('Okabe-Ito (2.2.0)', 'accessible', hexToRgb( ...
     '#262626', '#E69F00', '#57B5E8', '#009E73', '#0073B3', '#D65E00', '#CC78A6', '#F0E342'));
-groupSets(end+1) = entry('Okabe-Ito, amber for yellow', 'accessible', hex( ...
-    '#262626', '#E69F00', '#0072B2', '#009E73', '#D55E00', '#56B4E9', '#CC79A7', '#B8860B'));
-groupSets(end+1) = entry('Tol bright', 'accessible', hex( ...
+groupSets(end+1) = entry('Tol bright', 'accessible', hexToRgb( ...
     '#4477AA', '#EE6677', '#228833', '#CCBB44', '#66CCEE', '#AA3377', '#BBBBBB'));
-groupSets(end+1) = entry('Tol vibrant', 'accessible', hex( ...
-    '#0077BB', '#EE7733', '#009988', '#EE3377', '#33BBEE', '#CC3311', '#BBBBBB'));
-groupSets(end+1) = entry('Tol muted', 'accessible', hex( ...
-    '#332288', '#CC6677', '#117733', '#DDCC77', '#88CCEE', '#882255', '#44AA99', ...
-    '#999933', '#AA4499'));
-groupSets(end+1) = entry('Tol high contrast', 'accessible', hex( ...
+groupSets(end+1) = entry('Tol high contrast', 'accessible', hexToRgb( ...
     '#004488', '#DDAA33', '#BB5566'));
 
 % -- MATLAB's own, read at run time -------------------------------------------
@@ -44,25 +45,6 @@ if exist('orderedcolors', 'file')
         end
     end
 end
-
-% -- nestapp originals --------------------------------------------------------
-% Each has a mood - a box of OKLCH lightness, chroma and hue - and within it
-% the colours were picked greedily (scratch search, 2026-11-08): each next one
-% maximises its worst CIEDE2000 distance to those already chosen under normal
-% and simulated protan/deutan/tritan vision, at >= 3:1 contrast on white.
-% Constant-lightness drafts looked even but collapsed for colour-blind
-% readers; varying lightness is what keeps them apart.
-groupSets(end+1) = entry('Soft', 'original', hex( ...         % C 0.05-0.10
-    '#3B638C', '#AA8544', '#6C352D', '#499B9F', '#81632F', '#65836B', '#573E55', '#8279B8'));
-groupSets(end+1) = entry('Jewel', 'original', hex( ...        % C 0.11-0.17
-    '#314398', '#BB6802', '#760A03', '#6079D3', '#99335A', '#681053', '#319751', '#A05A9A'));
-groupSets(end+1) = entry('Earth', 'original', hex( ...        % warm hues + slate blue
-    '#884C28', '#4F91BD', '#014555', '#AC7980', '#8D8E46', '#376C8F', '#543232', '#5A7854'));
-groupSets(end+1) = entry('Slate', 'original', hex( ...        % cool, one warm accent
-    '#1C3249', '#BC7D25', '#8186C5', '#58290A', '#087158', '#605692', '#3C9F8E', '#825618'));
-
-% -- print -------------------------------------------------------------------
-groupSets(end+1) = entry('Greyscale', 'print', repmat([0.10; 0.45; 0.65; 0.30; 0.55], 1, 3));
 
 % -- diverging maps for topoplots ----------------------------------------------
 divergingSets = struct('name', {}, 'family', {}, 'map', {});
@@ -80,14 +62,6 @@ end
 
 function e = entry(name, family, colors)
 e = struct('name', name, 'family', family, 'colors', colors);
-end
-
-function rgb = hex(varargin)
-rgb = zeros(numel(varargin), 3);
-for k = 1:numel(varargin)
-    h = varargin{k}(2:end);
-    rgb(k, :) = [hex2dec(h(1:2)) hex2dec(h(3:4)) hex2dec(h(5:6))] / 255;
-end
 end
 
 function map = divergingOklch(cold, warm)

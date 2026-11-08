@@ -61,11 +61,7 @@ end
 
 function c = contrastOnWhite(rgb)
 % WCAG 2 contrast ratio of each colour against white.
-c = 1.05 ./ (relLuminance(rgb) + 0.05);
-end
-
-function Y = relLuminance(rgb)
-Y = srgbToLinear(rgb) * [0.2126; 0.7152; 0.0722];
+c = 1.05 ./ (relativeLuminance(rgb) + 0.05);   % the same function hatchBars uses
 end
 
 function lin = srgbToLinear(rgb)
