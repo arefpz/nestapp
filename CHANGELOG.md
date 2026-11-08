@@ -60,6 +60,9 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ### Fixed
 
+- **The installer's EEGLAB download could not work.** The `.mltbx` offered to
+  fetch EEGLAB from `eeglab.org/download/`, a web page (now a 404), not a file.
+  It now downloads the current EEGLAB zip from SCCN.
 - **Updating nestapp deleted the AARATEP helpers.** Help > Install AARATEP
   Helpers put them inside nestapp's own toolbox folder, which MATLAB replaces
   on every update or reinstall, so the AARATEP template stopped working until
