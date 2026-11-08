@@ -70,6 +70,8 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   no remembered folder it opens empty with Choose... highlighted instead of
   launching the system picker alongside itself, and it steps off "always on
   top" while the picker is up so the picker cannot open hidden behind it.
+  Closing the browser while it is still listing a large folder no longer
+  raises an error.
 - **Half-dark windows under OS dark mode** (MATLAB R2025a+, e.g. macOS set to
   dark). MATLAB re-coloured only the parts of nestapp whose colours were not
   fixed, so windows mixed light and dark: a light status bar with unreadable

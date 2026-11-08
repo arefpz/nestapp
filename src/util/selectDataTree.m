@@ -81,21 +81,21 @@ function selected = selectDataTree(startFolder, exts)
     parentField = uieditfield(fig, 'text', 'Editable', 'off', ...
         'Position', [100 560 520 26], 'Value', '(none selected)');
     chooseButton = uibutton(fig, 'Text', 'Choose...', 'Position', [630 560 115 28], ...
-        'ButtonPushedFcn', @(~,~) onChoose());
+        'ButtonPushedFcn', @(~,~) whileOpen(@onChoose));
 
     uilabel(fig, 'Text', 'Filter:', 'Position', [15 522 45 22]);
     searchField = uieditfield(fig, 'text', 'Position', [60 520 350 26], ...
-        'ValueChangedFcn', @(~,~) onFilter());
+        'ValueChangedFcn', @(~,~) whileOpen(@onFilter));
     uibutton(fig, 'Text', 'Check shown', 'Position', [420 519 105 28], ...
-        'ButtonPushedFcn', @(~,~) setShownChecked(true));
+        'ButtonPushedFcn', @(~,~) whileOpen(@setShownChecked, true));
     uibutton(fig, 'Text', 'Uncheck shown', 'Position', [530 519 115 28], ...
-        'ButtonPushedFcn', @(~,~) setShownChecked(false));
+        'ButtonPushedFcn', @(~,~) whileOpen(@setShownChecked, false));
     uibutton(fig, 'Text', 'Clear filter', 'Position', [650 519 95 28], ...
-        'ButtonPushedFcn', @(~,~) clearFilter());
+        'ButtonPushedFcn', @(~,~) whileOpen(@clearFilter));
 
     tree = uitree(fig, 'checkbox', 'Position', [15 60 730 450], ...
-        'NodeExpandedFcn', @(~,e) onExpand(e), ...
-        'CheckedNodesChangedFcn', @(~,e) onCheckChanged(e));
+        'NodeExpandedFcn', @(~,e) whileOpen(@onExpand, e), ...
+        'CheckedNodesChangedFcn', @(~,e) whileOpen(@onCheckChanged, e));
     % Make the check handler NON-REENTRANT. onCheckChanged briefly yields the
     % UI thread (a uifigure property round-trip), and while it is yielded the
     % next checkbox event would interrupt and re-enter it - each re-entry
@@ -118,7 +118,7 @@ function selected = selectDataTree(startFolder, exts)
     % windows up together - this one and the picker, which on Linux can open
     % behind it - and the user had to work out which one wanted them.
     if ~isempty(startFolder) && isfolder(startFolder)
-        setParent(startFolder);
+        whileOpen(@setParent, startFolder);
     else
         parentField.Value = '(none selected) - click Choose... to pick your data folder';
         chooseButton.FontWeight = 'bold';
@@ -400,6 +400,25 @@ function selected = selectDataTree(startFolder, exts)
     % ====================================================================
     %  Small helpers
     % ====================================================================
+    % Run a piece of the browser's work, tolerating the window being closed
+    % part-way. Building a large folder's tree, scanning, or a cascade yields
+    % to the UI while it creates nodes, and closing the window then deletes
+    % the tree out from under it - the next uitreenode threw "Parent must be
+    % a valid Tree", surfacing as an error dialog (or, during the first load,
+    % as an error from Browse...). Once the window is gone there is nothing
+    % left to update, so that error is dropped; any error while the window
+    % is still open is a real one and is rethrown.
+    %
+    % Every callback and the initial load go through here, so a new callback
+    % gets the same tolerance by being wired the same way.
+    function whileOpen(fn, varargin)
+        try
+            fn(varargin{:});
+        catch err
+            if isvalid(fig); rethrow(err); end
+        end
+    end
+
     % Recursively gather every loadable file under a folder on disk. Used
     % when a folder checkbox cascades to files that may not be materialised.
     function files = collectLoadableUnder(folder)

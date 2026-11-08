@@ -76,6 +76,34 @@ classdef SelectDataTreeTest < NestappTestCase
             end
         end
 
+        function closingWhileALargeFolderLoadsIsNotAnError(tc)
+        % Listing a big folder yields to the UI while it creates nodes;
+        % closing the window then deleted the tree under it and the next
+        % node threw "Parent must be a valid Tree". The positive control
+        % below checks the close really landed MID-build, so this cannot pass
+        % just because the build happened to finish first.
+            N = 1500;
+            folder = scratchDir(tc);
+            for k = 1:N; mkdir(fullfile(folder, sprintf('sub%04d', k))); end
+            shown = NaN;
+            t = timer('StartDelay', 0.8, 'TimerFcn', @(~,~) closeMidBuild());
+            start(t);
+            tc.addTeardown(@() stopAndDelete(t));
+
+            got = tc.verifyWarningFree(@() selectDataTree(folder), ...
+                'closing mid-build must not raise anything');
+            tc.verifyEmpty(got);
+            tc.assertLessThan(shown, N, ...
+                'the build had finished before the close - raise N so this tests something');
+
+            function closeMidBuild()
+                f = findall(groot, 'Type', 'figure', 'Name', tc.NAME);
+                tr = findall(f, '-property', 'CheckedNodes');   % the checkbox tree
+                if ~isempty(tr); shown = numel(tr.Children); end
+                delete(f);
+            end
+        end
+
         function closingTheBrowserFreesTheNextOpen(tc)
         % The registration must not outlive the window, or the browser could
         % never be opened again after the first time.
