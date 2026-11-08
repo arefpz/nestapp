@@ -15,6 +15,9 @@ function res = groupCurves(cache, entries, opts)
 %               .design     'paired' | 'unpaired'     (default 'unpaired')
 %               .smoothWin  moving-average samples    (default 5, as the app uses)
 %               .level      confidence level          (default 0.95)
+%               .capRule    'exclude' | 'shared'      (default 'exclude')
+%                           what to do when files were recorded on different
+%                           caps - see "Mixed caps" below
 %
 %   Output res:
 %     .time           1xT common time base (ms)
@@ -35,8 +38,13 @@ function res = groupCurves(cache, entries, opts)
 %                     averaged, not refused, so the difference is recorded)
 %                     and .montage:
 %                       .uniform    true when every file has the same channels
-%                       .nChannels  size of the modal montage
-%                       .excluded   files not on it, by name
+%                       .rule       the capRule applied
+%                       .nChannels  size of the montage the curves use
+%                       .excluded   files left out, by name ('exclude' only)
+%                       .excludedByGroup  struct array .group .n - how the
+%                                   exclusions fall across groups
+%                       .dropped    electrodes of the modal cap left out
+%                                   because some file lacks them ('shared' only)
 %                       .variants   each distinct montage with its files and
 %                                   what it lacks relative to the modal one
 %
@@ -48,9 +56,11 @@ function res = groupCurves(cache, entries, opts)
 %   divided by sqrt(nFiles), which on this cohort (8 people, 32 recordings)
 %   treats one person's four sessions as four independent observations.
 %
-%   One montage for the whole dataset - the modal one. Files recorded on a
-%   different cap are excluded and named in res.info.montage.excluded rather
-%   than quietly shrinking everyone else's channel set; see modalMontage.
+%   Mixed caps: the analyst's call, and whichever rule applies is recorded.
+%   'exclude' keeps the montage most files carry and leaves the other files
+%   out, named in res.info.montage.excluded. 'shared' keeps every file and
+%   uses only the electrodes all of them carry, naming the electrodes lost in
+%   res.info.montage.dropped. Neither is neutral - see chooseMontage.
 %
 %   Complete cases for paired designs. A paired interval is only defined on
 %   subjects present in every group; the rest are dropped and NAMED in
@@ -61,7 +71,12 @@ function res = groupCurves(cache, entries, opts)
 
 if nargin < 3; opts = struct(); end
 opts = fillDefaults(opts, struct('roi', {{}}, 'mode', 'TEP', ...
-    'design', 'unpaired', 'smoothWin', 5, 'level', 0.95));
+    'design', 'unpaired', 'smoothWin', 5, 'level', 0.95, 'capRule', 'exclude'));
+opts.capRule = lower(char(string(opts.capRule)));
+if ~any(strcmp(opts.capRule, {'exclude', 'shared'}))
+    error('nestapp:badCapRule', ...
+        'capRule must be ''exclude'' or ''shared''; got "%s".', opts.capRule);
+end
 
 res = struct('time', [], 'channelLabels', {{}}, 'chanlocs', [], ...
              'groups', struct('name', {}, 'subjects', {}, 'curves', {}, ...
@@ -71,13 +86,14 @@ res = struct('time', [], 'channelLabels', {{}}, 'chanlocs', [], ...
              'design', opts.design, 'complete', {{}}, ...
              'dropped', {{}}, 'info', struct());
 
-use = usableEntries(cache, entries);
+use = groupedCacheEntries(cache, entries);
 if isempty(use); return; end
 
 % ── one montage, then one time base for the files that carry it ──────────
-% Montage first: files on a different cap are excluded outright, so they must
-% not get a say in the time base either.
-[res.channelLabels, conforms, chanIdx, montage] = modalMontage(cache, use);
+% Montage first: under 'exclude' files on a different cap are left out
+% outright, so they must not get a say in the time base either.
+[res.channelLabels, conforms, chanIdx, montage] = chooseMontage(cache, use, ...
+                                                                opts.capRule);
 use     = use(conforms);
 chanIdx = chanIdx(conforms);
 if isempty(res.channelLabels)
@@ -184,87 +200,74 @@ end
 
 % ── helpers ─────────────────────────────────────────────────────────────────
 
-function use = usableEntries(cache, entries)
-% Join entries to their cached data, keeping only grouped files that loaded.
+function [labels, conforms, idx, montage] = chooseMontage(cache, use, rule)
+% The channel set the curves are computed on, and which files carry it.
 %
-% Holds a cache INDEX, not the cached arrays. Copy-on-write means the previous
-% version never actually memcopied the 63x2000 trial averages - they were
-% shared - so the win is not avoided duplication but avoided REALLOCATION:
-% growing a struct array whose elements each carried those fields, once per
-% file, then filtering it again by montage. Measured 0.20 -> 0.09 ms at 12
-% files and 2.9 -> 1.4 ms at 200, on a path that re-runs on every ROI change.
-use = struct('ci', {}, 'subject', {}, 'group', {}, 'label', {}, ...
-             'nTrials', {}, 'chanAvg', {}, 'curve', {});
-if isempty(entries) || isempty(cache); return; end
-
-paths = {cache.path};
-ci    = zeros(1, numel(entries));
-for i = 1:numel(entries)
-    if isempty(entries(i).group); continue; end
-    k = find(strcmp(paths, entries(i).path), 1);
-    if isempty(k) || ~cache(k).ok; continue; end
-    ci(i) = k;
-end
-
-idxE = find(ci > 0);
-if isempty(idxE); return; end
-use = repmat(struct('ci', 0, 'subject', '', 'group', '', 'label', '', ...
-                    'nTrials', 1, 'chanAvg', [], 'curve', []), 1, numel(idxE));
-for j = 1:numel(idxE)
-    i = idxE(j);
-    [~, nm, ex]    = fileparts(entries(i).path);
-    use(j).ci      = ci(i);
-    use(j).subject = char(entries(i).subject);
-    use(j).group   = char(entries(i).group);
-    use(j).label   = [nm ex];
-    use(j).nTrials = max(cache(ci(i)).nTrials, 1);
-end
-end
-
-function [labels, conforms, idx, montage] = modalMontage(cache, use)
-% The montage carried by the most files, and which files carry it.
-%
-% Not an intersection across every file. On this cohort 32 files carry
-% AFz/FCz/FT9/FT10 and three (rtmsct006, rtmsct016, rtmsct021) carry
+% On the development cohort most files carry AFz/FCz/FT9/FT10 and a few carry
 % CPz/FPz/Iz instead - two cap configurations, not bad channels awaiting
-% interpolation, which the pipeline does correctly. Intersecting would take the
-% 59 labels common to both and make 32 files pay for three, and it would move
-% GMFP without saying so, since GMFP is a standard deviation ACROSS CHANNELS
-% and 59 of them is not 63 of them.
+% interpolation. There is no neutral way to combine them, so the rule is the
+% caller's:
 %
-% So the majority montage wins and the odd files out are excluded and NAMED.
-% That keeps the common case exact, keeps GMFP comparable, and turns a silent
-% degradation into a list of files to go and look at.
+%   'exclude'  The montage most files carry wins and the rest are left out and
+%              NAMED. Every included file is exact and GMFP stays comparable to
+%              a full-cap analysis - but there are fewer files, and if the cap
+%              changed with site, period or condition the exclusions are not
+%              random and can unbalance the groups.
+%   'shared'   Every file stays, on the electrodes all of them carry. ROI
+%              curves are unchanged when the ROI is on every cap, but maps lose
+%              those electrodes and GMFP - a standard deviation ACROSS channels
+%              - is over fewer of them than a full-cap analysis.
+%
+% Either way what was given up is recorded, so the status line and the figure
+% footer can say it.
 %
 % Ties (two montages with equally many files) go to the one seen first, which
 % is stable for a given file order and reported either way.
 labelSets = {cache([use.ci]).labels};
-sigs = cellfun(@(L) strjoin(sort(lower(L)), ','), labelSets, 'UniformOutput', false);
-[uniqSigs, ~, which] = unique(sigs, 'stable');
+caps      = capSummary(labelSets);
 
-counts = accumarray(which(:), 1);
-[~, winner] = max(counts);          % max takes the first on a tie
-conforms = (which(:)' == winner);
-labels   = labelSets{find(conforms, 1)};
+if strcmp(rule, 'shared')
+    labels   = caps.sharedLabels;
+    conforms = true(1, numel(use));
+    dropped  = caps.dropped;
+else
+    labels   = caps.modalLabels;
+    conforms = caps.modal;
+    dropped  = {};
+end
 
 idx = cell(1, numel(use));
+lowLabels = lower(labels);
 for i = find(conforms)
-    [~, idx{i}] = ismember(lower(labels), lower(labelSets{i}));
+    [~, idx{i}] = ismember(lowLabels, lower(labelSets{i}));
 end
 
 montage = struct();
-montage.uniform   = isscalar(uniqSigs);
+montage.uniform   = (caps.nVariants == 1);
+montage.rule      = rule;
 montage.nChannels = numel(labels);
 montage.excluded  = {use(~conforms).label};
+montage.dropped   = dropped;
+
+% How the exclusions fall across groups. Lopsided exclusions are how 'exclude'
+% biases a comparison, so they are counted for the app to flag.
+groupOf = {use.group};
+gNames  = unique(groupOf, 'stable');
+montage.excludedByGroup = struct('group', gNames, 'n', 0);
+for g = 1:numel(gNames)
+    montage.excludedByGroup(g).n = sum(~conforms & strcmp(groupOf, gNames{g}));
+end
+
 montage.variants = struct('nChannels', {}, 'nFiles', {}, 'files', {}, 'missing', {});
-for v = 1:numel(uniqSigs)
-    inV = (which(:)' == v);
+lowModal = lower(caps.modalLabels);
+for v = 1:caps.nVariants
+    inV = (caps.which == v);
     vLabels = labelSets{find(inV, 1)};
     montage.variants(v).nChannels = numel(vLabels);
     montage.variants(v).nFiles    = sum(inV);
     montage.variants(v).files     = {use(inV).label};
     % What this variant lacks relative to the modal one - the actionable bit.
-    montage.variants(v).missing   = labels(~ismember(lower(labels), lower(vLabels)));
+    montage.variants(v).missing   = caps.modalLabels(~ismember(lowModal, lower(vLabels)));
 end
 end
 

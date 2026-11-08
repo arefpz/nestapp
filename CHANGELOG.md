@@ -8,6 +8,27 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+### Added
+
+- **A choice for files recorded on different caps** (Explore). 2.2.0 always
+  left out files whose cap differed from the most common one. The rule is now
+  the analyst's. The first time the grouped files turn out to be on more than
+  one cap, the app asks which rule to use and says what each gives up for those
+  files:
+  - **Exclude other-cap files**: the 2.2.0 behaviour. Maps and GMFP keep the
+    full cap, but there are fewer files, and the groups can end up unbalanced if
+    the cap changed between them.
+  - **Use shared electrodes**: the pre-2.2 behaviour. Every file stays, on the
+    electrodes all caps carry. ROI curves are unchanged when the ROI is on every
+    cap; maps and GMFP use fewer electrodes.
+
+  A **Caps...** button beside the design changes the rule later. The status line
+  states the rule, flags uneven exclusions across groups and warns when GMFP is
+  over fewer electrodes. Exported figure footers gain a `caps:` entry when caps
+  differ, and saved analyses reopen under the rule they were computed with.
+  Scripts pass `groupCurves(..., struct('capRule', 'shared'))`; the scripted
+  default stays `'exclude'`.
+
 ### Fixed
 
 - **Exported topographies kept only one map red-blue.** With per-window

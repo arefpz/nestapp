@@ -98,6 +98,7 @@ classdef nestapp < matlab.apps.AppBase
         ExploreUnpairedButton           matlab.ui.control.RadioButton
         ExplorePairedButton             matlab.ui.control.RadioButton
         ExploreDesignNoteLabel          matlab.ui.control.Label
+        ExploreCapsButton               matlab.ui.control.Button
         ExploreWindowsModeDropDown      matlab.ui.control.DropDown
         ExploreWindowsAddButton         matlab.ui.control.Button
         ExploreWindowsRemoveButton      matlab.ui.control.Button
@@ -137,6 +138,10 @@ classdef nestapp < matlab.apps.AppBase
         exploreSubjectRule = []  % last filename rule applied, to reopen the dialog on it
         exploreWindows = struct([])
         exploreRes     = struct([])   % last groupCurves result, for the exits
+        % What to do with files on different caps: 'exclude' | 'shared', or
+        % '' until the user has chosen. Deliberately no default - neither rule
+        % is neutral, so the first mixed-cap load asks (see ensureExploreCapRule).
+        exploreCapRule = ''
         % Per-plot settings, as a name/params struct array rather than a
         % struct keyed by plot name - "TEP (ROI mean)" is not a valid field
         % name, and renaming plots to suit the storage would be backwards.
@@ -1833,7 +1838,7 @@ classdef nestapp < matlab.apps.AppBase
             data  = cell(1, numel(groups));
             for g = 1:numel(groups)
                 % Show the n the ESTIMATE rests on, not the n assigned. Files on
-                % a different cap are excluded by groupCurves, so the assigned
+                % a different cap can be excluded by groupCurves, so the assigned
                 % count can be higher - and the rail showing 16 beside a legend
                 % showing 15 is how a user stops trusting either number.
                 used = usedSubjectCount(app, groups(g).name);
@@ -2038,6 +2043,7 @@ classdef nestapp < matlab.apps.AppBase
         % arithmetic on a few MB, so there is no stale-state class of bug.
             app.exploreRes = struct([]);
             if isempty(exploreGroupNames(app))
+                app.ExploreCapsButton.Visible = 'off';
                 refreshExploreGroups(app);
                 refreshExploreDesign(app);
                 refreshExploreWindows(app);
@@ -2056,6 +2062,7 @@ classdef nestapp < matlab.apps.AppBase
             entry = currentPlotEntry(app);
             mode = 'TEP';
             if ~isempty(entry) && ~isempty(entry.mode); mode = entry.mode; end
+            capRule = ensureExploreCapRule(app);
             try
                 % No 'level' here: groupCurves owns that default and records
                 % what it used in res.info.level, which is what the status
@@ -2063,7 +2070,7 @@ classdef nestapp < matlab.apps.AppBase
                 % second place the number lived.
                 app.exploreRes = groupCurves(app.exploreCache, app.exploreEntries, ...
                     struct('roi', {app.exploreRoi}, 'mode', mode, ...
-                           'design', exploreDesign(app)));
+                           'design', exploreDesign(app), 'capRule', capRule));
             catch ME
                 app.ExploreStatusLabel.Text = ME.message;
                 app.exploreRes = struct([]);
@@ -2071,6 +2078,79 @@ classdef nestapp < matlab.apps.AppBase
             refreshExploreGroups(app);
             refreshExploreWindows(app);
             renderExplorePlot(app);
+        end
+
+        function rule = ensureExploreCapRule(app)
+        % The cap rule to compute with. Asks the first time the grouped files
+        % turn out to be on more than one cap, and shows the Caps... button
+        % for as long as they are. With one cap the rule changes nothing, so
+        % nothing is asked and 'exclude' is passed.
+            caps  = exploreCapSummary(app);
+            mixed = caps.nVariants > 1;
+            app.ExploreCapsButton.Visible = onOffState(mixed);
+            if mixed && isempty(app.exploreCapRule)
+                app.exploreCapRule = askExploreCapRule(app, caps);
+            end
+            rule = app.exploreCapRule;
+            if isempty(rule); rule = 'exclude'; end
+        end
+
+        function caps = exploreCapSummary(app)
+        % The caps of exactly the files groupCurves will use - same filter,
+        % same summary - so the prompt describes the result it leads to.
+            use  = groupedCacheEntries(app.exploreCache, app.exploreEntries);
+            caps = capSummary({app.exploreCache([use.ci]).labels});
+        end
+
+        function rule = askExploreCapRule(app, caps)
+        % Ask which cap rule to use, stating what each one gives up for THESE
+        % files. Neither is the default: excluding can unbalance the groups,
+        % sharing changes the maps and GMFP, and which matters more depends on
+        % the study - so the analyst decides, and the choice is stated on the
+        % status line and every exported figure afterwards.
+            nAll  = numel(caps.which);
+            nKeep = sum(caps.modal);
+            nOut  = nAll - nKeep;
+            modalLabels = caps.modalLabels;
+            shared      = caps.sharedLabels;
+            lost        = caps.dropped;
+            nVariants   = caps.nVariants;
+
+            msg = sprintf([ ...
+                'These %d files were recorded on %d different caps.\n\n' ...
+                'Exclude: keep the %d files on the most common cap (%d electrodes) ' ...
+                'and leave out the other %d. Maps and GMFP use the full cap. If the ' ...
+                'cap changed between groups, sessions or sites, this can unbalance ' ...
+                'the comparison.\n\n' ...
+                'Shared electrodes: keep all %d files on the %d electrodes every cap ' ...
+                'has (drops %s). ROI curves are unchanged if the ROI is on every ' ...
+                'cap; maps and GMFP use fewer electrodes.\n\n' ...
+                'The choice is shown under the plot and on exported figures, and ' ...
+                'can be changed with Caps... beside the design.'], ...
+                nAll, nVariants, nKeep, numel(modalLabels), nOut, ...
+                nAll, numel(shared), strjoin(lost, ' '));
+            opts = {'Exclude other-cap files', 'Use shared electrodes'};
+            current = 1;
+            if strcmp(app.exploreCapRule, 'shared'); current = 2; end
+            % Closing the dialog keeps the current rule, or exclude on first
+            % ask - the status line states whichever applies.
+            choice = uiconfirm(app.UIFigure, msg, 'Files on different caps', ...
+                'Options', opts, 'DefaultOption', current, ...
+                'CancelOption', current, 'Icon', 'question');
+            if strcmp(choice, opts{2})
+                rule = 'shared';
+            else
+                rule = 'exclude';
+            end
+        end
+
+        function ExploreCapsButtonPushed(app, ~)
+            caps = exploreCapSummary(app);
+            if caps.nVariants < 2; return; end
+            rule = askExploreCapRule(app, caps);
+            if strcmp(rule, app.exploreCapRule); return; end
+            app.exploreCapRule = rule;
+            recomputeExplore(app);
         end
 
         function d = exploreDesign(app)
@@ -2333,11 +2413,7 @@ classdef nestapp < matlab.apps.AppBase
             [groups, design] = exploreCohortText(app);
             txt = sprintf('%s  |  %s  |  %d channels', ...
                 groups, design, numel(res.channelLabels));
-            m = res.info.montage;
-            if ~isempty(m.excluded)
-                txt = sprintf('%s  |  %d file%s excluded (different cap)', ...
-                    txt, numel(m.excluded), plural(numel(m.excluded)));
-            end
+            txt = [txt capRuleText(fieldOr(res.info, 'montage', struct()), currentMode(app))];
             if ~isempty(res.dropped)
                 txt = sprintf('%s  |  %d subject%s without a complete set', ...
                     txt, numel(res.dropped), plural(numel(res.dropped)));
@@ -2644,9 +2720,13 @@ classdef nestapp < matlab.apps.AppBase
                 'plot',      entry.name, ...
                 'groups',    groups, ...
                 'design',    design, ...
-                'ROI',       exploreRoiText(app), ...
-                'nestapp',   nestappVersion(), ...
-                'exported',  char(datetime('now', 'Format', 'yyyy-MM-dd')));
+                'ROI',       exploreRoiText(app));
+            % Only when caps differ, so a single-cap figure's footer is unchanged.
+            [~, caps] = capRuleText(fieldOr(app.exploreRes.info, 'montage', struct()), ...
+                                    currentMode(app));
+            if ~isempty(caps); p.caps = caps; end
+            p.nestapp  = nestappVersion();
+            p.exported = char(datetime('now', 'Format', 'yyyy-MM-dd'));
         end
 
         function [groups, design] = exploreCohortText(app)
@@ -2801,6 +2881,10 @@ classdef nestapp < matlab.apps.AppBase
             app.exploreRoi         = state.roi;
             app.exploreWindows     = state.windows;
             app.explorePlotParams  = state.plotParams;
+            % The saved rule, so the analysis reopens as it was computed rather
+            % than asking again. '' (one cap when saved) still asks if the
+            % files on disk now turn out to differ.
+            app.exploreCapRule     = state.capRule;
 
             % Set the design before recomputing. refreshExploreDesign still has
             % the last word - a restored 'paired' that the files no longer

@@ -472,6 +472,16 @@ function createComponents(app)
             app.ExplorePairedButton.Position = [96 1 78 22];
             app.ExplorePairedButton.Enable = 'off';
 
+            % Shown only when the loaded files are on more than one cap: the
+            % rule for combining them is the user's choice, and this is how it
+            % is changed after the first-load prompt.
+            app.ExploreCapsButton = uibutton(app.ExploreTab, 'push');
+            app.ExploreCapsButton.ButtonPushedFcn = createCallbackFcn(app, @ExploreCapsButtonPushed, true);
+            app.ExploreCapsButton.Text = 'Caps...';
+            app.ExploreCapsButton.Position = [RAIL_X + RAIL_W - 70 295 70 22];
+            app.ExploreCapsButton.Visible = 'off';
+            app.ExploreCapsButton.Tooltip = {'These files were recorded on different caps. Choose whether to exclude files on the other cap or use only the electrodes every cap has.'};
+
             app.ExploreDesignNoteLabel = uilabel(app.ExploreTab, ...
                 'Position', [RAIL_X 274 RAIL_W 18], 'FontSize', 11, ...
                 'FontColor', [0.35 0.38 0.43]);

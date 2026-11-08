@@ -83,6 +83,117 @@ classdef CohortCurvesTest < NestappTestCase
             tc.verifyEqual(res.channelLabels, {'F3', 'FC1', 'C3', 'CP1', 'Pz'});
         end
 
+        % ── mixed caps: the rule is the caller's, and it is recorded ─────────
+
+        function excludeIsStillTheScriptedDefaultAndIsRecorded(tc)
+            [cache, entries] = fakeReducedCache('subjects', 4, 'sessions', 1, ...
+                                                'repeats', 0, 'oddLabels', 3);
+            res = tc.curvesFor(cache, entries);
+            tc.verifyEqual(res.info.montage.rule, 'exclude');
+            tc.verifyEqual(res.groups(1).nFiles, 3);
+            tc.verifyEmpty(res.info.montage.dropped);
+        end
+
+        function sharedKeepsEveryFileOnTheElectrodesAllCapsCarry(tc)
+        % The old behaviour, now chosen rather than imposed: nobody is left
+        % out, and the electrodes given up for it are named.
+            [cache, entries] = fakeReducedCache('subjects', 4, 'sessions', 1, ...
+                                                'repeats', 0, 'oddLabels', 3);
+            res = groupCurves(cache, entries, struct('roi', {{'F3', 'FC1'}}, ...
+                'mode', 'TEP', 'design', 'unpaired', 'capRule', 'shared'));
+            tc.verifyEqual(res.groups(1).nFiles, 4, 'every file stays');
+            tc.verifyEmpty(res.info.montage.excluded);
+            tc.verifyEqual(res.channelLabels, {'F3', 'FC1', 'C3', 'CP1'});
+            tc.verifyEqual(res.info.montage.dropped, {'Pz'});
+            tc.verifyEqual(res.info.montage.nChannels, 4);
+            tc.verifyFalse(res.info.montage.uniform);
+            tc.verifySize(res.groups(1).chanMeans, [4 numel(res.time)]);
+        end
+
+        function sharedIsCaseInsensitiveAboutLabels(tc)
+            [cache, entries] = fakeReducedCache('subjects', 3, 'sessions', 1, ...
+                                                'repeats', 0, 'oddLabels', 2);
+            cache(1).labels = upper(cache(1).labels);
+            res = groupCurves(cache, entries, struct('roi', {{'F3'}}, ...
+                'mode', 'TEP', 'design', 'unpaired', 'capRule', 'shared'));
+            tc.verifyEqual(res.groups(1).nFiles, 3);
+            tc.verifyNumElements(res.channelLabels, 4);
+        end
+
+        function anRoiElectrodeLostToSharingIsReportedMissing(tc)
+        % The ROI shrinks under 'shared' when one of its electrodes is not on
+        % every cap; the existing ROI-missing report must catch it.
+            [cache, entries] = fakeReducedCache('subjects', 4, 'sessions', 1, ...
+                                                'repeats', 0, 'oddLabels', 3);
+            res = groupCurves(cache, entries, struct('roi', {{'F3', 'Pz'}}, ...
+                'mode', 'TEP', 'design', 'unpaired', 'capRule', 'shared'));
+            tc.verifyEqual(res.info.roi.missing, {'Pz'});
+        end
+
+        function exclusionsAreCountedPerGroup(tc)
+        % Lopsided exclusions are how 'exclude' biases a comparison, so the
+        % app needs them per group to warn.
+            [cache, entries] = fakeReducedCache('subjects', 3, 'sessions', 2, ...
+                                                'repeats', 0, 'oddLabels', 5);
+            res = tc.curvesFor(cache, entries);
+            byGroup = res.info.montage.excludedByGroup;
+            tc.verifyEqual({byGroup.group}, {'g1', 'g2'});
+            tc.verifyEqual([byGroup.n], [0 1]);
+        end
+
+        function anUnknownCapRuleIsRefused(tc)
+            [cache, entries] = fakeReducedCache('subjects', 3, 'sessions', 1);
+            tc.verifyError(@() groupCurves(cache, entries, struct('roi', {{'F3'}}, ...
+                'capRule', 'interpolate')), 'nestapp:badCapRule');
+        end
+
+        function capTextIsSilentOnOneCap(tc)
+            [cache, entries] = fakeReducedCache('subjects', 3, 'sessions', 1);
+            res = tc.curvesFor(cache, entries);
+            [status, footer] = capRuleText(res.info.montage, 'TEP');
+            tc.verifyEmpty(status);
+            tc.verifyEmpty(footer);
+        end
+
+        function capTextFlagsUnevenExclusions(tc)
+            [cache, entries] = fakeReducedCache('subjects', 3, 'sessions', 2, ...
+                                                'repeats', 0, 'oddLabels', 5);
+            res = tc.curvesFor(cache, entries);
+            [status, footer] = capRuleText(res.info.montage, 'TEP');
+            tc.verifySubstring(status, '1 file excluded');
+            tc.verifySubstring(status, 'uneven: g1 0, g2 1');
+            tc.verifySubstring(footer, 'exclude');
+        end
+
+        function capTextWarnsAboutGmfpUnderShared(tc)
+            [cache, entries] = fakeReducedCache('subjects', 4, 'sessions', 1, ...
+                                                'repeats', 0, 'oddLabels', 3);
+            res = groupCurves(cache, entries, struct('mode', 'GMFP', ...
+                'design', 'unpaired', 'capRule', 'shared'));
+            [status, footer] = capRuleText(res.info.montage, 'GMFP');
+            tc.verifySubstring(status, '4 shared electrodes');
+            tc.verifySubstring(status, 'GMFP over 4 electrodes');
+            tc.verifyEqual(footer, 'shared electrodes (4; dropped Pz)');
+        end
+
+        function aSavedRuleIsRestoredAndOldMixedFilesReadAsExclude(tc)
+        % Reopening reproduces the analysis without asking again. Files saved
+        % before the rule was recorded were computed under 'exclude'.
+            base = struct('files', struct('path', {}), 'windows', [], ...
+                          'design', 'unpaired');
+            saved = base;
+            saved.provenance = struct('montage', struct('uniform', false, 'rule', 'shared'));
+            tc.verifyEqual(exploreStateFromResults(saved).capRule, 'shared');
+
+            legacy = base;
+            legacy.provenance = struct('montage', struct('uniform', false));
+            tc.verifyEqual(exploreStateFromResults(legacy).capRule, 'exclude');
+
+            oneCap = base;
+            oneCap.provenance = struct('montage', struct('uniform', true));
+            tc.verifyEqual(exploreStateFromResults(oneCap).capRule, '');
+        end
+
         % ── the ROI actually used ────────────────────────────────────────────
 
         function theRoiRecordsWhatWasAskedForAndWhatWasFound(tc)
