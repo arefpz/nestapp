@@ -108,6 +108,11 @@ if ~isempty(folder) && ~isfolder(folder)
     mkdir(folder);
 end
 
+% AARATEP creates its own figures, outside appWindow/outputFigure, so they
+% would follow a dark desktop theme into the file. Pinned here, at the one
+% place they are written out.
+pinLightTheme(s.hf);
+
 [~, ~, ext] = fileparts(s.filepath);
 if strcmpi(ext, '.svg')
     % exportgraphics does not write SVG; saveas does, as the original did.

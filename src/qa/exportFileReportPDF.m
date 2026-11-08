@@ -75,7 +75,7 @@ end
 function fig = renderTextPage(report)
 % Regular figure (not uifigure) so exportgraphics captures the text;
 % uifigure components would require exportapp instead.
-fig = figure('Visible', 'off', 'Color', 'w', ...
+fig = outputFigure('Visible', 'off', 'Color', 'w', ...
     'Units', 'inches', 'Position', [1 1 8.5 11]);
 ax = axes(fig, 'Position', [0.05 0.05 0.9 0.9], 'Visible', 'off');
 xlim(ax, [0 1]); ylim(ax, [0 1]);
@@ -88,7 +88,7 @@ end
 function fig = renderImagePage(pngPath)
 % Render one PNG as a full-page image. On read failure, render a
 % placeholder so the bundle still has a page in the right slot.
-fig = figure('Visible', 'off', 'Color', 'w', ...
+fig = outputFigure('Visible', 'off', 'Color', 'w', ...
     'Units', 'inches', 'Position', [1 1 11 8.5]);
 ax = axes(fig, 'Position', [0.02 0.02 0.96 0.96]);
 try

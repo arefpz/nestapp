@@ -110,7 +110,7 @@ function cLim = drawViaHiddenFigure(uiAx, values, chanlocs, topoArgs)
 % enumeration to trip over, which this function promises not to do. The repaint
 % cost is addressed where it actually hurt - the resize handler coalesces a
 % drag into one repaint rather than one per pixel.
-hiddenFig = figure('Visible', 'off');
+hiddenFig = outputFigure('Visible', 'off');
 closeFig  = onCleanup(@() delete(hiddenFig));
 
 % A blank axes, NOT a clone of the destination: topoplot does not clear what
