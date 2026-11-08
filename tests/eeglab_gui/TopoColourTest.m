@@ -41,6 +41,25 @@ classdef TopoColourTest < NestappTestCase
             drawGroupTopo(ax, res, struct('scale', groupScale, 'window', [0 50]));
             tc.verifyAllDiverging(ax);
         end
+
+        function aHeatmapBesideScalpMapsKeepsItsColormap(tc)
+        % The QC figure's shape: a parula channel x trial map, then a grid of
+        % ICA scalp maps in the same figure. Bare topoplot set the figure
+        % colormap and turned the heatmap turbo.
+            res = fakeGroupResult('groups', 1, 'subjects', 3);
+            fig = tc.classicFigure();
+            heat = axes('Parent', fig, 'Position', [0.05 0.55 0.9 0.4]);
+            imagesc(heat, magic(8));
+            colormap(heat, 'parula');
+            want = heat.Colormap;
+            for k = 1:3
+                tile = axes('Parent', fig, 'Position', [0.05 + 0.3 * (k - 1) 0.05 0.25 0.4]);
+                topoplotInto(tile, res.groups(1).chanMeans(:, end), res.chanlocs, ...
+                             'electrodes', 'off');
+            end
+            tc.verifyEqual(heat.Colormap, want, 'the heatmap lost its colormap');
+            tc.verifyEqual(fig.Color, [1 1 1], 'topoplot repainted the figure');
+        end
     end
 
     properties (TestParameter)

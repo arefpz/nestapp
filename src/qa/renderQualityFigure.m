@@ -263,7 +263,9 @@ for i = 1:nShow
     tilePos = [px py innerWidth*0.95 innerHeight*0.82];
     ax = axes('Position', tilePos);
     try
-        topoplot(view.icawinv(:,k), view.chanlocs, 'electrodes', 'off');
+        % Through topoplotInto, not bare topoplot: topoplot sets the FIGURE
+        % colormap, which turned the quality heatmap above (parula) turbo.
+        topoplotInto(ax, view.icawinv(:,k), view.chanlocs, 'electrodes', 'off');
     catch
         text(0.5, 0.5, '?', 'HorizontalAlignment','center','Units','normalized','Parent',ax);
         axis(ax,'off');

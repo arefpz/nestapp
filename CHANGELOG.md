@@ -18,6 +18,11 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   pass after the grid covered only the shared scale. The scalp-map drawer now
   restores the other axes' colormaps itself after each topoplot, so every scale
   mode, and any figure that holds a map, keeps its colours.
+- **QC figure heatmap drawn in the wrong colours.** The channel x trial quality
+  map is meant to be parula, but the ICA scalp maps drawn after it in the same
+  figure reset it to EEGLAB's turbo, colour bar included, and turned the
+  figure background pale blue. They now go through the same colour-safe
+  topoplot call as the Explore maps.
 
 ## [2.2.0] - 2026-09-24
 
