@@ -10,7 +10,7 @@ version: 2.2.0
 date-released: "2026-09-24"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/arefpz/nestapp"
-url: "https://github.com/arefpz/nestapp"
+url: "https://parsecneuro.github.io/tools/nestapp/index.html"
 keywords:
   - EEG
   - TMS-EEG
