@@ -1,9 +1,9 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
 % Part of nestapp; see the LICENSE file for full terms.
-function [params, accepted] = plotOptionsDialog(entry, params, anchor, context, onApply)
+function [params, accepted, colours] = plotOptionsDialog(entry, params, anchor, context, onApply, colours)
 % PLOTOPTIONSDIALOG  Edit one plot's settings, generated from its registry entry.
-%   [params, accepted] = PLOTOPTIONSDIALOG(entry, params, anchor, context, onApply)
+%   [params, accepted, colours] = PLOTOPTIONSDIALOG(entry, params, anchor, context, onApply, colours)
 %
 %   entry    one element of plotRegistry(), whose .params drives the form
 %   params   the values already set for this plot (struct, possibly empty)
@@ -14,6 +14,12 @@ function [params, accepted] = plotOptionsDialog(entry, params, anchor, context, 
 %   onApply  optional @(params) called on EVERY change, and again on cancel
 %            with the original values, so the plot behind the dialog follows
 %            what the controls say
+%   colours  optional struct for the Colours row at the top: .state (.theme,
+%            .overrides), .names (current groups), .memory (groupStyles slot
+%            memory) and .onChange(state), called on every change and with the
+%            original state on cancel. Colours apply to EVERY plot - they sit
+%            here because this is where people look for how a plot looks. The
+%            edited state comes back as the third output.
 %
 %   Returns the edited params and whether the user accepted them. On cancel -
 %   including the window's X - the input is handed back untouched.
@@ -53,17 +59,22 @@ if nargin < 2 || isempty(params); params = struct(); end
 if nargin < 3; anchor = []; end
 if nargin < 4; context = struct(); end
 if nargin < 5 || isempty(onApply); onApply = @(~) []; end
+if nargin < 6; colours = []; end
 accepted = false;
 
 meta = entry.params;
-if isempty(meta)
+hasColours = ~isempty(colours);
+if isempty(meta) && ~hasColours
     return   % nothing to edit; the caller should not have offered the button
 end
 original = params;
+if hasColours; originalColours = colours.state; end
 
-W     = 470;
-formH = paramFormHeight(meta);
-H     = formH + 108;
+W        = 470;
+formH    = 0;
+if ~isempty(meta); formH = paramFormHeight(meta); end
+COLOURS_H = 40 * hasColours;
+H        = formH + COLOURS_H + 108;
 
 fig = uifigure('Name', sprintf('%s - options', entry.name), ...
                'Position', centreOn(anchor, W, H), 'Resize', 'off');
@@ -72,11 +83,28 @@ fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel, and nothing else
 uilabel(fig, 'Position', [16 H-32 W-32 22], 'Text', entry.name, ...
         'FontWeight', 'bold');
 
-form = uipanel(fig, 'Position', [16 56 W-32 formH], 'BorderType', 'none');
-paramForm(form, meta, params, @onChange, context);
+if hasColours
+    themes = plotThemes();
+    k = find(strcmpi({themes.name}, colours.state.theme), 1);
+    if isempty(k); k = 1; end
+    colours.state.theme = themes(k).name;
+    y = H - 72;
+    uilabel(fig, 'Text', 'Colours', 'Position', [26 y 100 22], ...
+            'Tooltip', 'Applies to every plot, not just this one.');
+    uidropdown(fig, 'Items', {themes.name}, 'Value', colours.state.theme, ...
+        'Position', [130 y 170 22], 'Tooltip', 'Colour theme for every plot', ...
+        'ValueChangedFcn', @(s, ~) onTheme(s.Value));
+    uibutton(fig, 'Text', 'Group colours...', 'Position', [310 y W-326 22], ...
+        'Tooltip', 'Pick a colour for a single group', ...
+        'ButtonPushedFcn', @(~,~) onGroups());
+end
+
+form = uipanel(fig, 'Position', [16 56 W-32 max(formH, 1)], 'BorderType', 'none');
+if ~isempty(meta); paramForm(form, meta, params, @onChange, context); end
 
 uibutton(fig, 'Text', 'Reset', 'Position', [16 16 90 26], ...
     'Tooltip', 'Put every setting back to its default.', ...
+    'Enable', matlab.lang.OnOffSwitchState(~isempty(meta)), ...
     'ButtonPushedFcn', @(~,~) onReset());
 uibutton(fig, 'Text', 'Cancel', 'Position', [W-206 16 90 26], ...
     'ButtonPushedFcn', @(~,~) delete(fig));
@@ -96,7 +124,24 @@ waitfor(fig);
 if ~accepted
     params = original;
     onApply(params);
+    if hasColours
+        colours.state = originalColours;
+        colours.onChange(colours.state);
+    end
 end
+if hasColours; colours = colours.state; end
+
+    function onTheme(name)
+        colours.state.theme = name;
+        colours.onChange(colours.state);
+    end
+
+    function onGroups()
+        % Its own Cancel already restores (and previews) the state it was given.
+        [colours.state, ~] = groupColoursDialog(colours.names, colours.state, fig, ...
+                                                colours.memory, colours.onChange);
+        if isvalid(fig); figure(fig); end
+    end
 
     function onChange(key, value)
         if isempty(value)

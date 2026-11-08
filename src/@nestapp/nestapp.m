@@ -85,7 +85,6 @@ classdef nestapp < matlab.apps.AppBase
         ExploreGroupsLabel              matlab.ui.control.Label
         ExploreGroupsListBox            matlab.ui.control.ListBox
         ExploreAddGroupButton           matlab.ui.control.Button
-        ExploreColoursButton            matlab.ui.control.Button
         ExploreRemoveGroupButton        matlab.ui.control.Button
         ExploreRoiLabel                 matlab.ui.control.Label
         ExploreRoiDropDown              matlab.ui.control.DropDown
@@ -1230,7 +1229,7 @@ classdef nestapp < matlab.apps.AppBase
 
         function reRenderReportsOnResize(app)
         % Coalesce a drag into ONE repaint, the same restart-a-timer pattern
-        % reRenderExploreOnResize uses and for the same reason: a resize event
+        % scheduleExploreRepaint uses and for the same reason: a resize event
         % arrives per pixel, and UIFigureSizeChanged's re-entrancy guard is a
         % throttle, not a debounce - it drops events arriving DURING a repaint,
         % not the ones queued behind it.
@@ -1866,7 +1865,6 @@ classdef nestapp < matlab.apps.AppBase
             app.ExploreGroupsListBox.Items     = items;
             app.ExploreGroupsListBox.ItemsData = data;
             app.ExploreRemoveGroupButton.Enable = onOffState(~isempty(data));
-            app.ExploreColoursButton.Enable     = onOffState(~isempty(data));
             hasData = ~isempty(data);
             app.ExploreFilesButton.Enable   = onOffState(~isempty(app.exploreEntries));
             app.ExploreFigureButton.Enable  = onOffState(hasData);
@@ -2277,19 +2275,23 @@ classdef nestapp < matlab.apps.AppBase
         % Disabled rather than hidden when a plot has no settings: a button
         % that comes and goes as the picker changes is harder to find than one
         % that is always in the same place and sometimes greyed.
-            has = ~isempty(entry) && ~isempty(entry.params);
+        % Every plot with groups has at least the Colours row.
+            hasGroups = ~isempty(app.exploreRes) && ~isempty(app.exploreRes.groups);
+            has = ~isempty(entry) && (~isempty(entry.params) || hasGroups);
             app.ExplorePlotOptionsButton.Enable = matlab.lang.OnOffSwitchState(has);
             if has
                 n = numel(entry.params);
                 app.ExplorePlotOptionsButton.Tooltip = sprintf( ...
-                    '%d setting%s for %s', n, plural(n), entry.name);
+                    '%d setting%s for %s, and colours for every plot', ...
+                    n, plural(n), entry.name);
             else
                 app.ExplorePlotOptionsButton.Tooltip = 'This plot has no settings.';
             end
         end
 
-        function reRenderExploreOnResize(app)
-        % Coalesce a drag into ONE repaint. A resize event arrives per pixel of
+        function scheduleExploreRepaint(app)
+        % Coalesce a burst of changes - a resize drag, quick clicks in a
+        % dialog's live preview - into ONE repaint. A resize event arrives per pixel of
         % a drag, and a TEP-topo grid is twelve topoplots - close to a second
         % of work each time. Redrawing per event queues that up and the window
         % stops following the mouse.
@@ -2346,11 +2348,11 @@ classdef nestapp < matlab.apps.AppBase
             opts = fillDefaults( ...
                 plotDrawOpts(entry, explorePlotParamsFor(app, entry.name)), ...
                 struct( ...
-                'mode',        entry.mode, ...
-                'windows',     app.exploreWindows, ...
-                'window',      exploreTopoWindow(app), ...
-                'groupStyle',  exploreGroupStyles(app), ...
-                'axesFcn',     axesFcn));
+                'mode',       entry.mode, ...
+                'windows',    app.exploreWindows, ...
+                'window',     exploreTopoWindow(app), ...
+                'groupStyle', exploreGroupStyles(app), ...
+                'axesFcn',    axesFcn));
 
             switch exploreLayoutOf(app, entry)
                 case 'panel'
@@ -2411,30 +2413,23 @@ classdef nestapp < matlab.apps.AppBase
                 app.exploreTheme, app.exploreColourOverrides, app.exploreGroupStyleMemory);
         end
 
-        function ExploreColoursButtonPushed(app, ~)
-        % Theme and per-group colours, previewed live; saved as preferences on
-        % OK, put back on Cancel.
+        function colours = exploreColoursForDialog(app)
+        % The Colours row of plot Options: theme and per-group colours apply to
+        % every plot, previewed live; the caller saves them on OK.
+            colours = [];
             if isempty(app.exploreRes) || isempty(app.exploreRes.groups); return; end
-            state = struct('theme', app.exploreTheme, ...
-                           'overrides', app.exploreColourOverrides);
-            [state, accepted] = groupColoursDialog({app.exploreRes.groups.name}, state, ...
-                app.UIFigure, @(st) groupStyles({app.exploreRes.groups.name}, st.theme, ...
-                    st.overrides, app.exploreGroupStyleMemory), ...
-                @(st) previewExploreColours(app, st));
-            app.exploreTheme           = state.theme;
-            app.exploreColourOverrides = state.overrides;
-            if accepted
-                setpref('nestapp', 'plotTheme', state.theme);
-                setpref('nestapp', 'groupColorOverrides', state.overrides);
-            end
-            cancelExploreRepaint(app);
-            repaintExploreNow(app);
+            colours = struct( ...
+                'state',    struct('theme', app.exploreTheme, ...
+                                   'overrides', app.exploreColourOverrides), ...
+                'names',    {{app.exploreRes.groups.name}}, ...
+                'memory',   app.exploreGroupStyleMemory, ...
+                'onChange', @(st) previewExploreColours(app, st));
         end
 
         function previewExploreColours(app, state)
             app.exploreTheme           = state.theme;
             app.exploreColourOverrides = state.overrides;
-            reRenderExploreOnResize(app);
+            scheduleExploreRepaint(app);
         end
 
         function params = explorePlotParamsFor(app, name)
@@ -2646,16 +2641,21 @@ classdef nestapp < matlab.apps.AppBase
 
         function ExplorePlotOptionsButtonPushed(app, ~)
             entry = currentPlotEntry(app);
-            if isempty(entry) || isempty(entry.params); return; end
+            colours = exploreColoursForDialog(app);
+            if isempty(entry) || (isempty(entry.params) && isempty(colours)); return; end
 
             % The plot follows the controls while the dialog is open, and the
             % dialog's cancel calls back once more with the original values,
             % so the picture is restored along with the struct.
             apply = @(p) previewExplorePlotParams(app, entry.name, p);
-            [params, accepted] = plotOptionsDialog(entry, ...
+            [params, accepted, colourState] = plotOptionsDialog(entry, ...
                 explorePlotParamsFor(app, entry.name), app.UIFigure, ...
-                explorePlotContext(app), apply);
+                explorePlotContext(app), apply, colours);
             if ~accepted; return; end
+            if ~isempty(colours)
+                setpref('nestapp', 'plotTheme', colourState.theme);
+                setpref('nestapp', 'groupColorOverrides', colourState.overrides);
+            end
 
             % Store again rather than trusting the preview to have done it:
             % plotOptionsDialog defaults onApply to a no-op, so a caller that
@@ -2680,7 +2680,7 @@ classdef nestapp < matlab.apps.AppBase
         % resize handler uses, so a run of quick clicks in a listbox does not
         % queue a second of work behind each one.
             storeExplorePlotParams(app, name, params);
-            reRenderExploreOnResize(app);
+            scheduleExploreRepaint(app);
         end
 
         function cancelExploreRepaint(app)
@@ -3486,7 +3486,7 @@ classdef nestapp < matlab.apps.AppBase
             sY = newSize(2) / app.originalSize(2);
             rescaleComponents(app, sX, sY);
             reRenderReportsOnResize(app);  % reflow the Reports pane if one is showing
-            reRenderExploreOnResize(app);  % and the Explore plot, for the same reason
+            scheduleExploreRepaint(app);  % and the Explore plot, for the same reason
         end
 
         function endResize(app)

@@ -1,52 +1,56 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
 % Part of nestapp; see the LICENSE file for full terms.
-function [state, accepted] = groupColoursDialog(names, state, anchor, styleFcn, onApply)
-% GROUPCOLOURSDIALOG  Pick a colour theme, and optionally a colour for single groups.
-%   [state, accepted] = GROUPCOLOURSDIALOG(names, state, anchor, styleFcn, onApply)
+function [state, accepted] = groupColoursDialog(names, state, anchor, memory, onApply)
+% GROUPCOLOURSDIALOG  Pick a colour for single groups, over the current theme.
+%   [state, accepted] = GROUPCOLOURSDIALOG(names, state, anchor, memory, onApply)
 %
-%   names     cellstr of the current group names
-%   state     .theme (a plotThemes name, '' = default) and .overrides (struct
-%             array .name .rgb - may hold groups not shown here; they are kept)
-%   anchor    figure to centre on
-%   styleFcn  @(state) -> groupStyles result for names under that state, so the
-%             swatches show exactly what the plots will draw
-%   onApply   @(state) called on every change, and again on cancel with the
-%             original state, so the plot behind previews and then restores
+%   names    cellstr of the current group names
+%   state    .theme and .overrides (struct array .name .rgb - may hold groups
+%            not shown here; they are kept)
+%   anchor   figure to centre on
+%   memory   groupStyles slot memory, so the swatches show exactly what the
+%            plots will draw
+%   onApply  @(state) called on every change, and again on cancel with the
+%            original state, so the plot behind previews and then restores
 %
-%   One row per group: its swatch (click to pick a colour), its line style and
-%   bar texture as words - which is what tells groups apart in greyscale - and
-%   Reset to drop a picked colour back to the theme's.
+%   Opened from the Colours row of plot Options, which holds the theme. One
+%   row per group: its swatch (click to pick), its line style and bar texture
+%   in words - which is what tells groups apart in greyscale - and Reset.
 %
 %   Same modal discipline as plotOptionsDialog: waitfor(fig) and a plain
-%   delete, never uiwait/uiresume, because a nested picker inside a uiwait'ed
-%   figure can leave it unreleasable.
+%   delete, never uiwait/uiresume.
 %
-%   See also: plotThemes, groupStyles, plotOptionsDialog
+%   See also: plotOptionsDialog, groupStyles, plotThemes
 
 if nargin < 5 || isempty(onApply); onApply = @(~) []; end
 accepted = false;
 original = state;
-themes = plotThemes();
-if isempty(state.theme) || ~any(strcmpi({themes.name}, state.theme))
-    state.theme = themes(1).name;
-end
 
 ROW = 30; W = 480;
-listH = min(numel(names), 10) * ROW + 6;
-H = 150 + listH;
+nG = numel(names);
+listH = min(nG, 10) * ROW + 6;
+H = 110 + listH;
 
-fig = uifigure('Name', 'Plot colours', 'Position', centreOn(anchor, W, H), 'Resize', 'off');
+fig = uifigure('Name', sprintf('Group colours - %s theme', state.theme), ...
+               'Position', centreOn(anchor, W, H), 'Resize', 'off');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel
 
-uilabel(fig, 'Text', 'Theme', 'FontWeight', 'bold', 'Position', [16 H-40 60 22]);
-uidropdown(fig, 'Items', {themes.name}, 'Value', themeName(state.theme), ...
-                'Position', [80 H-40 W-96 22], 'ValueChangedFcn', @(s, ~) onTheme(s.Value));
-strip = uipanel(fig, 'Position', [80 H-64 W-96 16], 'BorderType', 'none');
-
-uilabel(fig, 'Text', 'Groups', 'FontWeight', 'bold', 'Position', [16 H-96 100 22]);
+uilabel(fig, 'Text', 'Groups', 'FontWeight', 'bold', 'Position', [16 H-40 100 22]);
 list = uipanel(fig, 'Position', [16 52 W-32 listH], 'BorderType', 'none', ...
                'Scrollable', 'on');
+
+% Built once; refresh() only updates what a change can affect.
+swatch = gobjects(1, nG); desc = gobjects(1, nG); reset = gobjects(1, nG);
+for g = 1:nG
+    y = max(listH, nG * ROW) - g * ROW + 4;
+    uilabel(list, 'Text', names{g}, 'Position', [0 y 120 22], 'Tooltip', names{g});
+    swatch(g) = uibutton(list, 'Text', '', 'Position', [126 y 44 22], ...
+        'Tooltip', 'Pick a colour for this group', 'ButtonPushedFcn', @(~,~) onPick(g));
+    desc(g) = uilabel(list, 'Position', [178 y 200 22], 'FontColor', [0.4 0.42 0.46]);
+    reset(g) = uibutton(list, 'Text', 'Reset', 'Position', [W-96 y 60 22], ...
+        'ButtonPushedFcn', @(~,~) onResetOne(names{g}));
+end
 
 uibutton(fig, 'Text', 'Reset all', 'Position', [16 16 90 26], ...
     'Tooltip', 'Use the theme''s colour for every group.', ...
@@ -64,43 +68,23 @@ if ~accepted
     onApply(state);
 end
 
+    function s = styles()
+        s = groupStyles(names, state.theme, state.overrides, memory);
+    end
+
     function refresh()
-        if ~isvalid(fig); return; end
-        delete(strip.Children);
-        t = themes(strcmpi({themes.name}, state.theme));
-        n = size(t.colors, 1);
-        sw = (strip.Position(3)) / n;
-        for k = 1:n
-            uilabel(strip, 'Text', '', 'BackgroundColor', t.colors(k, :), ...
-                    'Position', [(k-1)*sw 0 sw-2 16]);
-        end
-
-        delete(list.Children);
-        s = styleFcn(state);
-        nG = numel(names);
-        rowsH = nG * ROW;
-        for g = 1:nG
-            y = max(listH, rowsH) - g * ROW + 4;
-            uilabel(list, 'Text', names{g}, 'Position', [0 y 120 22], ...
-                    'Tooltip', names{g});
-            uibutton(list, 'Text', '', 'BackgroundColor', s.colors(g, :), ...
-                     'Position', [126 y 44 22], 'Tooltip', 'Pick a colour for this group', ...
-                     'ButtonPushedFcn', @(~,~) onPick(g, s.colors(g, :)));
-            uilabel(list, 'Text', sprintf('%s line, %s bars', styleWord(s.lineStyles{g}), ...
-                    patternWord(s.barPatterns{g})), 'Position', [178 y 200 22], 'FontColor', [0.4 0.42 0.46]);
-            uibutton(list, 'Text', 'Reset', 'Position', [W-32-64 y 60 22], ...
-                     'Enable', onOff(isOverridden(names{g})), ...
-                     'ButtonPushedFcn', @(~,~) onResetOne(names{g}));
+        s = styles();
+        for k = 1:nG
+            swatch(k).BackgroundColor = s.colors(k, :);
+            desc(k).Text = sprintf('%s line, %s bars', styleWord(s.lineStyles{k}), ...
+                                   patternWord(s.barPatterns{k}));
+            reset(k).Enable = matlab.lang.OnOffSwitchState(isOverridden(names{k}));
         end
     end
 
-    function onTheme(name)
-        state.theme = name;
-        changed();
-    end
-
-    function onPick(g, current)
-        c = uisetcolor(current, sprintf('Colour for %s', names{g}));
+    function onPick(g)
+        s = styles();
+        c = uisetcolor(s.colors(g, :), sprintf('Colour for %s', names{g}));
         if isvalid(fig); figure(fig); end   % uisetcolor can leave focus elsewhere
         if isequal(c, 0); return; end       % the picker was cancelled
         dropOverride(names{g});
@@ -115,7 +99,7 @@ end
 
     function onResetAll()
         % Only the groups shown: overrides for groups not loaded now are kept.
-        for g = 1:numel(names); dropOverride(names{g}); end
+        for k = 1:nG; dropOverride(names{k}); end
         changed();
     end
 
@@ -139,11 +123,6 @@ end
     end
 end
 
-function v = themeName(name)
-themes = plotThemes();
-v = themes(find(strcmpi({themes.name}, name), 1)).name;
-end
-
 function w = styleWord(ls)
 switch ls
     case '--', w = 'dashed';
@@ -151,11 +130,6 @@ switch ls
     case '-.', w = 'dash-dot';
     otherwise, w = 'solid';
 end
-end
-
-
-function s = onOff(tf)
-if tf; s = 'on'; else; s = 'off'; end
 end
 
 function w = patternWord(p)
