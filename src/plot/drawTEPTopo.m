@@ -192,8 +192,6 @@ for g = 1:nG
 end
 
 if ~perWindow
-    applySharedScale(axesMade, info.clim);
-
     % One bar for the whole grid, since every map shares the scale.
     cbAx = sharedColorbar(parent, opts.axesFcn, ...
         [x0 + gridW + BAR_GAP, yTop - nG * side + 6, BAR_W, side * nG - 16], ...

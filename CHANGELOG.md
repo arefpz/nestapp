@@ -8,6 +8,17 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exported topographies kept only one map red-blue.** With per-window
+  (TEP-topo) or per-map (Topography) scaling, the MATLAB/PNG/PDF export drew
+  every map except the last in EEGLAB's rainbow colours, while the app showed
+  them all correctly. EEGLAB's topoplot sets the whole figure's colormap, which
+  on the classic axes the export uses reset every map drawn before it; a repair
+  pass after the grid covered only the shared scale. The scalp-map drawer now
+  restores the other axes' colormaps itself after each topoplot, so every scale
+  mode, and any figure that holds a map, keeps its colours.
+
 ## [2.2.0] - 2026-09-24
 
 ### Added

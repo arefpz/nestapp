@@ -109,8 +109,4 @@ for g = 1:nG
                                  opts.window(1), opts.window(2)));
     end
 end
-
-if ~perMap
-    applySharedScale(axList(1:nG), clim);
-end
 end
