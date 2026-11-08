@@ -8,6 +8,8 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-08
+
 ### Added
 
 - **A choice for files recorded on different caps** (Explore). 2.2.0 always
@@ -479,6 +481,7 @@ First public open-source release.
   additionally requires the Curve Fitting Toolbox and the AARATEP helpers
   cloned into `third_party/aaratep/` (see README).
 
-[Unreleased]: https://github.com/arefpz/nestapp/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/arefpz/nestapp/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/arefpz/nestapp/releases/tag/v2.2.1
 [2.2.0]: https://github.com/arefpz/nestapp/releases/tag/v2.2.0
 [2.1.0]: https://github.com/arefpz/nestapp/releases/tag/v2.1.0

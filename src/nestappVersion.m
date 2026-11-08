@@ -24,5 +24,5 @@ function v = nestappVersion()
 %
 %   See also: version, CHANGELOG.md
 
-v = '2.2.0';
+v = '2.2.1';
 end

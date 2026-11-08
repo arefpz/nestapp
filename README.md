@@ -1,6 +1,6 @@
 # nestapp
 
-![version](https://img.shields.io/badge/version-2.2.0-blue)
+![version](https://img.shields.io/badge/version-2.2.1-blue)
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2023b%2B-orange)
 ![license](https://img.shields.io/badge/license-GPL--3.0-green)
 
