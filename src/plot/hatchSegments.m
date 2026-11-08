@@ -42,10 +42,10 @@ switch lower(char(pattern))
         error('nestapp:badPattern', 'Unknown bar pattern "%s".', char(pattern));
 end
 
+corners = [0, x1 - x0, x1 - x0, 0; 0, 0, y1 - y0, y1 - y0];   % relative to (x0, y0)
 for a = angles
     d = [cosd(a); sind(a)];           % along the lines
     nrm = [-d(2); d(1)];              % across them
-    corners = [x0 x1 x1 x0; y0 y0 y1 y1] - [x0; y0];
     c = nrm' * corners;               % offsets of the corners across the family
     for off = ceil(min(c) / spacing) * spacing : spacing : max(c)
         p0 = [x0; y0] + off * nrm;

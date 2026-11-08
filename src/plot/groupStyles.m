@@ -11,74 +11,66 @@ function [s, memory] = groupStyles(names, themeName, overrides, memory)
 %              which win over the theme. May be empty
 %   memory     struct array .name .slot from a previous call, or empty
 %
-%   s.colors (n x 3), s.lineStyles and s.barPatterns (1 x n cellstr), s.lineWidth
+%   s.colors (n x 3), s.lineStyles and s.barPatterns (1 x n cellstr),
+%   s.lineWidth, s.contrast (colour for non-group lines, e.g. a difference)
 %   memory     updated; pass it back next time
 %
 %   Each group holds a SLOT, and the slot decides its style. A group keeps its
 %   slot for as long as the caller keeps the memory, so adding, removing or
-%   reordering groups never recolours the others: "Post-TBS" stays the same
-%   orange in every figure of a session. A new group takes the lowest slot no
-%   current group holds.
+%   reordering groups never restyles the others. A new group takes the lowest
+%   slot no current group holds.
 %
-%   Slot k maps to theme colour mod(k, nColours). In a colour theme the line
-%   style and bar texture change only when the colours run out - the second
-%   lap of colours is dashed and diagonally hatched, not darker or invented,
-%   because more hues than a palette was designed for cannot be told apart. In
-%   a theme with styleFirst (greyscale) style and texture vary from slot 0.
+%   Slot k takes theme colour mod(k, nColours). In a colour theme line style
+%   and texture change only when the colours run out - the second lap is
+%   dashed and hatched rather than darker or invented, because more hues than a
+%   palette was designed for cannot be told apart. With styleFirst
+%   (greyscale) they vary from slot 0.
 %
-%   See also: plotThemes, groupColors, hatchBars
+%   See also: plotThemes, resolveGroupStyle, hatchBars
 
 if nargin < 3; overrides = []; end
 if nargin < 4 || isempty(memory); memory = struct('name', {}, 'slot', {}); end
 names = cellstr(names);
 t = pickTheme(themeName);
 
+% Remembered slots first, so a new group listed ahead of a known one cannot
+% take its slot; then new groups (and any clash) take the lowest free slot.
 n = numel(names);
-slots = zeros(1, n);
-known = {memory.name};
-for i = 1:n
-    k = find(strcmp(known, names{i}), 1);
-    if ~isempty(k); slots(i) = memory(k).slot; else; slots(i) = -1; end
-end
-% Two current groups cannot share a slot, even if a stale memory says so.
-for i = 1:n
-    if slots(i) >= 0 && any(slots(1:i-1) == slots(i)); slots(i) = -1; end
+slots = -ones(1, n);
+[~, at] = ismember(names, {memory.name});
+for i = find(at)
+    if ~any(slots == memory(at(i)).slot); slots(i) = memory(at(i)).slot; end
 end
 for i = find(slots < 0)
     free = 0;
     while any(slots == free); free = free + 1; end
     slots(i) = free;
-    memory(end+1) = struct('name', names{i}, 'slot', free); %#ok<AGROW>
-end
-for i = 1:n
-    k = find(strcmp({memory.name}, names{i}), 1);
-    memory(k).slot = slots(i);
+    if at(i) > 0
+        memory(at(i)).slot = free;
+    else
+        memory(end+1) = struct('name', names{i}, 'slot', free); %#ok<AGROW>
+    end
 end
 
-nC = size(t.colors, 1);
-if t.styleFirst
-    lap = slots;
-else
-    lap = floor(slots / nC);
-end
+nC  = size(t.colors, 1);
+lap = slots;
+if ~t.styleFirst; lap = floor(slots / nC); end
 s = struct();
 s.colors      = t.colors(mod(slots, nC) + 1, :);
 s.lineStyles  = t.lineStyles(mod(lap, numel(t.lineStyles)) + 1);
 s.barPatterns = t.barPatterns(mod(lap, numel(t.barPatterns)) + 1);
 s.lineWidth   = t.lineWidth;
+s.contrast    = t.contrast;
 
-if ~isempty(overrides)
-    for i = 1:n
-        k = find(strcmp({overrides.name}, names{i}), 1);
-        if ~isempty(k); s.colors(i, :) = overrides(k).rgb; end
-    end
+for i = 1:numel(overrides)
+    k = find(strcmp(names, overrides(i).name), 1);
+    if ~isempty(k); s.colors(k, :) = overrides(i).rgb; end
 end
 end
 
 function t = pickTheme(name)
 themes = plotThemes();
-t = themes(1);
-if isempty(name); return; end
 k = find(strcmpi({themes.name}, char(name)), 1);
-if ~isempty(k); t = themes(k); end
+if isempty(k); k = 1; end
+t = themes(k);
 end

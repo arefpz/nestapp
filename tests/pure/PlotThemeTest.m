@@ -58,6 +58,41 @@ classdef PlotThemeTest < NestappTestCase
                 'D took the slot B left, not a fourth colour');
         end
 
+        function aNewGroupListedFirstDoesNotTakeAKnownGroupsColour(tc)
+            [before, mem] = groupStyles({'Pre', 'Post'}, '', [], []);
+            after = groupStyles({'Sham', 'Pre', 'Post'}, '', [], mem);
+            tc.verifyEqual(after.colors(2:3, :), before.colors, ...
+                'Pre and Post keep their colours when a new group comes first');
+        end
+
+        function memoryHoldsEachNameOnce(tc)
+            [~, mem] = groupStyles({'A', 'B'}, '', [], []);
+            [~, mem] = groupStyles({'B', 'A', 'C'}, '', [], mem);
+            tc.verifyNumElements(unique({mem.name}), numel(mem));
+        end
+
+        % ── what drawers receive ─────────────────────────────────────────────
+
+        function scriptsGetLineStylesPastThePaletteToo(tc)
+        % A script that passes no style must not get identical repeated lines.
+            names = arrayfun(@(k) sprintf('g%d', k), 1:9, 'UniformOutput', false);
+            sty = resolveGroupStyle(struct(), names);
+            tc.verifyNotEqual(sty.lineStyles{end}, sty.lineStyles{1});
+        end
+
+        function passedColoursReplaceOnlyThePalette(tc)
+            sty = resolveGroupStyle(struct('colors', [1 0 0; 0 0 1]), {'a', 'b', 'c'});
+            tc.verifyEqual(sty.colors, [1 0 0; 0 0 1; 1 0 0], 'cycled to the group count');
+            tc.verifyNumElements(sty.lineStyles, 3);
+        end
+
+        function theDifferenceIsDrawnInTheContrastColourNotAGroups(tc)
+        % Group 1's colour made a Pre-minus-Post wave read as the Pre curve.
+            over = struct('name', 'Pre', 'rgb', [1 0 0]);
+            s = groupStyles({'Pre', 'Post'}, '', over, []);
+            tc.verifyNotEqual(s.contrast, s.colors(1, :));
+        end
+
         function aUserColourOverridesTheTheme(tc)
             over = struct('name', 'Post', 'rgb', [0.1 0.2 0.3]);
             s = groupStyles({'Pre', 'Post'}, '', over, []);

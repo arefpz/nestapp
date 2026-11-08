@@ -44,8 +44,9 @@ function info = drawWindowBars(parent, res, opts)
 %     .mode     'TEP' | 'GMFP' | 'LMFP', for the axis label
 %     .level    confidence level. Unset follows the level the run was
 %               computed at (res.info.level), NOT a literal here - see below
-%     .colors   group colours, default groupColors(nGroups)
-%     .barPatterns  one texture per group (see hatchBars), default none
+%     .groupStyle  a groupStyles struct (colours, bar textures); default the
+%               default theme - see resolveGroupStyle
+%     .colors   n-by-3, replaces the theme's colours (for scripts)
 %     .axesFcn  @(parent, position) -> axes, as drawTEPTopo
 %
 %   THE LEVEL IS NOT DEFAULTED HERE. It used to be a literal 0.95, which
@@ -67,8 +68,8 @@ nG = numel(res.groups);
 if ~isfield(opts, 'windows'); opts.windows = defaultTEPComponentDefs(); end
 opts = fillDefaults(opts, struct( ...
     'measure', 'mean', 'mode', 'TEP', 'level', [], ...
-    'colors', groupColors(max(nG, 1)), 'barPatterns', {{}}, ...
     'axesFcn', @(p, pos) uiaxes(p, 'Position', pos)));
+opts.groupStyle = resolveGroupStyle(opts, {res.groups.name});
 
 % [] all the way down to curveInterval, which owns the default. An explicit
 % draw option wins; failing that the run's own level; failing that whatever
@@ -149,7 +150,8 @@ hold(ax, 'on');
 
 BAR_WIDTH = 0.68;
 b = bar(ax, 1:nG, mu, BAR_WIDTH, 'FaceColor', 'flat', 'EdgeColor', 'none');
-b.CData = opts.colors(1:nG, :);
+sty = opts.groupStyle;
+b.CData = sty.colors;
 
 % Asymmetric on purpose: a paired interval is not symmetric about the mean once
 % the Morey correction is applied, and drawing +/- one number would misreport it.
@@ -164,9 +166,7 @@ plot(ax, [0.4, nG + 0.6], [0 0], 'Color', [0 0 0 0.45], 'LineWidth', 0.75, ...
 hold(ax, 'off');
 xlim(ax, [0.4, nG + 0.6]);
 % Textures last, once the limits are final: they are laid out in pixels.
-if ~isempty(opts.barPatterns)
-    hatchBars(ax, 1:nG, mu, BAR_WIDTH, opts.barPatterns(1:nG), opts.colors(1:nG, :));
-end
+hatchBars(ax, 1:nG, mu, BAR_WIDTH, sty.barPatterns, sty.colors);
 ax.XTick      = 1:nG;
 ax.XTickLabel = {res.groups.name};
 ax.XAxis.FontSize = 8;

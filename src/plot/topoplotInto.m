@@ -16,8 +16,9 @@ function topoplotInto(ax, values, chanlocs, varargin)
 %     out a grid has already decided where the map goes, so the frame is put
 %     back.
 %
-%   Every direct topoplot call in nestapp goes through here, so a figure that
-%   holds a scalp map behaves like any other figure.
+%   Every topoplot into a figure shared with other axes goes through here, so
+%   a figure that holds a scalp map behaves like any other figure. (The uiaxes
+%   path in drawScalpTopo draws into its own throwaway figure and needs none.)
 %
 %   See also: drawScalpTopo, renderQualityFigure, topoplot
 
