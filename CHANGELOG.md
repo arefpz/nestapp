@@ -43,6 +43,13 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ### Changed
 
+- **nestapp finds EEGLAB by itself.** When no EEGLAB folder is set in
+  Preferences and EEGLAB is not on the path, nestapp looks where the toolbox
+  installer puts the EEGLAB it downloads and in the MATLAB folder
+  (`userpath`, normally Documents/MATLAB), takes the newest version it finds
+  and saves it as the preference. Setting the folder by hand is only needed for
+  EEGLAB kept somewhere else. The "EEGLAB not found" message now names the
+  menu that exists (Settings > Preferences, not File > Preferences).
 - **Default group colours.** Okabe-Ito's colour-blind-safe set stays the
   default, with amber in place of its yellow, which was close to invisible on
   white, and the order reworked so that colours 2-4 are well apart for
