@@ -77,7 +77,7 @@ COLOURS_H = 40 * hasColours;
 H        = formH + COLOURS_H + 108;
 
 fig = appWindow('Name', sprintf('%s - options', entry.name), ...
-               'Position', centreOn(anchor, W, H), 'Resize', 'off');
+               'Position', centreOn(anchor, W, H), 'Resize', 'off', 'WindowStyle', 'modal');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel, and nothing else
 
 uilabel(fig, 'Position', [16 H-32 W-32 22], 'Text', entry.name, ...

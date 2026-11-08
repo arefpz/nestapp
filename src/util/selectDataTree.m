@@ -32,15 +32,10 @@ function selected = selectDataTree(startFolder, exts)
         exts = {'*.set', '*.vhdr', '*.cdt', '*.cnt'};
     end
 
-    % ONE BROWSER AT A TIME. The browser blocks only its own caller
-    % (waitfor), not the main window, so Browse..., File > Select Data, a
-    % recent-data item or Add group... could each be clicked again while it
-    % was open - and every click nested another browser, plus another system
-    % folder picker when there was no remembered folder. Reported on Linux,
-    % where those windows are slow to appear and can open behind each other,
-    % so it looks as if nothing happened and people click again. A second
-    % request now brings the open browser to the front and returns nothing,
-    % which every caller already treats as "cancelled".
+    % One browser at a time. It is not modal (see below), so its four entry
+    % points stay clickable while it is open; a second request brings the
+    % open browser forward and returns {}, which callers read as cancelled.
+    OPEN_KEY = 'nestappOpenDataBrowser';
     selected = {};
     open = getappdata(groot, OPEN_KEY);
     if ~isempty(open) && isvalid(open)
@@ -59,8 +54,11 @@ function selected = selectDataTree(startFolder, exts)
     % ---- build the window ----------------------------------------------
     fig = appWindow('Name', 'Select Data Files', ...
         'Position', [200 140 760 600], 'Resize', 'off');
-    % Keep the browser above the main window (not WindowStyle='modal',
-    % whose close button is unreliable).
+    % Keep the browser above the main window. Not WindowStyle 'modal': the
+    % unreliable-close problem that ruled it out came from uiwait/uiresume,
+    % since replaced by waitfor, but the Linux report this window was fixed
+    % for has not been re-tested under modal - so the single-instance guard
+    % above does the job instead.
     try
         fig.WindowStyle = 'alwaysontop';
     catch
@@ -72,10 +70,9 @@ function selected = selectDataTree(startFolder, exts)
     % X uses a plain delete so it can never be vetoed by a callback error;
     % "selected" keeps its default {} (cancel) when the window is X-ed.
     fig.CloseRequestFcn = @(src, ~) delete(src);
-    % Registered as THE open browser until this call returns, however it
-    % returns - the cleanup also runs on an error.
+    % Registered as THE open browser until this call returns, error or not.
     setappdata(groot, OPEN_KEY, fig);
-    unregister = onCleanup(@() unregisterBrowser(fig));
+    unregister = onCleanup(@() unregisterBrowser(fig, OPEN_KEY));
 
     uilabel(fig, 'Text', 'Parent folder:', 'Position', [15 562 85 22]);
     parentField = uieditfield(fig, 'text', 'Editable', 'off', ...
@@ -114,9 +111,8 @@ function selected = selectDataTree(startFolder, exts)
         'ButtonPushedFcn', @(~,~) onUse());
 
     % Seed with the start folder if it is usable. Otherwise point at Choose...
-    % rather than opening the system folder picker at once: that put two
-    % windows up together - this one and the picker, which on Linux can open
-    % behind it - and the user had to work out which one wanted them.
+    % rather than opening the system picker at once, which put two windows up
+    % together (and on Linux the picker can open behind this one).
     if ~isempty(startFolder) && isfolder(startFolder)
         whileOpen(@setParent, startFolder);
     else
@@ -124,6 +120,9 @@ function selected = selectDataTree(startFolder, exts)
         chooseButton.FontWeight = 'bold';
     end
 
+    % The repo's "dialog is up" signal, so tests can wait on it instead of
+    % on a fixed delay (see pickOne).
+    if isvalid(fig); setappdata(fig, 'nestappModalReady', true); end
     waitfor(fig);   % blocks until a button or the X deletes the figure
 
     % Remember the browse ROOT (the data folder), not the subfolder the
@@ -400,17 +399,11 @@ function selected = selectDataTree(startFolder, exts)
     % ====================================================================
     %  Small helpers
     % ====================================================================
-    % Run a piece of the browser's work, tolerating the window being closed
-    % part-way. Building a large folder's tree, scanning, or a cascade yields
-    % to the UI while it creates nodes, and closing the window then deletes
-    % the tree out from under it - the next uitreenode threw "Parent must be
-    % a valid Tree", surfacing as an error dialog (or, during the first load,
-    % as an error from Browse...). Once the window is gone there is nothing
-    % left to update, so that error is dropped; any error while the window
-    % is still open is a real one and is rethrown.
-    %
-    % Every callback and the initial load go through here, so a new callback
-    % gets the same tolerance by being wired the same way.
+    % Run browser work that may outlive the window: building a large tree
+    % yields to the UI, and closing the window then deletes the tree under
+    % it. Once the window is gone there is nothing to update, so that error
+    % is dropped; an error while it is still open is rethrown. Every callback
+    % that builds or changes the tree, and the initial load, goes through here.
     function whileOpen(fn, varargin)
         try
             fn(varargin{:});
@@ -472,16 +465,11 @@ end
 
 % -- file-scope helpers (no shared state) ----------------------------------
 
-function k = OPEN_KEY()
-% Where the open browser is registered (an appdata key on the root object).
-k = 'nestappOpenDataBrowser';
-end
-
-function unregisterBrowser(fig)
+function unregisterBrowser(fig, key)
 % Clear the registration - but only if it is still ours, so a stale cleanup
 % cannot unregister a browser opened after this one.
-if isequal(getappdata(groot, OPEN_KEY), fig)
-    rmappdata(groot, OPEN_KEY);
+if isequal(getappdata(groot, key), fig)
+    rmappdata(groot, key);
 end
 end
 

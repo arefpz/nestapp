@@ -5,24 +5,15 @@ function fig = pinLightTheme(fig)
 % PINLIGHTTHEME  Keep a figure in MATLAB's light theme, whatever the desktop or OS uses.
 %   fig = PINLIGHTTHEME(fig)
 %
-%   From R2025a figures follow the desktop theme (ThemeMode 'auto'), and on a
-%   Mac set to match the system that means OS dark mode. nestapp is designed
-%   for light - many of its colours are fixed - so under dark mode MATLAB
-%   re-coloured only what nestapp had not pinned, and windows came out half
-%   light, half dark: a light status bar with grey text, white text on light
-%   disabled buttons. Exports could come out with dark axes too.
-%
-%   The policy is "always light", decided here and nowhere else. Every window
-%   is created through appWindow or outputFigure, which call this, and
-%   WindowThemeTest fails if one is not - fixing it once where windows are
-%   born, rather than chasing colours one at a time afterwards.
-%
-%   Releases before R2025a have no figure themes and never follow dark mode,
-%   so this does nothing there.
+%   The policy is "always light", decided here and nowhere else. nestapp's
+%   colours are fixed for light, so following OS dark mode (R2025a+) left
+%   windows half themed. Every window is created through appWindow or
+%   outputFigure, which call this. Releases before R2025a have no figure
+%   themes, so it does nothing there.
 %
 %   See also: appWindow, outputFigure
 
-if isprop(fig, 'ThemeMode') && exist('theme', 'file')
+if isprop(fig, 'ThemeMode')   % ThemeMode and theme() arrived together (R2025a)
     theme(fig, 'light');
 end
 end

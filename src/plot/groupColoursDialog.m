@@ -33,7 +33,7 @@ listH = min(nG, 10) * ROW + 6;
 H = 110 + listH;
 
 fig = appWindow('Name', sprintf('Group colours - %s theme', state.theme), ...
-               'Position', centreOn(anchor, W, H), 'Resize', 'off');
+               'Position', centreOn(anchor, W, H), 'Resize', 'off', 'WindowStyle', 'modal');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel
 
 uilabel(fig, 'Text', 'Groups', 'FontWeight', 'bold', 'Position', [16 H-40 100 22]);
