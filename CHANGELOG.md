@@ -29,6 +29,16 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   Scripts pass `groupCurves(..., struct('capRule', 'shared'))`; the scripted
   default stays `'exclude'`.
 
+### Changed
+
+- **Default group colours.** Okabe-Ito's colour-blind-safe set stays the
+  default, with amber in place of its yellow, which was close to invisible on
+  white, and the order reworked so that colours 2-4 are well apart for
+  colour-blind readers and in print. Past the palette's seven colours, groups
+  repeat colours with a dashed line and a textured bar instead of darker
+  shades, which were hard to tell from the originals. `groupColors(n)` still
+  works and returns the default theme's first n colours.
+
 ### Fixed
 
 - **Exported topographies kept only one map red-blue.** With per-window

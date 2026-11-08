@@ -49,7 +49,8 @@ function info = drawTEPTopo(parent, res, opts)
 %     .curve      false to omit the curve panel and give the grid the height
 %     .mode       'TEP' | 'GMFP' | 'LMFP' for the curve's axis label
 %     .xlim      curve time limits, default [-50 300]
-%     .colors    group colours, default groupColors(nGroups)
+%     .colors    group colours, default groupColors(nGroups); .lineStyles and
+%                .lineWidth pass through to the curve panel
 %     .showBands shade the windows on the curve, default true
 %     .axesFcn   @(parent, position) -> axes. Default makes uiaxes, which is
 %                what an in-app panel needs; a publication figure passes a

@@ -20,7 +20,8 @@ function [groupSets, divergingSets] = candidatePalettes()
 groupSets = struct('name', {}, 'family', {}, 'colors', {});
 
 % -- accessible ---------------------------------------------------------------
-groupSets(end+1) = entry('Okabe-Ito (current)', 'accessible', groupColors(8));
+groupSets(end+1) = entry('Okabe-Ito (2.2.0)', 'accessible', hex( ...
+    '#262626', '#E69F00', '#57B5E8', '#009E73', '#0073B3', '#D65E00', '#CC78A6', '#F0E342'));
 groupSets(end+1) = entry('Okabe-Ito, amber for yellow', 'accessible', hex( ...
     '#262626', '#E69F00', '#0072B2', '#009E73', '#D55E00', '#56B4E9', '#CC79A7', '#B8860B'));
 groupSets(end+1) = entry('Tol bright', 'accessible', hex( ...

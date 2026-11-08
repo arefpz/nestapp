@@ -15,6 +15,8 @@ function drawTEPOverlay(ax, res, opts)
 %     .mode      'TEP' | 'GMFP' | 'LMFP', for the axis label (default from res)
 %     .xlim      time limits, default [-50 300] as the app has always used
 %     .colors    n-by-3, default groupColors(nGroups)
+%     .lineStyles one line style per group, default all solid (see groupStyles)
+%     .lineWidth width of the group means, default 1.75
 %     .showBand  draw the interval, default true
 %     .legend    draw the legend, default true
 %     .showBands shade the windows of interest, default false
@@ -90,7 +92,8 @@ for g = 1:nG
     e = est(g);
     labels{g} = sprintf('%s (n=%d)', res.groups(g).name, e.n);
     plot(ax, time, e.mean, 'Color', opts.colors(g, :), ...
-         'LineWidth', 1.75, 'DisplayName', labels{g});
+         'LineStyle', opts.lineStyles{g}, 'LineWidth', opts.lineWidth, ...
+         'DisplayName', labels{g});
 end
 
 % A zero line and a stimulus marker: without them the reader has to infer where
@@ -127,10 +130,14 @@ function opts = withDefaults(opts, res)
 nG   = numel(res.groups);
 opts = fillDefaults(opts, struct('mode', 'TEP', 'xlim', [-50 300], ...
     'colors', groupColors(nG), 'showBand', true, 'legend', true, ...
-    'showBands', false, 'windows', [], 'showTraces', false, 'level', []));
+    'showBands', false, 'windows', [], 'showTraces', false, 'level', [], ...
+    'lineStyles', {{}}, 'lineWidth', 1.75));
 % A caller may pass a palette sized for a different group count.
 if size(opts.colors, 1) < nG
     opts.colors = groupColors(nG);
+end
+if numel(opts.lineStyles) < nG
+    opts.lineStyles = repmat({'-'}, 1, nG);
 end
 end
 
