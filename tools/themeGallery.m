@@ -23,27 +23,22 @@ res3 = syntheticResult(3);
 res6 = syntheticResult(6);
 files = {};
 
+% Candidates: colour only, to judge the palettes themselves.
 for s = 1:numel(groupSets)
     C = groupSets(s).colors;
-    fig = figure('Visible', 'off', 'Color', 'w', 'Position', [50 50 1100 430]);
-    t = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
-    title(t, groupSets(s).name, 'FontWeight', 'bold', 'FontSize', 14);
-    drawTEPOverlay(nexttile(t), res3, struct('colors', cycle(C, 3)));
-    drawTEPOverlay(nexttile(t), res6, struct('colors', cycle(C, 6)));
-    curves = print(fig, '-RGBImage', '-r0');
-    delete(fig);
+    plain = @(n) struct('colors', cycle(C, n), 'lineStyles', {repmat({'-'}, 1, n)}, ...
+                        'barPatterns', {{}}, 'lineWidth', 1.75);
+    files{end+1} = renderPage(groupSets(s).name, plain(3), plain(6), res3, res6, ...
+        fullfile(outDir, sprintf('group_%02d_%s.png', s, slug(groupSets(s).name)))); %#ok<AGROW>
+end
 
-    % The bars plot lays out its own axes across a whole parent.
-    fig = figure('Visible', 'off', 'Color', 'w', 'Units', 'pixels', ...
-                 'Position', [50 50 1000 430]);
-    drawWindowBars(fig, res6, struct('colors', cycle(C, 6), ...
-        'windows', defaultTEPComponentDefs(), ...
-        'axesFcn', @(p, pos) axes('Parent', p, 'Units', 'pixels', 'Position', pos)));
-    bars = print(fig, '-RGBImage', '-r0');
-    delete(fig);
-
-    files{end+1} = fullfile(outDir, sprintf('group_%02d_%s.png', s, slug(groupSets(s).name))); %#ok<AGROW>
-    imwrite([curves, imresize(bars, [size(curves, 1) NaN])], files{end});
+% Shipped themes: exactly what the app draws, line styles and textures
+% included - the only way to check Greyscale, or any theme past its colours.
+for t = plotThemes()'
+    styled = @(n) groupStyles(arrayfun(@(k) sprintf('g%d', k), 1:n, ...
+                              'UniformOutput', false), t.name);
+    files{end+1} = renderPage(['Theme: ' t.name], styled(3), styled(6), res3, res6, ...
+        fullfile(outDir, sprintf('theme_%s.png', slug(t.name)))); %#ok<AGROW>
 end
 
 [vals, locs] = syntheticMaps();
@@ -66,6 +61,30 @@ end
 files{end+1} = fullfile(outDir, 'topo_maps.png');
 exportgraphics(fig, files{end}, 'Resolution', 110);
 delete(fig);
+end
+
+function file = renderPage(name, sty3, sty6, res3, res6, file)
+% TEP overlays for 3 and 6 groups, then the window bars for 6, in one PNG.
+lineOpts = @(s) struct('colors', s.colors, 'lineStyles', {s.lineStyles}, ...
+                       'lineWidth', s.lineWidth);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [50 50 1100 430]);
+t = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+title(t, name, 'FontWeight', 'bold', 'FontSize', 14);
+drawTEPOverlay(nexttile(t), res3, lineOpts(sty3));
+drawTEPOverlay(nexttile(t), res6, lineOpts(sty6));
+curves = print(fig, '-RGBImage', '-r0');
+delete(fig);
+
+% The bars plot lays out its own axes across a whole parent.
+fig = figure('Visible', 'off', 'Color', 'w', 'Units', 'pixels', ...
+             'Position', [50 50 1000 430]);
+drawWindowBars(fig, res6, struct('colors', sty6.colors, ...
+    'barPatterns', {sty6.barPatterns}, 'windows', defaultTEPComponentDefs(), ...
+    'axesFcn', @(p, pos) axes('Parent', p, 'Units', 'pixels', 'Position', pos)));
+bars = print(fig, '-RGBImage', '-r0');
+delete(fig);
+
+imwrite([curves, imresize(bars, [size(curves, 1) NaN])], file);
 end
 
 % -- synthetic data --------------------------------------------------------------
