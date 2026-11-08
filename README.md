@@ -16,74 +16,95 @@ Every processed file carries its full pipeline inside `EEG.history` in the saved
 
 ---
 
-## Requirements
-
-**Required.** nestapp will not run without these:
-
-| | Version | How you get it |
-|---|---|---|
-| MATLAB | R2023b or later | — |
-| Signal Processing Toolbox | any recent | MATLAB installer |
-| Statistics and Machine Learning Toolbox | any recent | MATLAB installer |
-| EEGLAB | 2026.0.0 (2025.x works) | [eeglab.org](https://eeglab.org/) |
-
-**Required for most pipelines.** Every built-in template uses these, and steps
-that need one are hidden until it is installed. All come from EEGLAB's own
-extension manager:
-
-| | Used for |
-|---|---|
-| TESA 1.2+ | TMS pulse detection, artifact removal, interpolation, filtering, SSP-SIR, TEP peaks |
-| FastICA | the FastICA decomposition engine |
-| ICLabel | automatic IC classification |
-| PICARD | the Picard decomposition engine |
-| CleanLine | line-noise removal |
-| clean_rawdata | ASR and bad-channel detection |
-| firfilt | FIR filtering |
-
-**Optional.** Each unlocks something specific, and nestapp works without them:
-
-| | What it enables | Without it |
-|---|---|---|
-| Parallel Computing Toolbox | **Parallel Processing** checkbox — processes a batch across workers | The run proceeds serially and says why it skipped |
-| Curve Fitting Toolbox | `Remove Decay Artifact` (AARATEP template) | That one step is unavailable |
-| [AARATEP helpers](https://github.com/chriscline/AARATEPPipeline) | the `TMS-EEG / AARATEP` template | Installed from inside the app — see [below](#installing-the-aaratep-helpers) |
-| `bva-io` | reading BrainVision `.vhdr` | Those files cannot be loaded |
-| `loadcnt` | reading Neuroscan `.cnt` | " |
-| `curry` | reading Curry `.cdt` | " |
-
-Some EEGLAB plugins ask for the **Image Processing** or **Wavelet** toolboxes
-for their own features. nestapp calls neither directly; `nestappDoctor` reports
-them so you can tell whether a plugin is missing one.
-
-**You do not have to get this list right up front.** nestapp only *offers* a
-step whose dependencies are actually installed, and the pre-flight check blocks
-a run that references a missing one and names what to install.
-
----
-
 ## Installation
 
-### The easy way: install the toolbox
+About ten minutes, most of it downloads. Everything below is free except
+MATLAB itself.
 
-1. **Download the `.mltbx` file** from the
-   [latest release](https://github.com/goingloud/nestapp/releases/latest).
-2. **Double-click it.** MATLAB installs nestapp, puts it on the path
-   permanently, and lists it under **Add-Ons** (where you can later update or
-   uninstall it). If you do not have EEGLAB, the installer offers to fetch it.
-3. **Install the EEGLAB plugins.** Run `eeglab` at the MATLAB prompt, open
-   **File → Manage EEGLAB extensions**, and install TESA, FastICA, ICLabel,
-   PICARD, CleanLine, clean_rawdata and firfilt. They go into EEGLAB's own
-   `plugins/` folder; nothing needs adding to your path by hand.
-4. **Launch nestapp**:
-   ```matlab
-   nestapp
-   ```
-5. **Point it at EEGLAB.** Open **Settings → Preferences** and set the EEGLAB
-   installation folder. nestapp puts EEGLAB and its plugins on the path on
-   every launch from then on.
+**Before you start:** you need MATLAB R2023b or later with the **Signal
+Processing** and **Statistics and Machine Learning** toolboxes. Type `ver` at
+the MATLAB prompt to see what you have; add a missing toolbox from
+**Home → Add-Ons → Get Add-Ons**.
 
-There is no `cd` to remember and no path to re-add each session.
+### 1. Install nestapp
+
+Download the `.mltbx` file from the
+[latest release](https://github.com/goingloud/nestapp/releases/latest) and
+double-click it (or drag it into the MATLAB Command Window). MATLAB installs
+nestapp, keeps it on the path, and lists it under **Add-Ons**, where you can
+update or uninstall it later.
+
+If the installer offers to download EEGLAB, say yes and skip step 2.
+
+### 2. Get EEGLAB
+
+Download [`eeglab_current.zip`](https://sccn.ucsd.edu/eeglab/currentversion/eeglab_current.zip)
+(about 95 MB; older versions are on
+[EEGLAB's download page](https://eeglab.org/others/How_to_download_EEGLAB.html))
+and unzip it into your MATLAB folder: `Documents/MATLAB`, or wherever `userpath`
+at the prompt says. nestapp finds it there by itself.
+
+Unzipped somewhere else? Set the folder once in nestapp's
+**Settings → Preferences**.
+
+### 3. Add the EEGLAB extensions
+
+Open EEGLAB: in MATLAB, go into the EEGLAB folder you just unzipped (for
+example `cd(fullfile(userpath, 'eeglab2026.1.0'))`) and type `eeglab`. Then:
+
+- **File → Manage EEGLAB extensions**, and install **TESA**, **PICARD** and
+  **CleanLine**.
+- **FastICA** is not in the extension manager. Download
+  [`FastICA_2.5.zip`](https://research.ics.aalto.fi/ica/fastica/code/FastICA_2.5.zip)
+  and unzip it into EEGLAB's `plugins` folder.
+
+ICLabel, clean_rawdata and firfilt come with EEGLAB, so there is nothing to
+install for them. Installing them again from the extension manager creates
+duplicate copies.
+
+### 4. Launch nestapp
+
+```matlab
+nestapp
+```
+
+Then run **Help → Check My Install**. It should say there are no problems.
+If anything is missing, it names it and how to get it.
+
+### Optional: the AARATEP template
+
+The `TMS-EEG / AARATEP` template needs helper functions from a separate project.
+In nestapp, choose **Help → Install AARATEP Helpers...** (about a second), or
+type `installAaratep` at the prompt. The helpers are kept outside the nestapp
+folder, so updating nestapp does not remove them. The **Curve Fitting Toolbox**
+is also needed for that template's `Remove Decay Artifact` step.
+
+nestapp installs a **pinned release** (currently v2.1.1), not whatever is
+newest, so that the same template produces the same result for everyone.
+If a newer AARATEP exists you are told, but upgrading is a deliberate change.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the pinned commit
+and licensing. Already have your own clone? Point nestapp at it instead:
+
+```matlab
+setpref('nestapp', 'aaratepPath', '/path/to/AARATEPPipeline')
+```
+
+### Optional: TESA 1.2
+
+The extension manager installs TESA 1.1.1, which runs every built-in template.
+TESA 1.2 adds six more steps (Robust Detrend, Robust Demean, Modified Bandpass
+Filter, Detect Bad Channels, Fit Artifact Model and Interactive Channel Reject,
+all TESA versions). 1.2 has not been released yet, so it comes from TESA's
+GitHub repository:
+
+1. Download [TESA's current code](https://github.com/nigelrogasch/TESA/archive/refs/heads/master.zip).
+2. Unzip it into EEGLAB's `plugins` folder, and rename the folder it creates
+   (`TESA-master`) to `TESA1.2.0`. The development code does not state its
+   version, so nestapp reads it from this folder name.
+3. Delete the old `TESA1.1.1` folder beside it, so only one TESA is found.
+4. Restart nestapp. The six steps now appear in the picker.
+
+This is unreleased code, so it can change from one download to the next.
 
 ### From source (for development, or to track `develop`)
 
@@ -93,42 +114,61 @@ run_nestapp
 ```
 
 `run_nestapp` adds `src/` to the path for that session and launches the app.
-Steps 3 and 5 above still apply. See
+Steps 2 and 3 above still apply. See
 [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the development setup.
+
+---
+
+## Requirements
+
+The installation steps above cover all of this. This is the reference list.
+
+**Required.** nestapp will not run without these:
+
+| | Version | Used for |
+|---|---|---|
+| MATLAB | R2023b or later | — |
+| Signal Processing Toolbox | any recent | filtering and spectra (TESA needs it too) |
+| Statistics and Machine Learning Toolbox | any recent | ICA quality metrics |
+| EEGLAB | 2025.0 or later (tested with 2026.0 and 2026.1) | data loading and most steps |
+
+**Required for most pipelines.** Every built-in template uses these, and steps
+that need one are hidden until it is installed:
+
+| | Used for | Where it comes from |
+|---|---|---|
+| TESA 1.1.1+ | TMS pulse detection, artifact removal, interpolation, filtering, SSP-SIR, TEP peaks | extension manager (1.2 adds six steps, [see above](#optional-tesa-12)) |
+| FastICA | the FastICA decomposition engine | [Aalto University](https://research.ics.aalto.fi/ica/fastica/) |
+| PICARD | the Picard decomposition engine | extension manager |
+| CleanLine | line-noise removal | extension manager |
+| ICLabel | automatic IC classification | comes with EEGLAB |
+| clean_rawdata | ASR and bad-channel detection | comes with EEGLAB |
+| firfilt | FIR filtering | comes with EEGLAB |
+
+**Optional.** Each unlocks something specific, and nestapp works without them:
+
+| | What it enables | Without it |
+|---|---|---|
+| Parallel Computing Toolbox | **Parallel Processing** checkbox: processes a batch across workers | The run proceeds serially and says why it skipped |
+| Curve Fitting Toolbox | `Remove Decay Artifact` (AARATEP template) | That one step is unavailable |
+| [AARATEP helpers](https://github.com/chriscline/AARATEPPipeline) | the `TMS-EEG / AARATEP` template | Installed from inside the app, [see above](#optional-the-aaratep-template) |
+| `bva-io` | reading BrainVision `.vhdr` | Those files cannot be loaded |
+| `loadcnt` | reading Neuroscan `.cnt` | " |
+| `curry` | reading Curry `.cdt` | " |
+
+Some EEGLAB plugins ask for the **Image Processing** or **Wavelet** toolboxes
+for their own features. nestapp calls neither directly; **Check My Install**
+reports them so you can tell whether a plugin is missing one.
+
+**You do not have to get this list right up front.** nestapp only *offers* a
+step whose dependencies are actually installed, and the pre-flight check blocks
+a run that references a missing one and names what to install.
 
 ### If something looks wrong
 
-**Help → Check My Install** reports your MATLAB version, which plugins were
-found and their versions, and what any unavailable step is waiting for. Most
-problems are a missing or out-of-date plugin, and it names which. The same
-check is `nestappDoctor` at the prompt.
-
-### Installing the AARATEP helpers
-
-Only needed for the `TMS-EEG / AARATEP` template. Its helper functions are a
-separate project. nestapp fetches them on request rather than committing a copy
-into this repository, to keep the two codebases from entangling — the licence
-(MIT) would permit redistribution:
-
-**Help → Install AARATEP Helpers...** takes about a second and needs no other tools.
-
-Or at the MATLAB prompt:
-
-```matlab
-installAaratep
-```
-
-nestapp installs a **pinned release** (currently v2.1.1), not whatever is
-newest, so that the same template produces the same result for everyone.
-If a newer AARATEP exists you are told, but upgrading is a deliberate change.
-See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the pinned commit
-and licensing.
-
-Already have your own clone? Point nestapp at it instead:
-
-```matlab
-setpref('nestapp', 'aaratepPath', '/path/to/AARATEPPipeline')
-```
+**Help → Check My Install** reports what is missing and how to get it. The full
+report (MATLAB version, every plugin found and its version) is
+**Help → Copy Diagnostics to Clipboard**, or `nestappDoctor` at the prompt.
 
 ---
 

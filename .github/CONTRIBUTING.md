@@ -12,15 +12,18 @@ first. It maps what each module does and where to make common changes.
    Computing (for batch parallelism) and Curve Fitting (for the AARATEP
    template's decay step). See the
    [README](../README.md#requirements) for the full required/optional split.
-2. **EEGLAB plus its plugins** (TESA 1.2+, FastICA, ICLabel, PICARD, CleanLine,
+2. **EEGLAB plus its plugins** (TESA, FastICA, ICLabel, PICARD, CleanLine,
    clean_rawdata, firfilt). Install these per the
-   [README](../README.md#installation). **None of these are redistributed with
+   [README](../README.md#installation). For development, install TESA 1.2
+   ([README, Optional: TESA 1.2](../README.md#optional-tesa-12)) so the six
+   1.2-only steps can be exercised. **None of these are redistributed with
    this repo**; `eeglab2026.0.0/` in a development checkout is untracked.
 3. **AARATEP helpers** (only if working on that template). Run
    `installAaratep` at the MATLAB prompt, which fetches the pinned release into
-   `third_party/aaratep/`. A `git clone` of the same tag works too; the
-   installer stamps the version it wrote, so a hand-cloned tree is reported as
-   "version unknown" rather than assumed to be the pin.
+   `prefdir/nestapp/aaratep`. A `git clone` of the same tag into
+   `third_party/aaratep/` works too and is found first; the installer stamps
+   the version it wrote, so a hand-cloned tree is reported as "version unknown"
+   rather than assumed to be the pin.
 4. **Clone and launch**:
    ```bash
    git clone https://github.com/arefpz/nestapp.git

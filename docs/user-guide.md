@@ -213,11 +213,12 @@ computed at.
 
 ## When something does not work
 
-**Help → Check My Install** first. It reports your MATLAB version, which
-plugins were found and their versions, and what any unavailable step is waiting
-for. Most problems are a missing or out-of-date plugin, and it names which.
+**Help → Check My Install** first. It says what is missing, how many steps
+need it, and where to get it, and lists optional extras you have not installed.
+Most problems are a missing or out-of-date plugin, and it names which.
 
-(The same check is `nestappDoctor` at the MATLAB prompt, if you prefer.)
+(The full report, with your MATLAB version and every plugin's version, is
+`nestappDoctor` at the MATLAB prompt.)
 
 If you need to report a problem, **Help → Collect Support Bundle...** gathers
 the versions, the pipeline and the logs into one file to attach. Use
@@ -228,6 +229,6 @@ into an issue.
 |---|---|
 | An AARATEP step is unavailable | The helper functions are not installed — **Help → Install AARATEP Helpers...** |
 | A step is greyed out in the picker | Its plugin is missing or older than the step needs — **Check My Install** names it |
-| `Undefined function 'pop_...'` | EEGLAB's folder is not set in **Settings → Preferences** |
+| `Undefined function 'pop_...'` | nestapp could not find EEGLAB — set its folder in **Settings → Preferences** |
 | A saved pipeline will not run | The pre-flight found an unavailable step; the message names it |
 | A file failed mid-batch | The report names the step that raised it, and a diagnostic bundle is saved beside the output |
