@@ -61,6 +61,15 @@ The version here must match `src/nestappVersion.m` and the release git tag.
   pass after the grid covered only the shared scale. The scalp-map drawer now
   restores the other axes' colormaps itself after each topoplot, so every scale
   mode, and any figure that holds a map, keeps its colours.
+- **Select Data Files could open a pile of windows** (reported on Linux).
+  While the data browser was open the main window stayed clickable, so another
+  click on Browse..., File > Select Data, a recent-data item or Add group...
+  opened another browser inside the first - and with no remembered data
+  folder each one also opened the system folder picker at the same moment.
+  Only one browser can now be open: asking again brings it to the front. With
+  no remembered folder it opens empty with Choose... highlighted instead of
+  launching the system picker alongside itself, and it steps off "always on
+  top" while the picker is up so the picker cannot open hidden behind it.
 - **Half-dark windows under OS dark mode** (MATLAB R2025a+, e.g. macOS set to
   dark). MATLAB re-coloured only the parts of nestapp whose colours were not
   fixed, so windows mixed light and dark: a light status bar with unreadable

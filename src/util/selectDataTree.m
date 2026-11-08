@@ -32,8 +32,23 @@ function selected = selectDataTree(startFolder, exts)
         exts = {'*.set', '*.vhdr', '*.cdt', '*.cnt'};
     end
 
+    % ONE BROWSER AT A TIME. The browser blocks only its own caller
+    % (waitfor), not the main window, so Browse..., File > Select Data, a
+    % recent-data item or Add group... could each be clicked again while it
+    % was open - and every click nested another browser, plus another system
+    % folder picker when there was no remembered folder. Reported on Linux,
+    % where those windows are slow to appear and can open behind each other,
+    % so it looks as if nothing happened and people click again. A second
+    % request now brings the open browser to the front and returns nothing,
+    % which every caller already treats as "cancelled".
+    selected = {};
+    open = getappdata(groot, OPEN_KEY);
+    if ~isempty(open) && isvalid(open)
+        figure(open);
+        return
+    end
+
     % ---- shared state (closed over by the nested callbacks) -------------
-    selected    = {};
     parentDir   = '';
     checkedSet  = containers.Map('KeyType', 'char', 'ValueType', 'logical');
     allFiles    = {};      % cached recursive full paths under parentDir
@@ -57,11 +72,15 @@ function selected = selectDataTree(startFolder, exts)
     % X uses a plain delete so it can never be vetoed by a callback error;
     % "selected" keeps its default {} (cancel) when the window is X-ed.
     fig.CloseRequestFcn = @(src, ~) delete(src);
+    % Registered as THE open browser until this call returns, however it
+    % returns - the cleanup also runs on an error.
+    setappdata(groot, OPEN_KEY, fig);
+    unregister = onCleanup(@() unregisterBrowser(fig));
 
     uilabel(fig, 'Text', 'Parent folder:', 'Position', [15 562 85 22]);
     parentField = uieditfield(fig, 'text', 'Editable', 'off', ...
         'Position', [100 560 520 26], 'Value', '(none selected)');
-    uibutton(fig, 'Text', 'Choose...', 'Position', [630 560 115 28], ...
+    chooseButton = uibutton(fig, 'Text', 'Choose...', 'Position', [630 560 115 28], ...
         'ButtonPushedFcn', @(~,~) onChoose());
 
     uilabel(fig, 'Text', 'Filter:', 'Position', [15 522 45 22]);
@@ -94,11 +113,15 @@ function selected = selectDataTree(startFolder, exts)
         'BackgroundColor', [0.20 0.55 0.20], 'FontColor', [1 1 1], ...
         'ButtonPushedFcn', @(~,~) onUse());
 
-    % Seed with the start folder if it is usable, else prompt immediately.
+    % Seed with the start folder if it is usable. Otherwise point at Choose...
+    % rather than opening the system folder picker at once: that put two
+    % windows up together - this one and the picker, which on Linux can open
+    % behind it - and the user had to work out which one wanted them.
     if ~isempty(startFolder) && isfolder(startFolder)
         setParent(startFolder);
     else
-        onChoose();
+        parentField.Value = '(none selected) - click Choose... to pick your data folder';
+        chooseButton.FontWeight = 'bold';
     end
 
     waitfor(fig);   % blocks until a button or the X deletes the figure
@@ -117,11 +140,18 @@ function selected = selectDataTree(startFolder, exts)
     function onChoose()
         base = parentDir;
         if isempty(base), base = startFolder; end
+        % Off always-on-top while the system picker is up, so the picker
+        % cannot open hidden behind this window (seen on Linux).
+        style = fig.WindowStyle;
+        fig.WindowStyle = 'normal';
         p = uigetdir(base, 'Select the parent folder containing your data');
+        if ~isvalid(fig); return; end
+        fig.WindowStyle = style;
         if ~isequal(p, 0)
             setParent(p);
+            chooseButton.FontWeight = 'normal';
         end
-        if isvalid(fig); figure(fig); end   % uigetdir can bury the modal
+        figure(fig);   % uigetdir can bury the browser
     end
 
     function setParent(p)
@@ -422,6 +452,19 @@ function selected = selectDataTree(startFolder, exts)
 end
 
 % -- file-scope helpers (no shared state) ----------------------------------
+
+function k = OPEN_KEY()
+% Where the open browser is registered (an appdata key on the root object).
+k = 'nestappOpenDataBrowser';
+end
+
+function unregisterBrowser(fig)
+% Clear the registration - but only if it is still ours, so a stale cleanup
+% cannot unregister a browser opened after this one.
+if isequal(getappdata(groot, OPEN_KEY), fig)
+    rmappdata(groot, OPEN_KEY);
+end
+end
 
 function cancelled = reportScan(dlg, n)
     dlg.Message = sprintf('Found %d data file(s)...', n);
