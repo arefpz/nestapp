@@ -29,7 +29,7 @@ the MATLAB prompt to see what you have; add a missing toolbox from
 ### 1. Install nestapp
 
 Download the `.mltbx` file from the
-[latest release](https://github.com/goingloud/nestapp/releases/latest) and
+[latest release](https://github.com/arefpz/nestapp/releases/latest) and
 double-click it (or drag it into the MATLAB Command Window). MATLAB installs
 nestapp, keeps it on the path, and lists it under **Add-Ons**, where you can
 update or uninstall it later.

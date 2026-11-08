@@ -479,6 +479,6 @@ First public open-source release.
   additionally requires the Curve Fitting Toolbox and the AARATEP helpers
   cloned into `third_party/aaratep/` (see README).
 
-[Unreleased]: https://github.com/goingloud/nestapp/compare/v2.2.0...HEAD
-[2.2.0]: https://github.com/goingloud/nestapp/releases/tag/v2.2.0
-[2.1.0]: https://github.com/goingloud/nestapp/releases/tag/v2.1.0
+[Unreleased]: https://github.com/arefpz/nestapp/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/arefpz/nestapp/releases/tag/v2.2.0
+[2.1.0]: https://github.com/arefpz/nestapp/releases/tag/v2.1.0
