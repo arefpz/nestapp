@@ -641,28 +641,49 @@ classdef nestapp < matlab.apps.AppBase
         end
 
         function copyDiagnosticsMenu(app, ~)
-        % COPYDIAGNOSTICSMENU  Help-menu action: copy environment diagnostics.
-        %   Runs nestappDoctor, copies the Markdown report to the clipboard,
-        %   and shows the problems summary so the user can paste it into a
-        %   bug report (see .github/ISSUE_TEMPLATE/bug_report.yml).
+        % COPYDIAGNOSTICSMENU  Help-menu action: copy environment diagnostics
+        %   to the clipboard for a bug report (see
+        %   .github/ISSUE_TEMPLATE/bug_report.yml), and show the summary.
+            showInstallCheck(app, true);
+        end
+
+        function checkInstallMenu(app, ~)
+        % CHECKINSTALLMENU  Help-menu action: run nestappDoctor and say what,
+        %   if anything, is missing. This previously ran the developer test
+        %   suite, which an installed toolbox does not ship, so every installed
+        %   user was told the check was unavailable.
+            showInstallCheck(app, false);
+        end
+
+        function showInstallCheck(app, doCopy)
+        % SHOWINSTALLCHECK  Run nestappDoctor and show its problems and notes.
             try
-                [~, diagInfo] = nestappDoctor('Copy', true, 'Quiet', true);
+                [~, diagInfo] = nestappDoctor('Copy', doCopy, 'Quiet', true);
             catch ME
                 uialert(app.UIFigure, ...
                     sprintf('Could not collect diagnostics:\n%s', ME.message), ...
                     'Diagnostics Failed', 'Icon', 'error');
                 return
             end
+            bullets = @(c) sprintf('\n  - %s', c{:});
             if isempty(diagInfo.problems)
-                msg  = 'Diagnostics copied to the clipboard. No problems detected.';
+                msg  = 'No problems found: nestapp has everything it needs.';
                 icon = 'success';
             else
-                msg  = sprintf(['Diagnostics copied to the clipboard.\n\n' ...
-                    '%d problem(s) detected:\n  - %s'], ...
-                    numel(diagInfo.problems), strjoin(diagInfo.problems, sprintf('\n  - ')));
+                msg  = sprintf('%d problem(s) to fix:%s', ...
+                    numel(diagInfo.problems), bullets(diagInfo.problems));
                 icon = 'warning';
             end
-            uialert(app.UIFigure, msg, 'nestapp Diagnostics', 'Icon', icon);
+            if ~isempty(diagInfo.notes)
+                msg = sprintf('%s\n\nOptional, not installed:%s', msg, bullets(diagInfo.notes));
+            end
+            if doCopy
+                msg = sprintf('Diagnostics copied to the clipboard.\n\n%s', msg);
+            else
+                msg = sprintf(['%s\n\nHelp > Copy Diagnostics to Clipboard copies ' ...
+                    'the full report.'], msg);
+            end
+            uialert(app.UIFigure, msg, 'Check My Install', 'Icon', icon);
         end
 
         function copyPipelineDescriptionMenu(app, ~)
@@ -760,45 +781,6 @@ classdef nestapp < matlab.apps.AppBase
 
             uialert(app.UIFigure, [result.message extra], 'AARATEP', ...
                 'Icon', 'success');
-        end
-
-        function selfTestMenu(app, ~)
-        % SELFTESTMENU  Help action: run the fast test suite to verify the
-        %   install, reporting pass/fail. Best-effort: needs tests/ present.
-            runner = fullfile(nestappRoot(), 'tests', 'run_tests.m');
-            if ~isfile(runner)
-                uialert(app.UIFigure, ['The test suite (tests/) is not present ' ...
-                    'in this installation, so the self-test cannot run.'], ...
-                    'Self-test Unavailable', 'Icon', 'warning');
-                return
-            end
-            dlg = uiprogressdlg(app.UIFigure, 'Title', 'Checking install', ...
-                'Message', 'Running the fast test suite...', 'Indeterminate', 'on');
-            closeDlg = onCleanup(@() close(dlg));
-            try
-                addpath(fullfile(repo, 'tests'));
-                addpath(fullfile(repo, 'tests', 'helpers'));
-                results = [];
-                evalc('results = run_tests(''fast'')');   % capture verbose output
-            catch ME
-                clear closeDlg;
-                uialert(app.UIFigure, sprintf('Self-test could not run:\n%s', ...
-                    ME.message), 'Self-test Error', 'Icon', 'error');
-                return
-            end
-            clear closeDlg;
-            nPass = sum([results.Passed]);
-            nFail = sum([results.Failed]);
-            nInc  = sum([results.Incomplete]);
-            if nFail == 0
-                uialert(app.UIFigure, sprintf(['Install looks healthy.\n' ...
-                    '%d passed, %d skipped (optional plugins).'], nPass, nInc), ...
-                    'Self-test Passed', 'Icon', 'success');
-            else
-                uialert(app.UIFigure, sprintf(['%d test(s) FAILED (%d passed).\n' ...
-                    'Run Help > Copy Diagnostics and check your setup.'], nFail, nPass), ...
-                    'Self-test Failed', 'Icon', 'error');
-            end
         end
 
         function loadPrefs(~)

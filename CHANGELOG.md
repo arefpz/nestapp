@@ -60,6 +60,20 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ### Fixed
 
+- **Help > Check My Install did not check the install.** It ran the developer
+  test suite, which the installed toolbox does not include, so every installed
+  copy answered "Self-test Unavailable". It now runs the install check and says
+  what is missing and how to get it. The check itself (`nestappDoctor`):
+  - prepares EEGLAB and the AARATEP helpers the way the app does first, so it no
+    longer reports them missing when the app would find them;
+  - without EEGLAB, says so in one line, not one line per missing plugin
+    function (37 on a fresh install);
+  - reports each missing plugin once, with how many steps need it and where
+    to get it;
+  - lists optional extras that are absent (TESA 1.2's six steps, the AARATEP
+    helpers, Curve Fitting) separately, under "Optional extras not installed",
+    instead of as problems, so a complete standard install reports no problems;
+  - typed at the prompt without a semicolon, prints its report once, not twice.
 - **The installer's EEGLAB download could not work.** The `.mltbx` offered to
   fetch EEGLAB from `eeglab.org/download/`, a web page (now a 404), not a file.
   It now downloads the current EEGLAB zip from SCCN.
