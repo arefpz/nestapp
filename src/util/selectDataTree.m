@@ -42,7 +42,7 @@ function selected = selectDataTree(startFolder, exts)
     prevKeys    = {};      % node keys checked at the last change event
 
     % ---- build the window ----------------------------------------------
-    fig = uifigure('Name', 'Select Data Files', ...
+    fig = appWindow('Name', 'Select Data Files', ...
         'Position', [200 140 760 600], 'Resize', 'off');
     % Keep the browser above the main window (not WindowStyle='modal',
     % whose close button is unreliable).

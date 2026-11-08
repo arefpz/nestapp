@@ -17,7 +17,7 @@ function createComponents(app)
             imageDir = fullfile(nestappRoot(), 'src');
 
             % Create UIFigure and hide until all components are created
-            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure = appWindow('Visible', 'off');
             % Height = 529px tab area + 20px status bar = 549px.
             % uimenu renders outside the coordinate space (MATLAB shifts the window
             % upward when the menu is created; coordinate height stays unchanged).

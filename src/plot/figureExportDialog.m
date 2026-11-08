@@ -60,7 +60,7 @@ given  = opts;
 action = 'cancel';
 
 W = 470; H = 360;
-fig = uifigure('Name', 'Publication figure', 'Resize', 'off', ...
+fig = appWindow('Name', 'Publication figure', 'Resize', 'off', ...
                'Position', centreOn(anchor, W, H));
 fig.CloseRequestFcn = @(src, ~) delete(src);
 

@@ -76,7 +76,7 @@ if ~isempty(meta); formH = paramFormHeight(meta); end
 COLOURS_H = 40 * hasColours;
 H        = formH + COLOURS_H + 108;
 
-fig = uifigure('Name', sprintf('%s - options', entry.name), ...
+fig = appWindow('Name', sprintf('%s - options', entry.name), ...
                'Position', centreOn(anchor, W, H), 'Resize', 'off');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel, and nothing else
 

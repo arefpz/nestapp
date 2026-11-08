@@ -71,7 +71,7 @@ curMatched = [];
 W = 820; H = 620;
 MUTED = [0.35 0.38 0.43];
 
-fig = uifigure('Name', 'Subjects from filenames', 'Resize', 'off', ...
+fig = appWindow('Name', 'Subjects from filenames', 'Resize', 'off', ...
                'Position', centreOn(opts.parent, W, H), 'WindowStyle', 'modal');
 % Same exit discipline as exploreFilesTable: delete + waitfor, never uiresume.
 fig.CloseRequestFcn = @(src, ~) delete(src);

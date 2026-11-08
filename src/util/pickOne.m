@@ -32,7 +32,7 @@ W = 460;
 listH = min(max(numel(labels), 3), 12) * 18 + 8;
 H = listH + 108;
 
-fig = uifigure('Name', title, 'Position', centreOn(anchor, W, H), 'Resize', 'off');
+fig = appWindow('Name', title, 'Position', centreOn(anchor, W, H), 'Resize', 'off');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel, and nothing else
 
 uilabel(fig, 'Position', [16 H-34 W-32 22], 'Text', prompt);

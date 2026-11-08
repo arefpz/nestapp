@@ -186,6 +186,17 @@ classdef AppStartupTest < NestappTestCase
             end
         end
 
+        function theMainWindowStaysLightUnderAnyDesktopTheme(tc)
+        % Under OS dark mode the window came out half light, half dark: MATLAB
+        % re-coloured what nestapp had not fixed. createComponents goes
+        % through appWindow, which pins the light theme.
+            app = launchApp(tc);
+            fig = app.UIFigure;
+            if ~isprop(fig, 'ThemeMode'); return; end   % before R2025a: no themes
+            tc.verifyEqual(char(fig.ThemeMode), 'manual');
+            tc.verifyEqual(char(fig.Theme.BaseColorStyle), 'light');
+        end
+
         % ── A1.7 ─────────────────────────────────────────────────────────────
 
         function savingAPipelineClearsTheUnsavedMarker(tc)

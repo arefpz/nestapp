@@ -836,7 +836,7 @@ classdef nestapp < matlab.apps.AppBase
         %   Lets users set the EEGLAB path, default data/pipeline folders,
         %   and behavioural options. Changes are written to getpref/setpref
         %   under the 'nestapp' group and applied immediately on Save.
-            dlg = uifigure('Name', 'nestapp Preferences', ...
+            dlg = appWindow('Name', 'nestapp Preferences', ...
                 'Position', [200 200 420 664], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
 
@@ -1270,7 +1270,7 @@ classdef nestapp < matlab.apps.AppBase
                 'quality_dashboard.png');
             if isequal(fname, 0); return; end
             outPath = fullfile(fpath, fname);
-            fig = uifigure('Visible', 'off', 'Position', [100 100 1200 800]);
+            fig = appWindow('Visible', 'off', 'Position', [100 100 1200 800]);
             cleanup = onCleanup(@() close(fig, 'force'));
             renderDashboardPanel(fig, collectReportStructs(allEntries), ...
                 struct('failed', app.lastFailed));
@@ -3204,7 +3204,7 @@ classdef nestapp < matlab.apps.AppBase
             end
 
             % Modal picker
-            dlg = uifigure('Name', 'Load Template', ...
+            dlg = appWindow('Name', 'Load Template', ...
                 'Position', [300 300 320 200], ...
                 'WindowStyle', 'modal', 'Resize', 'off');
             uilabel(dlg, 'Text', 'Select a pipeline template:', ...

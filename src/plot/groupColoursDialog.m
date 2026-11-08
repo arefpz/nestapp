@@ -32,7 +32,7 @@ nG = numel(names);
 listH = min(nG, 10) * ROW + 6;
 H = 110 + listH;
 
-fig = uifigure('Name', sprintf('Group colours - %s theme', state.theme), ...
+fig = appWindow('Name', sprintf('Group colours - %s theme', state.theme), ...
                'Position', centreOn(anchor, W, H), 'Resize', 'off');
 fig.CloseRequestFcn = @(src, ~) delete(src);   % X == cancel
 

@@ -56,7 +56,7 @@ lastRule = opts.subjectRule;
 W = 760; H = 520;
 PAD = 12;
 
-fig = uifigure('Name', char(opts.title), 'Resize', 'off', ...
+fig = appWindow('Name', char(opts.title), 'Resize', 'off', ...
                'Position', centreOn(opts.parent, W, H), 'WindowStyle', 'modal');
 % Exit is by DELETING the figure, never by uiresume, and the wait is waitfor
 % rather than uiwait. selectDataTree already documents why: uiresume's
