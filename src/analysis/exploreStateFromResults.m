@@ -21,6 +21,7 @@ function [state, report] = exploreStateFromResults(source)
 %     .mode       'TEP' | 'GMFP' | 'LMFP'
 %     .plot       plot name to select, '' when the file does not name one
 %     .plotParams name/params struct array of per-plot settings
+%     .capRule    'exclude' | 'shared' for mixed caps, '' when none was needed
 %
 %   report:
 %     .ok       false when the source is not a results file at all
@@ -68,6 +69,18 @@ prov = fieldOr(out, 'provenance', struct());
 state.plot = charOr(fieldOr(prov, 'plot', ''), '');
 state.plotParams = fieldOr(out, 'plotParams', struct('name', {}, 'params', {}));
 
+% The cap rule the analysis was computed under, so reopening reproduces it
+% without asking again. A file from before the rule was recorded that still
+% reports mixed caps was computed under 'exclude' - the only rule there was.
+montage = fieldOr(prov, 'montage', struct());
+state.capRule = lower(charOr(fieldOr(montage, 'rule', ''), ''));
+if isempty(state.capRule) && isequal(fieldOr(montage, 'uniform', true), false)
+    state.capRule = 'exclude';
+end
+if ~any(strcmp(state.capRule, {'', 'exclude', 'shared'}))
+    state.capRule = '';
+end
+
 if isempty(state.entries)
     report.notes{end+1} = 'The file names no recordings, so no groups were restored.';
 end
@@ -99,7 +112,8 @@ function s = emptyState()
 s = struct('entries', struct('path', {}, 'subject', {}, 'group', {}, ...
                              'subjectConfident', {}), ...
            'roi', {{}}, 'windows', [], 'design', 'unpaired', 'mode', 'TEP', ...
-           'plot', '', 'plotParams', struct('name', {}, 'params', {}));
+           'plot', '', 'plotParams', struct('name', {}, 'params', {}), ...
+           'capRule', '');
 end
 
 function out = findResultsStruct(source)

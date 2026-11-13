@@ -36,7 +36,11 @@ function [ok, msg] = ensureEeglabReady()
 %   line per plugin, which is noise in a GUI session and drowns the app's own
 %   startup logging.
 %
-%   See also: pathMemo, availableSteps, stepAvailability, loadPrefs
+%   When EEGLAB is neither on the path nor set in Preferences, findEeglab
+%   looks in the usual install locations and the folder it finds is saved as
+%   the preference.
+%
+%   See also: pathMemo, findEeglab, availableSteps, stepAvailability, loadPrefs
 
 % The memo stores the MESSAGE, and ok is derived from it. A cache hit requires
 % the sentinel to resolve, so anything read back was computed on a run where
@@ -55,23 +59,34 @@ msg = '';
 % is only added if EEGLAB is not already reachable, so an eeglab the user put
 % on the path themselves wins over a stale pref.
 if isempty(which('eeglab'))
-    eeglabPath = getpref('nestapp', 'eeglabPath', '');
+    eeglabPath = '';
+    if ispref('nestapp', 'eeglabPath')
+        eeglabPath = getpref('nestapp', 'eeglabPath');
+    end
+    % No usable folder set: look where the installer and a by-hand unzip put
+    % EEGLAB, and remember what is found so Preferences shows it.
+    if isempty(eeglabPath) || ~isfolder(eeglabPath)
+        found = findEeglab();
+        if ~isempty(found)
+            eeglabPath = found;
+            setpref('nestapp', 'eeglabPath', found);
+        end
+    end
     if ~isempty(eeglabPath) && isfolder(eeglabPath)
         addpath(eeglabPath);
     end
 end
 
 if isempty(which('eeglab'))
-    msg = ['EEGLAB was not found on the MATLAB path. Set its folder in ' ...
-           'File > Preferences; until then, steps that need EEGLAB or its ' ...
-           'plugins cannot be offered.'];
+    msg = ['EEGLAB was not found. Set its folder in Settings > Preferences; ' ...
+           'until then, steps that need EEGLAB or its plugins cannot be offered.'];
     return
 end
 
 try
     evalc('eeglab nogui');
 catch ME
-    msg = sprintf(['EEGLAB could not be initialised: %s\nVerify the EEGLAB ' ...
-                   'path in File > Preferences.'], ME.message);
+    msg = sprintf(['EEGLAB could not be initialised: %s\nCheck the EEGLAB ' ...
+                   'folder in Settings > Preferences.'], ME.message);
 end
 end

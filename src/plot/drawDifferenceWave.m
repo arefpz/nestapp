@@ -7,7 +7,10 @@ function drawDifferenceWave(ax, res, opts)
 %   groups from a groupCurves result.
 %
 %   opts:
-%     .colors     n-by-3 (only the difference colour is used; default near-black)
+%     .colors     n-by-3, first row is the difference colour (for scripts)
+%     .groupStyle a groupStyles struct: its .contrast colour and .lineWidth.
+%                 NOT a group's colour - the difference is neither group, and
+%                 drawing it in group 1's colour made it read as that group
 %     .xlim       time limits, default [-50 300]
 %     .direction  'second - first' (default) or 'first - second'
 %     .level      confidence level, default the one groupCurves used
@@ -43,9 +46,12 @@ if numel(res.groups) ~= 2
           'A difference wave needs exactly two groups; got %d.', numel(res.groups));
 end
 
-opts = fillDefaults(opts, struct('xlim', [-50 300], 'colors', groupColors(1), ...
+opts = fillDefaults(opts, struct('xlim', [-50 300], ...
                                  'showBands', false, 'windows', [], ...
                                  'direction', 'second - first', 'level', []));
+sty = resolveGroupStyle(opts, {res.groups.name});
+ink = sty.contrast;
+if isfield(opts, 'colors') && ~isempty(opts.colors); ink = opts.colors(1, :); end
 
 A = res.groups(1);
 B = res.groups(2);
@@ -72,9 +78,9 @@ time = res.time;
 cla(ax, 'reset');
 hold(ax, 'on');
 
-fill(ax, [time, fliplr(time)], [lo, fliplr(hi)], opts.colors(1, :), ...
+fill(ax, [time, fliplr(time)], [lo, fliplr(hi)], ink, ...
      'FaceAlpha', 0.20, 'LineStyle', 'none', 'HandleVisibility', 'off');
-plot(ax, time, d, 'Color', opts.colors(1, :), 'LineWidth', 1.75, ...
+plot(ax, time, d, 'Color', ink, 'LineWidth', sty.lineWidth, ...
      'DisplayName', sprintf('%s - %s (n=%d)', B.name, A.name, est.n));
 
 yl = ylim(ax);

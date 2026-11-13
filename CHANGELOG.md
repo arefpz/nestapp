@@ -8,6 +8,116 @@ The version here must match `src/nestappVersion.m` and the release git tag.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-08
+
+### Added
+
+- **A choice for files recorded on different caps** (Explore). 2.2.0 always
+  left out files whose cap differed from the most common one. The rule is now
+  the analyst's. The first time the grouped files turn out to be on more than
+  one cap, the app asks which rule to use and says what each gives up for those
+  files:
+  - **Exclude other-cap files**: the 2.2.0 behaviour. Maps and GMFP keep the
+    full cap, but there are fewer files, and the groups can end up unbalanced if
+    the cap changed between them.
+  - **Use shared electrodes**: the pre-2.2 behaviour. Every file stays, on the
+    electrodes all caps carry. ROI curves are unchanged when the ROI is on every
+    cap; maps and GMFP use fewer electrodes.
+
+  A **Caps...** button beside the design changes the rule later. The status line
+  states the rule, flags uneven exclusions across groups and warns when GMFP is
+  over fewer electrodes. Exported figure footers gain a `caps:` entry when caps
+  differ, and saved analyses reopen under the rule they were computed with.
+  Scripts pass `groupCurves(..., struct('capRule', 'shared'))`; the scripted
+  default stays `'exclude'`.
+- **Plot colour themes and group colours** (Explore > plot Options... >
+  Colours, beside time range and legend). Pick a theme for every plot -
+  Okabe-Ito (default), Vibrant, Muted, Soft, Jewel, Earth, Slate or Greyscale -
+  and, under Group colours..., a colour for any single group. The plot
+  previews as you choose; Cancel puts it back. Every plot with groups now has
+  an Options dialog, even one with no other settings. Greyscale gives every group its
+  own line style and bar texture (diagonal, crosshatch, stripes, dots...) so
+  figures survive black-and-white printing, and every theme falls back to line
+  styles and textures past its last colour. A group keeps its colour for the
+  whole session however groups are added, removed or reordered. The theme and
+  picked colours are saved as preferences, keyed by group name, and exported
+  figures use the same colours as the screen.
+
+### Changed
+
+- **nestapp finds EEGLAB by itself.** When no EEGLAB folder is set in
+  Preferences and EEGLAB is not on the path, nestapp looks where the toolbox
+  installer puts the EEGLAB it downloads and in the MATLAB folder
+  (`userpath`, normally Documents/MATLAB), takes the newest version it finds
+  and saves it as the preference. Setting the folder by hand is only needed for
+  EEGLAB kept somewhere else. The "EEGLAB not found" message now names the
+  menu that exists (Settings > Preferences, not File > Preferences).
+- **Default group colours.** Okabe-Ito's colour-blind-safe set stays the
+  default, with amber in place of its yellow, which was close to invisible on
+  white, and the order reworked so that colours 2-4 are well apart for
+  colour-blind readers and in print. Past the palette's seven colours, groups
+  repeat colours with a dashed line and a textured bar instead of darker
+  shades, which were hard to tell from the originals. `groupColors(n)` still
+  works and returns the default theme's first n colours.
+
+### Fixed
+
+- **Help > Check My Install did not check the install.** It ran the developer
+  test suite, which the installed toolbox does not include, so every installed
+  copy answered "Self-test Unavailable". It now runs the install check and says
+  what is missing and how to get it. The check itself (`nestappDoctor`):
+  - prepares EEGLAB and the AARATEP helpers the way the app does first, so it no
+    longer reports them missing when the app would find them;
+  - without EEGLAB, says so in one line, not one line per missing plugin
+    function (37 on a fresh install);
+  - reports each missing plugin once, with how many steps need it and where
+    to get it;
+  - lists optional extras that are absent (TESA 1.2's six steps, the AARATEP
+    helpers, Curve Fitting) separately, under "Optional extras not installed",
+    instead of as problems, so a complete standard install reports no problems;
+  - typed at the prompt without a semicolon, prints its report once, not twice.
+- **The installer's EEGLAB download could not work.** The `.mltbx` offered to
+  fetch EEGLAB from `eeglab.org/download/`, a web page (now a 404), not a file.
+  It now downloads the current EEGLAB zip from SCCN.
+- **Updating nestapp deleted the AARATEP helpers.** Help > Install AARATEP
+  Helpers put them inside nestapp's own toolbox folder, which MATLAB replaces
+  on every update or reinstall, so the AARATEP template stopped working until
+  they were installed again. They now go under MATLAB's preferences folder
+  (`prefdir/nestapp/aaratep`). A developer's own clone in `third_party/aaratep`
+  is still used first.
+- **Exported topographies kept only one map red-blue.** With per-window
+  (TEP-topo) or per-map (Topography) scaling, the MATLAB/PNG/PDF export drew
+  every map except the last in EEGLAB's rainbow colours, while the app showed
+  them all correctly. EEGLAB's topoplot sets the whole figure's colormap, which
+  on the classic axes the export uses reset every map drawn before it; a repair
+  pass after the grid covered only the shared scale. The scalp-map drawer now
+  restores the other axes' colormaps itself after each topoplot, so every scale
+  mode, and any figure that holds a map, keeps its colours.
+- **Select Data Files could open a pile of windows** (reported on Linux).
+  While the data browser was open the main window stayed clickable, so another
+  click on Browse..., File > Select Data, a recent-data item or Add group...
+  opened another browser inside the first - and with no remembered data
+  folder each one also opened the system folder picker at the same moment.
+  Only one browser can now be open: asking again brings it to the front. With
+  no remembered folder it opens empty with Choose... highlighted instead of
+  launching the system picker alongside itself, and it steps off "always on
+  top" while the picker is up so the picker cannot open hidden behind it.
+  Closing the browser while it is still listing a large folder no longer
+  raises an error.
+- **Half-dark windows under OS dark mode** (MATLAB R2025a+, e.g. macOS set to
+  dark). MATLAB re-coloured only the parts of nestapp whose colours were not
+  fixed, so windows mixed light and dark: a light status bar with unreadable
+  grey text, white text on light disabled buttons, a white scrollbar. Every
+  nestapp window and every exported figure (publication figures, QC figures,
+  PDF reports) is now kept in the light theme whatever the desktop or OS uses,
+  so exports look the same on every machine. Classic MATLAB dialogs and
+  EEGLAB's own windows still follow MATLAB's theme.
+- **QC figure heatmap drawn in the wrong colours.** The channel x trial quality
+  map is meant to be parula, but the ICA scalp maps drawn after it in the same
+  figure reset it to EEGLAB's turbo, colour bar included, and turned the
+  figure background pale blue. They now go through the same colour-safe
+  topoplot call as the Explore maps.
+
 ## [2.2.0] - 2026-09-24
 
 ### Added
@@ -371,6 +481,7 @@ First public open-source release.
   additionally requires the Curve Fitting Toolbox and the AARATEP helpers
   cloned into `third_party/aaratep/` (see README).
 
-[Unreleased]: https://github.com/goingloud/nestapp/compare/v2.2.0...HEAD
-[2.2.0]: https://github.com/goingloud/nestapp/releases/tag/v2.2.0
-[2.1.0]: https://github.com/goingloud/nestapp/releases/tag/v2.1.0
+[Unreleased]: https://github.com/arefpz/nestapp/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/arefpz/nestapp/releases/tag/v2.2.1
+[2.2.0]: https://github.com/arefpz/nestapp/releases/tag/v2.2.0
+[2.1.0]: https://github.com/arefpz/nestapp/releases/tag/v2.1.0

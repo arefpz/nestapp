@@ -525,7 +525,7 @@ else
     % (see dlg.streamConsole below). A visible window here would pop up and
     % steal focus on every run, and during an automated test sweep it looks
     % like a frozen dialog. The app path (parentFig present) is unaffected.
-    dlg.fig = uifigure('Name', 'Running Pipeline', ...
+    dlg.fig = appWindow('Name', 'Running Pipeline', ...
         'Position', [figX figY figW figH], ...
         'Color',    [0.97 0.97 0.98], ...
         'Resize',   'off', 'Visible', 'off');
@@ -1220,7 +1220,7 @@ function renderDashboardToFile(reports, failed, pngPath)
 % export it as a PNG using exportapp (uifigure-safe). Passing failed lets
 % the exported dashboard show errored/skipped files alongside the gated
 % reports, so the PNG on disk is a complete picture of the run.
-fig = uifigure('Visible', 'off', 'Position', [100 100 1400 900]);
+fig = appWindow('Visible', 'off', 'Position', [100 100 1400 900]);
 cleanup = onCleanup(@() delete(fig));
 renderDashboardPanel(fig, reports, struct('failed', failed));
 drawnow;

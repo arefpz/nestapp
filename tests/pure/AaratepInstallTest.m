@@ -46,6 +46,20 @@ classdef AaratepInstallTest < NestappTestCase
                  'installer fetches - one of them is wrong']);
         end
 
+        function aNewDownloadDoesNotGoInsideTheToolbox(tc)
+        % An installed toolbox's folder is writable, so when third_party/ was
+        % the first writable place tried, the helpers landed inside the
+        % toolbox and the next nestapp update deleted them.
+            rel = aaratepRelease();
+            inToolbox = fullfile(nestappRoot(), 'third_party', 'aaratep');
+            inPrefdir = fullfile(prefdir, 'nestapp', 'aaratep');
+            tc.verifyLessThan(find(strcmp(rel.writeDirs, inPrefdir)), ...
+                find(strcmp(rel.writeDirs, inToolbox)), ...
+                'prefdir must be tried before the toolbox''s own folder');
+            tc.verifyEqual(sort(rel.writeDirs), sort(rel.searchDirs), ...
+                'every place written to must also be a place searched');
+        end
+
         function askingOneFolderIsNotAskingTheSearchOrder(tc)
         % THE BUG THIS FILE EXISTS FOR. The "already installed?" check consulted
         % the global search order even when the caller named a destination, so

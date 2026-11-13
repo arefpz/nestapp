@@ -14,7 +14,9 @@ function drawTEPOverlay(ax, res, opts)
 %   opts:
 %     .mode      'TEP' | 'GMFP' | 'LMFP', for the axis label (default from res)
 %     .xlim      time limits, default [-50 300] as the app has always used
-%     .colors    n-by-3, default groupColors(nGroups)
+%     .groupStyle a groupStyles struct (colours, line styles, width); default
+%                the default theme - see resolveGroupStyle
+%     .colors    n-by-3, replaces the theme's colours (for scripts)
 %     .showBand  draw the interval, default true
 %     .legend    draw the legend, default true
 %     .showBands shade the windows of interest, default false
@@ -54,6 +56,7 @@ if isempty(res.groups); return; end
 % end up describing different levels.
 est  = intervalAtLevel(res.est, opts.level);
 nG   = numel(res.groups);
+sty  = resolveGroupStyle(opts, {res.groups.name});
 time = res.time;
 hold(ax, 'on');
 
@@ -68,7 +71,7 @@ if opts.showTraces && isfield(res.groups, 'files')
         % Curves are 1xT rows, so vertcat stacks to nFiles x T; the
         % transpose gives plot() the T-by-nFiles matrix it wants - one call
         % per GROUP, not one per file.
-        plot(ax, time, vertcat(f.curve).', 'Color', [opts.colors(g, :) 0.30], ...
+        plot(ax, time, vertcat(f.curve).', 'Color', [sty.colors(g, :) 0.30], ...
              'LineWidth', 0.5, 'HandleVisibility', 'off');
     end
 end
@@ -80,7 +83,7 @@ if opts.showBand
         if isempty(e.lo) || all(isnan(e.lo)); continue; end
         xf = [time, fliplr(time)];
         yf = [e.lo,  fliplr(e.hi)];
-        fill(ax, xf, yf, opts.colors(g, :), ...
+        fill(ax, xf, yf, sty.colors(g, :), ...
              'FaceAlpha', 0.20, 'LineStyle', 'none', 'HandleVisibility', 'off');
     end
 end
@@ -89,8 +92,9 @@ labels = cell(1, nG);
 for g = 1:nG
     e = est(g);
     labels{g} = sprintf('%s (n=%d)', res.groups(g).name, e.n);
-    plot(ax, time, e.mean, 'Color', opts.colors(g, :), ...
-         'LineWidth', 1.75, 'DisplayName', labels{g});
+    plot(ax, time, e.mean, 'Color', sty.colors(g, :), ...
+         'LineStyle', sty.lineStyles{g}, 'LineWidth', sty.lineWidth, ...
+         'DisplayName', labels{g});
 end
 
 % A zero line and a stimulus marker: without them the reader has to infer where
@@ -123,15 +127,12 @@ end
 
 % ── helpers ─────────────────────────────────────────────────────────────────
 
-function opts = withDefaults(opts, res)
-nG   = numel(res.groups);
+function opts = withDefaults(opts, ~)
+% Group colours, styles and width are not defaulted here: resolveGroupStyle
+% decides them from opts.groupStyle (or .colors) in one place.
 opts = fillDefaults(opts, struct('mode', 'TEP', 'xlim', [-50 300], ...
-    'colors', groupColors(nG), 'showBand', true, 'legend', true, ...
+    'showBand', true, 'legend', true, ...
     'showBands', false, 'windows', [], 'showTraces', false, 'level', []));
-% A caller may pass a palette sized for a different group count.
-if size(opts.colors, 1) < nG
-    opts.colors = groupColors(nG);
-end
 end
 
 function s = yLabelFor(mode)

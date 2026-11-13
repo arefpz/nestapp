@@ -32,8 +32,18 @@ function selected = selectDataTree(startFolder, exts)
         exts = {'*.set', '*.vhdr', '*.cdt', '*.cnt'};
     end
 
+    % One browser at a time. It is not modal (see below), so its four entry
+    % points stay clickable while it is open; a second request brings the
+    % open browser forward and returns {}, which callers read as cancelled.
+    OPEN_KEY = 'nestappOpenDataBrowser';
+    selected = {};
+    open = getappdata(groot, OPEN_KEY);
+    if ~isempty(open) && isvalid(open)
+        figure(open);
+        return
+    end
+
     % ---- shared state (closed over by the nested callbacks) -------------
-    selected    = {};
     parentDir   = '';
     checkedSet  = containers.Map('KeyType', 'char', 'ValueType', 'logical');
     allFiles    = {};      % cached recursive full paths under parentDir
@@ -42,10 +52,13 @@ function selected = selectDataTree(startFolder, exts)
     prevKeys    = {};      % node keys checked at the last change event
 
     % ---- build the window ----------------------------------------------
-    fig = uifigure('Name', 'Select Data Files', ...
+    fig = appWindow('Name', 'Select Data Files', ...
         'Position', [200 140 760 600], 'Resize', 'off');
-    % Keep the browser above the main window (not WindowStyle='modal',
-    % whose close button is unreliable).
+    % Keep the browser above the main window. Not WindowStyle 'modal': the
+    % unreliable-close problem that ruled it out came from uiwait/uiresume,
+    % since replaced by waitfor, but the Linux report this window was fixed
+    % for has not been re-tested under modal - so the single-instance guard
+    % above does the job instead.
     try
         fig.WindowStyle = 'alwaysontop';
     catch
@@ -57,26 +70,29 @@ function selected = selectDataTree(startFolder, exts)
     % X uses a plain delete so it can never be vetoed by a callback error;
     % "selected" keeps its default {} (cancel) when the window is X-ed.
     fig.CloseRequestFcn = @(src, ~) delete(src);
+    % Registered as THE open browser until this call returns, error or not.
+    setappdata(groot, OPEN_KEY, fig);
+    unregister = onCleanup(@() unregisterBrowser(fig, OPEN_KEY));
 
     uilabel(fig, 'Text', 'Parent folder:', 'Position', [15 562 85 22]);
     parentField = uieditfield(fig, 'text', 'Editable', 'off', ...
         'Position', [100 560 520 26], 'Value', '(none selected)');
-    uibutton(fig, 'Text', 'Choose...', 'Position', [630 560 115 28], ...
-        'ButtonPushedFcn', @(~,~) onChoose());
+    chooseButton = uibutton(fig, 'Text', 'Choose...', 'Position', [630 560 115 28], ...
+        'ButtonPushedFcn', @(~,~) whileOpen(@onChoose));
 
     uilabel(fig, 'Text', 'Filter:', 'Position', [15 522 45 22]);
     searchField = uieditfield(fig, 'text', 'Position', [60 520 350 26], ...
-        'ValueChangedFcn', @(~,~) onFilter());
+        'ValueChangedFcn', @(~,~) whileOpen(@onFilter));
     uibutton(fig, 'Text', 'Check shown', 'Position', [420 519 105 28], ...
-        'ButtonPushedFcn', @(~,~) setShownChecked(true));
+        'ButtonPushedFcn', @(~,~) whileOpen(@setShownChecked, true));
     uibutton(fig, 'Text', 'Uncheck shown', 'Position', [530 519 115 28], ...
-        'ButtonPushedFcn', @(~,~) setShownChecked(false));
+        'ButtonPushedFcn', @(~,~) whileOpen(@setShownChecked, false));
     uibutton(fig, 'Text', 'Clear filter', 'Position', [650 519 95 28], ...
-        'ButtonPushedFcn', @(~,~) clearFilter());
+        'ButtonPushedFcn', @(~,~) whileOpen(@clearFilter));
 
     tree = uitree(fig, 'checkbox', 'Position', [15 60 730 450], ...
-        'NodeExpandedFcn', @(~,e) onExpand(e), ...
-        'CheckedNodesChangedFcn', @(~,e) onCheckChanged(e));
+        'NodeExpandedFcn', @(~,e) whileOpen(@onExpand, e), ...
+        'CheckedNodesChangedFcn', @(~,e) whileOpen(@onCheckChanged, e));
     % Make the check handler NON-REENTRANT. onCheckChanged briefly yields the
     % UI thread (a uifigure property round-trip), and while it is yielded the
     % next checkbox event would interrupt and re-enter it - each re-entry
@@ -94,13 +110,19 @@ function selected = selectDataTree(startFolder, exts)
         'BackgroundColor', [0.20 0.55 0.20], 'FontColor', [1 1 1], ...
         'ButtonPushedFcn', @(~,~) onUse());
 
-    % Seed with the start folder if it is usable, else prompt immediately.
+    % Seed with the start folder if it is usable. Otherwise point at Choose...
+    % rather than opening the system picker at once, which put two windows up
+    % together (and on Linux the picker can open behind this one).
     if ~isempty(startFolder) && isfolder(startFolder)
-        setParent(startFolder);
+        whileOpen(@setParent, startFolder);
     else
-        onChoose();
+        parentField.Value = '(none selected) - click Choose... to pick your data folder';
+        chooseButton.FontWeight = 'bold';
     end
 
+    % The repo's "dialog is up" signal, so tests can wait on it instead of
+    % on a fixed delay (see pickOne).
+    if isvalid(fig); setappdata(fig, 'nestappModalReady', true); end
     waitfor(fig);   % blocks until a button or the X deletes the figure
 
     % Remember the browse ROOT (the data folder), not the subfolder the
@@ -117,11 +139,18 @@ function selected = selectDataTree(startFolder, exts)
     function onChoose()
         base = parentDir;
         if isempty(base), base = startFolder; end
+        % Off always-on-top while the system picker is up, so the picker
+        % cannot open hidden behind this window (seen on Linux).
+        style = fig.WindowStyle;
+        fig.WindowStyle = 'normal';
         p = uigetdir(base, 'Select the parent folder containing your data');
+        if ~isvalid(fig); return; end
+        fig.WindowStyle = style;
         if ~isequal(p, 0)
             setParent(p);
+            chooseButton.FontWeight = 'normal';
         end
-        if isvalid(fig); figure(fig); end   % uigetdir can bury the modal
+        figure(fig);   % uigetdir can bury the browser
     end
 
     function setParent(p)
@@ -370,6 +399,19 @@ function selected = selectDataTree(startFolder, exts)
     % ====================================================================
     %  Small helpers
     % ====================================================================
+    % Run browser work that may outlive the window: building a large tree
+    % yields to the UI, and closing the window then deletes the tree under
+    % it. Once the window is gone there is nothing to update, so that error
+    % is dropped; an error while it is still open is rethrown. Every callback
+    % that builds or changes the tree, and the initial load, goes through here.
+    function whileOpen(fn, varargin)
+        try
+            fn(varargin{:});
+        catch err
+            if isvalid(fig); rethrow(err); end
+        end
+    end
+
     % Recursively gather every loadable file under a folder on disk. Used
     % when a folder checkbox cascades to files that may not be materialised.
     function files = collectLoadableUnder(folder)
@@ -422,6 +464,14 @@ function selected = selectDataTree(startFolder, exts)
 end
 
 % -- file-scope helpers (no shared state) ----------------------------------
+
+function unregisterBrowser(fig, key)
+% Clear the registration - but only if it is still ours, so a stale cleanup
+% cannot unregister a browser opened after this one.
+if isequal(getappdata(groot, key), fig)
+    rmappdata(groot, key);
+end
+end
 
 function cancelled = reportScan(dlg, n)
     dlg.Message = sprintf('Found %d data file(s)...', n);

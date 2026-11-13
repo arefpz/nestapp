@@ -1,0 +1,98 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2023-2026 Aref Pariz and Wesley Dunne.
+% Part of nestapp; see the LICENSE file for full terms.
+function [groupSets, divergingSets] = candidatePalettes()
+% CANDIDATEPALETTES  Every palette under consideration for the plot themes.
+%   [groupSets, divergingSets] = CANDIDATEPALETTES()
+%
+%   groupSets      struct array .name .family .colors (n x 3 RGB in [0,1])
+%   divergingSets  struct array .name .family .map (256 x 3)
+%
+%   A developer tool for choosing themes (tools/themeGallery, tools/auditPalettes),
+%   not shipped behaviour. Limited to sources with no licence terms to honour:
+%     - Okabe & Ito (2008) and Paul Tol's SRON schemes, both published for free use
+%     - MATLAB's own named palettes, read at run time with orderedcolors (R2023b+),
+%       never copied
+%     - nestapp originals, designed here in OKLCH
+%
+%   See also: themeGallery, auditPalettes
+
+groupSets = struct('name', {}, 'family', {}, 'colors', {});
+
+% -- shipped themes, read from plotThemes so the gallery and the audit judge
+% exactly what the app draws (Soft, Jewel, Earth and Slate were picked by a
+% greedy OKLCH search, 2026-11-08: each next colour maximises its worst
+% CIEDE2000 distance under normal and simulated colour-blind vision) --------
+for t = plotThemes()'
+    groupSets(end+1) = entry(t.name, 'shipped', t.colors); %#ok<AGROW>
+end
+
+% -- candidates not shipped --------------------------------------------------
+groupSets(end+1) = entry('Okabe-Ito (2.2.0)', 'accessible', hexToRgb( ...
+    '#262626', '#E69F00', '#57B5E8', '#009E73', '#0073B3', '#D65E00', '#CC78A6', '#F0E342'));
+groupSets(end+1) = entry('Tol bright', 'accessible', hexToRgb( ...
+    '#4477AA', '#EE6677', '#228833', '#CCBB44', '#66CCEE', '#AA3377', '#BBBBBB'));
+groupSets(end+1) = entry('Tol high contrast', 'accessible', hexToRgb( ...
+    '#004488', '#DDAA33', '#BB5566'));
+
+% -- MATLAB's own, read at run time -------------------------------------------
+if exist('orderedcolors', 'file')
+    for nm = {'gem', 'gem12', 'glow', 'sail', 'reef', 'meadow', 'dye', 'earth'}
+        try
+            groupSets(end+1) = entry(['MATLAB ' nm{1}], 'matlab', orderedcolors(nm{1})); %#ok<AGROW>
+        catch
+            % A name missing from this release is simply not offered.
+        end
+    end
+end
+
+% -- diverging maps for topoplots ----------------------------------------------
+divergingSets = struct('name', {}, 'family', {}, 'map', {});
+divergingSets(end+1) = struct('name', 'Red-blue (current)', 'family', 'current', ...
+                              'map', divergingColormap());
+divergingSets(end+1) = struct('name', 'Soft red-blue', 'family', 'original', ...
+    'map', divergingOklch([0.48 0.11 255], [0.50 0.13 25]));
+divergingSets(end+1) = struct('name', 'Teal-orange', 'family', 'original', ...
+    'map', divergingOklch([0.45 0.09 200], [0.60 0.14 55]));
+divergingSets(end+1) = struct('name', 'Purple-green', 'family', 'original', ...
+    'map', divergingOklch([0.42 0.13 300], [0.50 0.12 145]));
+end
+
+% -- helpers -------------------------------------------------------------------
+
+function e = entry(name, family, colors)
+e = struct('name', name, 'family', family, 'colors', colors);
+end
+
+function map = divergingOklch(cold, warm)
+% Cold end -> white -> warm end, interpolated in OKLab so lightness rises and
+% falls evenly on both limbs.
+n = 256;
+t = linspace(-1, 1, n)';
+toLab = @(p) [p(1), p(2) * cosd(p(3)), p(2) * sind(p(3))];
+c = toLab(cold); w = toLab(warm); white = [1 0 0];
+lab = zeros(n, 3);
+for i = 1:n
+    s = abs(t(i));
+    if t(i) < 0, e = c; else, e = w; end
+    lab(i, :) = white * (1 - s) + e * s;
+end
+map = oklabToSrgb(lab);
+end
+
+function rgb = oklabToSrgb(lab)
+% OKLab (Ottosson 2020) to gamma-encoded sRGB, clipped to gamut.
+M2 = [1  0.3963377774  0.2158037573
+      1 -0.1055613458 -0.0638541728
+      1 -0.0894841775 -1.2914855480];
+M1 = [ 4.0767416621 -3.3077115913  0.2309699292
+      -1.2684380046  2.6097574011 -0.3413193965
+      -0.0041960863 -0.7034186147  1.7076147010];
+lms = (lab * M2') .^ 3;
+lin = lms * M1';
+lin = min(max(lin, 0), 1);
+rgb = 1.055 * lin .^ (1 / 2.4) - 0.055;
+small = lin <= 0.0031308;
+rgb(small) = 12.92 * lin(small);
+rgb = min(max(rgb, 0), 1);
+end

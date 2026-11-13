@@ -43,7 +43,7 @@ if ~isempty(parentDir) && ~exist(parentDir, 'dir')
     mkdir(parentDir);
 end
 
-fig = figure('Visible', 'off', 'Color', 'w', ...
+fig = outputFigure('Visible', 'off', ...
     'Position', [100 100 opts.size(1) opts.size(2)], ...
     'PaperPositionMode', 'auto');
 cleanup = onCleanup(@() closeFigSafely(fig));
@@ -263,7 +263,9 @@ for i = 1:nShow
     tilePos = [px py innerWidth*0.95 innerHeight*0.82];
     ax = axes('Position', tilePos);
     try
-        topoplot(view.icawinv(:,k), view.chanlocs, 'electrodes', 'off');
+        % Through topoplotInto, not bare topoplot: topoplot sets the FIGURE
+        % colormap, which turned the quality heatmap above (parula) turbo.
+        topoplotInto(ax, view.icawinv(:,k), view.chanlocs, 'electrodes', 'off');
     catch
         text(0.5, 0.5, '?', 'HorizontalAlignment','center','Units','normalized','Parent',ax);
         axis(ax,'off');

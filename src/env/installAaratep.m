@@ -66,13 +66,13 @@ end
 
 % ── where to put it ───────────────────────────────────────────────────────────
 if isempty(targetDir)
-    targetDir = firstWritable(rel.searchDirs);
+    targetDir = firstWritable(rel.writeDirs);
 end
 if isempty(targetDir)
     result.message = sprintf( ...
         ['Could not find a writable place to install AARATEP. Tried:\n  %s\n' ...
          'Set a folder with:  setpref(''nestapp'', ''aaratepPath'', yourFolder)'], ...
-        strjoin(rel.searchDirs, sprintf('\n  ')));
+        strjoin(rel.writeDirs, sprintf('\n  ')));
     return
 end
 

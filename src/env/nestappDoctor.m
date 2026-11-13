@@ -22,7 +22,8 @@ function [report, info] = nestappDoctor(varargin)
 %                      GitHub issue (see .github/ISSUE_TEMPLATE/bug_report.yml).
 %     info    struct - the collected data: .nestapp, .matlab, .toolboxes,
 %                      .eeglab, .dependencies, .parallel, .prefs, .shadows,
-%                      and .problems (cellstr of detected issues).
+%                      .problems (cellstr: what stops a default install
+%                      working) and .notes (cellstr: optional extras absent).
 %
 %   nestappDoctor diagnoses, it does not only dump: the report ends with a
 %   "Problems detected" section listing actionable issues (missing EEGLAB,
@@ -43,6 +44,18 @@ beQuiet = logical(p.Results.Quiet);
 
 info = struct();
 info.problems = {};
+info.notes    = {};
+
+% Do what the app does on launch first - EEGLAB from Preferences (or found in
+% its usual places), the AARATEP helpers from where installAaratep puts them -
+% so the report describes what the app will see. Without this, a check run at
+% the prompt reported EEGLAB and AARATEP missing when both were installed.
+ensureEeglabReady();
+try
+    ensureAaratepOnPath();
+catch
+    % Not installed: reported below as a note.
+end
 
 info.nestapp      = collectNestapp();
 info.matlab       = collectMatlab();
@@ -53,7 +66,7 @@ info.parallel     = collectParallel();
 info.prefs        = collectPrefs();
 info.shadows      = collectShadows();
 
-info.problems = diagnose(info);
+[info.problems, info.notes] = diagnose(info);
 
 report = buildReport(info);
 
@@ -70,6 +83,9 @@ if doCopy
         warning('nestappDoctor:clipboard', ...
             'Could not copy to clipboard: %s', ME.message);
     end
+end
+if nargout == 0
+    clear report   % typed without a semicolon, it would print a second time as ans
 end
 end
 
@@ -131,25 +147,37 @@ end
 
 function deps = collectDependencies()
 % Derive the dependency set from the step registry so it never goes stale.
-% Format-specific loaders (those tied to a file extension, e.g. bva-io for
-% .vhdr) are marked optional - their absence is reported but not a problem.
-deps = struct('plugin', {}, 'fn', {}, 'found', {}, 'path', {}, 'optional', {});
+% Some requirements are optional - their absence is reported but is not a
+% problem, because a default install is not expected to have them:
+%   - format loaders (tied to a file extension, e.g. bva-io for .vhdr);
+%   - newer-version extras (a minVersion, e.g. the TESA 1.2 steps, which the
+%     extension manager cannot install yet);
+%   - the AARATEP helpers, which only the AARATEP template uses;
+%   - MATLAB toolboxes (a license feature), which diagnose judges from the
+%     toolbox list instead, so they are not reported twice.
+deps = struct('plugin', {}, 'fn', {}, 'found', {}, 'path', {}, ...
+              'optional', {}, 'minVersion', {}, 'installNote', {}, 'nSteps', {});
 try
-    reg  = stepRegistry();
-    reqs = [reg.requires];
+    reg = stepRegistry();
 catch
-    reqs = struct('fn', {}, 'plugin', {}, 'fileExt', {});
+    return
 end
-seen = {};
-for i = 1:numel(reqs)
-    key = reqs(i).fn;
-    if any(strcmp(seen, key)); continue; end
-    seen{end+1} = key; %#ok<AGROW>
-    isOptional = isfield(reqs, 'fileExt') && ~isempty(reqs(i).fileExt);
-    wh = which(key);
-    deps(end+1) = struct('plugin', reqs(i).plugin, 'fn', key, ...
-        'found', ~isempty(wh), 'path', wh, ...
-        'optional', isOptional); %#ok<AGROW>
+for s = 1:numel(reg)
+    r = reg(s).requires;
+    for i = 1:numel(r)
+        k = find(strcmp({deps.fn}, r(i).fn), 1);
+        if ~isempty(k)
+            deps(k).nSteps = deps(k).nSteps + 1;
+            continue
+        end
+        wh = which(r(i).fn);
+        isOptional = ~isempty(r(i).fileExt) || ~isempty(r(i).minVersion) || ...
+                     ~isempty(r(i).feature) || startsWith(r(i).plugin, 'AARATEP');
+        deps(end+1) = struct('plugin', r(i).plugin, 'fn', r(i).fn, ...
+            'found', ~isempty(wh), 'path', wh, 'optional', isOptional, ...
+            'minVersion', r(i).minVersion, 'installNote', r(i).installNote, ...
+            'nSteps', 1); %#ok<AGROW>
+    end
 end
 end
 
@@ -199,8 +227,12 @@ end
 
 % ── diagnosis ─────────────────────────────────────────────────────────────────
 
-function problems = diagnose(info)
+function [problems, notes] = diagnose(info)
+% problems: things that stop a default install working. notes: optional
+% extras that are absent, each with what it would add. A fresh install with
+% the documented steps must come back with no problems.
 problems = {};
+notes    = {};
 
 % MATLAB version floor (R2023b).
 rel = info.matlab.release;   % e.g. '2026a'
@@ -217,23 +249,43 @@ for t = info.toolboxes.required
     end
 end
 if ~hasToolbox(info, 'Curve Fitting Toolbox')
-    problems{end+1} = ['Curve Fitting Toolbox not found - the TMS-EEG / ' ...
-        'AARATEP template''s "Remove Decay Artifact" step requires it.'];
+    notes{end+1} = ['Curve Fitting Toolbox not installed - only the AARATEP ' ...
+        'template''s "Remove Decay Artifact" step needs it.'];
 end
 
-% EEGLAB.
+deps = info.dependencies;
 if ~info.eeglab.found
-    problems{end+1} = ['EEGLAB not found on the MATLAB path. Set the EEGLAB ' ...
-        'folder in Settings > Preferences (most steps need it).'];
+    % Every plugin lives inside EEGLAB, so listing each missing function
+    % here would be one cause reported dozens of times.
+    problems{end+1} = ['EEGLAB not found. Download it from ' ...
+        'https://eeglab.org/others/How_to_download_EEGLAB.html, unzip it, and ' ...
+        'set its folder in Settings > Preferences. EEGLAB plugins are checked ' ...
+        'once it is found.'];
+    deps = deps(startsWith({deps.plugin}, 'AARATEP'));   % the only non-EEGLAB plugin
 end
 
-% Key plugins (optional format-loaders are reported in the table, not here).
-for i = 1:numel(info.dependencies)
-    d = info.dependencies(i);
-    if ~d.found && ~d.optional
-        problems{end+1} = sprintf('%s not found (function "%s" missing).', ...
-            d.plugin, d.fn); %#ok<AGROW>
+% One line per plugin, however many of its functions are missing. A plugin
+% that is missing outright is a problem; only when it is present do its
+% optional extras (TESA's 1.2 steps) get a note of their own.
+missing = deps(~[deps.found]);
+plugins = unique({missing.plugin}, 'stable');
+for k = 1:numel(plugins)   % not "for p = plugins": an empty list would iterate once
+    plugin = plugins(k);
+    m   = missing(strcmp({missing.plugin}, plugin{1}));
+    req = m(~[m.optional]);
+    opt = m([m.optional]);
+    if ~isempty(req)
+        problems{end+1} = sprintf('%s not found - %d step(s) need it. %s', ...
+            plugin{1}, sum([req.nSteps]), req(1).installNote); %#ok<AGROW>
+    elseif ~isempty(opt(1).minVersion)
+        notes{end+1} = sprintf('%d step(s) need %s %s or later and are hidden. %s', ...
+            sum([opt.nSteps]), plugin{1}, opt(1).minVersion, opt(1).installNote); %#ok<AGROW>
+    elseif startsWith(plugin{1}, 'AARATEP')
+        notes{end+1} = sprintf(['AARATEP helpers not installed - only the ' ...
+            'TMS-EEG / AARATEP template needs them. %s'], opt(1).installNote); %#ok<AGROW>
     end
+    % Format loaders (bva-io, ...) are shown in the table only: they matter
+    % just for that file type, and loading such a file names them.
 end
 
 % Shadowed functions.
@@ -266,10 +318,12 @@ for i = 1:numel(info.dependencies)
     L{end+1} = sprintf('  [%s] %-22s (%s)%s', tick(d.found), d.plugin, d.fn, suffix); %#ok<AGROW>
 end
 L{end+1} = '';
-L{end+1} = 'Required toolboxes:';
-allReq = [info.toolboxes.required, {'Curve Fitting Toolbox'}];
-for t = allReq
+L{end+1} = 'Toolboxes:';
+for t = info.toolboxes.required
     L{end+1} = sprintf('  [%s] %s', tick(hasToolbox(info, t{1})), t{1}); %#ok<AGROW>
+end
+for t = info.toolboxes.optional
+    L{end+1} = sprintf('  [%s] %s  (optional)', tick(hasToolbox(info, t{1})), t{1}); %#ok<AGROW>
 end
 L{end+1} = '```';
 L{end+1} = '';
@@ -297,6 +351,14 @@ else
     L{end+1} = '';
     for i = 1:numel(info.problems)
         L{end+1} = sprintf('- %s', info.problems{i}); %#ok<AGROW>
+    end
+end
+if ~isempty(info.notes)
+    L{end+1} = '';
+    L{end+1} = '#### Optional extras not installed';
+    L{end+1} = '';
+    for i = 1:numel(info.notes)
+        L{end+1} = sprintf('- %s', info.notes{i}); %#ok<AGROW>
     end
 end
 

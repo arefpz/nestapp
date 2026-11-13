@@ -92,13 +92,17 @@ if isfile(logo); opts.ToolboxImageFile = logo; end
 % first launch.
 % One entry PER PLATFORM: the packager rejects 'all' and wants a concrete
 % platform per record, so EEGLAB is declared four times over the same URL.
+% The URL must be the archive itself: the installer downloads and unzips it
+% into <add-ons>/Toolboxes/AdditionalSoftware, where findEeglab looks. The
+% 2.1.0 package pointed at eeglab.org/download/, a web page (since a 404),
+% so the offered download could never have worked.
 platforms = {'win64', 'glnxa64', 'maca64', 'mac'};
 req = struct('Name', {}, 'Platform', {}, 'DownloadURL', {}, 'LicenseURL', {});
 for k = 1:numel(platforms)
     req(k) = struct( ...
         'Name',        'EEGLAB', ...
         'Platform',    platforms{k}, ...
-        'DownloadURL', 'https://eeglab.org/download/', ...
+        'DownloadURL', 'https://sccn.ucsd.edu/eeglab/currentversion/eeglab_current.zip', ...
         'LicenseURL',  'https://github.com/sccn/eeglab/blob/develop/LICENSE');
 end
 opts.RequiredAdditionalSoftware = req;

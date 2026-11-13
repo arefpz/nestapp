@@ -49,7 +49,8 @@ function info = drawTEPTopo(parent, res, opts)
 %     .curve      false to omit the curve panel and give the grid the height
 %     .mode       'TEP' | 'GMFP' | 'LMFP' for the curve's axis label
 %     .xlim      curve time limits, default [-50 300]
-%     .colors    group colours, default groupColors(nGroups)
+%     .groupStyle a groupStyles struct, or .colors (n-by-3) - see
+%                resolveGroupStyle; used by the row labels and the curve panel
 %     .showBands shade the windows on the curve, default true
 %     .axesFcn   @(parent, position) -> axes. Default makes uiaxes, which is
 %                what an in-app panel needs; a publication figure passes a
@@ -71,9 +72,12 @@ nG = numel(res.groups);
 if ~isfield(opts, 'windows'); opts.windows = defaultTEPComponentDefs(); end
 opts = fillDefaults(opts, struct( ...
     'mode', 'TEP', 'xlim', [-50 300], ...
-    'colors', groupColors(max(nG, 1)), 'showBands', true, ...
+    'showBands', true, ...
     'mapWindows', [], 'mapScale', 'shared', 'curve', true, ...
     'axesFcn', @(p, pos) uiaxes(p, 'Position', pos)));
+% Resolved once, then handed to the curve panel too, so the row labels and the
+% curves below them cannot disagree about a group's colour.
+opts.groupStyle = resolveGroupStyle(opts, {res.groups.name});
 
 % The subset is applied to opts.windows itself, so the columns and the curve's
 % shading are the same set by construction. Shading six windows under three
@@ -188,12 +192,10 @@ for g = 1:nG
     text(firstInRow, -0.06, 0.5, res.groups(g).name, 'Units', 'normalized', ...
         'HorizontalAlignment', 'right', 'VerticalAlignment', 'middle', ...
         'FontWeight', 'bold', 'FontSize', 10, 'Clipping', 'off', ...
-        'Color', opts.colors(min(g, size(opts.colors, 1)), :));
+        'Color', opts.groupStyle.colors(g, :));
 end
 
 if ~perWindow
-    applySharedScale(axesMade, info.clim);
-
     % One bar for the whole grid, since every map shares the scale.
     cbAx = sharedColorbar(parent, opts.axesFcn, ...
         [x0 + gridW + BAR_GAP, yTop - nG * side + 6, BAR_W, side * nG - 16], ...
